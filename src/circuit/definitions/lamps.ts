@@ -39,7 +39,7 @@ export const dc24vLamp: ComponentDefinition = {
     terminalA: "1",
     terminalB: "2",
   },
-  visual: { width: 140, height: 130 },
+  visual: { width: 140, height: 160 },
   source: GENERIC_TERMINAL_SOURCE,
   verified: false,
 };

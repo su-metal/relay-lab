@@ -11,6 +11,12 @@
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 280px;
   min-height: 0;
+  /*
+   * 読み込み時の通知（.notices）は条件付き描画。無い場合、auto-placement 任せだと
+   * .columns が 2 番目の子として 2 行目（auto）に落ち、3 行目の 1fr が空のまま
+   * 画面下に空白として残る。常に 3 行目（1fr）に固定して防ぐ。
+   */
+  grid-row: 3;
 }
 
 /*

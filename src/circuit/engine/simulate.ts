@@ -30,6 +30,7 @@ import { polarityAcross } from "./potential";
 import { evaluateCoil } from "./relay";
 import {
   describeComponent,
+  detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,
   statusWarnings,
@@ -184,7 +185,8 @@ export const simulate = (
   const lookup: NetLookup = { netOf: last.nets.netOf, netState: last.netState };
 
   const warnings: Warning[] = [
-    ...detectPowerShortCircuits(document, definitions, last.nets.netOf),
+    ...detectPowerShortCircuits(document, definitions, lookup),
+    ...detectDiodeOrientation(document, definitions, lookup),
     ...last.coilWarnings,
     ...statusWarnings(status),
     ...detectUnconnectedTerminals(document, definitions),

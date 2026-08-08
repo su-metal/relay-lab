@@ -16,5 +16,5 @@ export const omronMy2nDc24 = defineMyRelay({
   polarity: "indicator",
   // 接点が 2 回路なので MY4N より小さくてよいが、
   // 上下に並ぶ端子番号が窮屈にならない幅は確保する
-  visual: { width: 210, height: 200 },
+  visual: { width: 210, height: 220 },
 });

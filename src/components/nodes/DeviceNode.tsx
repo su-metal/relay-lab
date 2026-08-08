@@ -13,7 +13,12 @@ import type { NodeProps } from "@xyflow/react";
 import { memo, useEffect } from "react";
 
 import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
-import { hasRealTerminalNumbers } from "@/lib/component-display";
+import {
+  deviceStatusOf,
+  hasRealTerminalNumbers,
+  modelSummaryOf,
+  shortModelLabel,
+} from "@/lib/component-display";
 
 import { DeviceTerminal } from "./DeviceTerminal";
 import styles from "./DeviceNode.module.css";
@@ -25,6 +30,10 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
+  // シミュレーション中の主要ステータス（励磁 / 点灯 / 押下）。図記号へのホバーで出す
+  const status = deviceStatusOf(definition, simulation);
+  // 見出し（型番）へのホバーで出す詳細。ノード内表示を削った分をここで補う
+  const summary = modelSummaryOf(definition);
 
   /*
    * 端子の並びが変わったら React Flow に測り直させる（design.md §8.1）。
@@ -77,20 +86,49 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
       <div className={styles.content}>
         <div className={styles.heading}>
           {label && <span className={styles.instanceLabel}>{label}</span>}
-          <span className={styles.model} title={definition.model}>
+          <span className={styles.model}>
             {definition.manufacturer && (
               <span className={styles.manufacturer}>
                 {definition.manufacturer}{" "}
               </span>
             )}
-            {definition.model}
+            {shortModelLabel(definition.model)}
+          </span>
+          {/*
+            見出しへのホバーで出す型番の詳細（正式名称・端子数・検証状態）。
+            `.model` はノード幅に収めるため補足を削った短縮表示なので、
+            削った分をここで補う。ネイティブ title は使わない（design.md §8.3）
+          */}
+          <span className={styles.modelTooltip} role="tooltip" aria-hidden>
+            <span className={styles.modelTooltipTitle}>{summary.title}</span>
+            {summary.lines.map((line) => (
+              <span key={line} className={styles.modelTooltipLine}>
+                {line}
+              </span>
+            ))}
           </span>
         </div>
-        <Body
-          definition={definition}
-          componentId={id}
-          simulation={simulation}
-        />
+        <div className={styles.bodyArea}>
+          <Body
+            definition={definition}
+            componentId={id}
+            simulation={simulation}
+          />
+          {/*
+            図記号へのホバーで出す主要ステータスの吹き出し。
+            端子ツールチップ（DeviceTerminal）と同じく CSS の :hover だけで出し入れする
+          */}
+          {status && (
+            <span
+              className={styles.statusTooltip}
+              data-active={status.active ? "true" : undefined}
+              role="tooltip"
+              aria-hidden
+            >
+              {status.label}
+            </span>
+          )}
+        </div>
         {/* 未検証の端子データを検証済みに見せない（CLAUDE.md 設計原則 5） */}
         {showUnverified && (
           <span className={styles.unverified} title={definition.source}>

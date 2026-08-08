@@ -14,6 +14,7 @@ import type {
 } from "@/circuit/types";
 import { terminalKey, terminalRefKey } from "@/circuit/types";
 
+import { collectDiodeEdges, spreadThroughDiodes } from "./diode";
 import { closedContactPairs, type TerminalPair } from "./relay";
 
 /**
@@ -103,7 +104,8 @@ const conductingPairs = (
     case "lamp":
     case "diode":
       // 電源の +/0V、ランプの 2 端子、ダイオードの 2 端子はいずれも非導通。
-      // ダイオードは MVP では常に開放として扱う（design.md §5.4）
+      // ダイオードは一方通行なので無向グラフでは表せない。導通は union ではなく
+      // `computeNetStates()` の有向な電位伝搬で表現する（design.md §5.4）
       return [];
   }
 };
@@ -187,8 +189,12 @@ export const buildNets = (
  * 各ネットの電位状態を求める。
  *
  * 電源部品の + 端子が属するネットに `reachesPlus`、
- * 0V 端子が属するネットに `reachesZero` を立てるだけ。
+ * 0V 端子が属するネットに `reachesZero` を立て、
+ * そのあとダイオードを通して**一方向にだけ**伝搬させる（design.md §5.4）。
+ *
  * 両方立ったネットは電源短絡である（validation.ts で検出する）。
+ * ダイオードを跨いで両方立った場合も同じ意味 —— 負荷を挟まずに
+ * + から 0V へ抜ける経路ができており、実機ではダイオードが焼損する。
  */
 export const computeNetStates = (
   document: CircuitDocument,
@@ -219,6 +225,11 @@ export const computeNetStates = (
     mark(instance.id, electrical.positiveTerminal, "reachesPlus");
     mark(instance.id, electrical.zeroTerminal, "reachesZero");
   }
+
+  spreadThroughDiodes(
+    states,
+    collectDiodeEdges(document, definitions, nets.netOf),
+  );
 
   return states;
 };

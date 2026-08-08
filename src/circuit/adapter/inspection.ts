@@ -10,7 +10,14 @@
  * UI を起動せずに Vitest で「押したら表示が切り替わる」ところまで検証できる。
  */
 
-import { closedContactPairs } from "@/circuit/engine";
+import {
+  buildNets,
+  closedContactPairs,
+  computeNetStates,
+  describeComponent,
+  inspectDiodes,
+} from "@/circuit/engine";
+import type { DiodeInspection, NetLookup } from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitDocument,
@@ -43,6 +50,18 @@ export type TerminalInspection = {
   state?: WireState;
 };
 
+/**
+ * ダイオード 1 個の向きと役割。
+ *
+ * 判定そのものはエンジン（`engine/diode.ts`）が持っており、
+ * ここで足すのは表示用の呼び名だけ。パネルは相手のリレーを選択していないので
+ * インスタンス ID から名前を引けない。
+ */
+export type DiodeRoleInspection = DiodeInspection & {
+  /** 並列に入っているコイルを持つリレーの呼び名。並列でなければ `undefined` */
+  flybackRelayName?: string;
+};
+
 export type ComponentInspection = {
   instance: CircuitComponentInstance;
   definition: ComponentDefinition;
@@ -55,6 +74,14 @@ export type ComponentInspection = {
   /** リレーの接点。リレー以外は空配列 */
   contacts: ContactInspection[];
   terminals: TerminalInspection[];
+  /**
+   * ダイオードの向きと役割。ダイオード以外は `undefined`。
+   *
+   * **停止中でも入る。** 「コイルと並列に、正しい向きで入っているか」は
+   * 配線そのものの性質であって実行中にしか決まらない値ではない
+   * （design.md §5.4）。逆向きに挿してあることは動かす前に読めるべき。
+   */
+  diode?: DiodeRoleInspection;
   /**
    * スイッチの 2 端子がいま導通しているか。スイッチ以外・停止中は `undefined`。
    *
@@ -125,7 +152,74 @@ export const inspectComponent = (
         )
       : undefined;
 
-  return { instance, definition, device, contacts, terminals, conducting };
+  const diode =
+    electrical.kind === "diode"
+      ? inspectDiode(
+          document,
+          definitions,
+          result ?? restingNets(document, definitions, pressedSwitches),
+          instance.id,
+        )
+      : undefined;
+
+  return {
+    instance,
+    definition,
+    device,
+    contacts,
+    terminals,
+    diode,
+    conducting,
+  };
+};
+
+/** 選択中のダイオード 1 個ぶんを取り出し、相手リレーの呼び名を足す */
+const inspectDiode = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  lookup: NetLookup,
+  componentId: string,
+): DiodeRoleInspection | undefined => {
+  const diode = inspectDiodes(document, definitions, lookup).find(
+    (entry) => entry.componentId === componentId,
+  );
+  if (!diode) return undefined;
+
+  const relay = diode.flyback
+    ? document.components.find(
+        (component) => component.id === diode.flyback?.relayId,
+      )
+    : undefined;
+  const relayDefinition = relay
+    ? definitions.get(relay.definitionId)
+    : undefined;
+
+  return {
+    ...diode,
+    flybackRelayName:
+      relay && relayDefinition
+        ? describeComponent(relay, relayDefinition)
+        : undefined,
+  };
+};
+
+/**
+ * 停止中に使う静止状態のネット（全リレー非励磁）。
+ *
+ * ダイオードがコイルと並列かどうかは配線の性質なので、動かす前にも読めるように
+ * ここだけネットを組み直す。`SimulationResult` はネット構築の結果を
+ * そのまま持っている（`netOf` / `netState`）ので、実行中はそれを使う。
+ */
+const restingNets = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  pressedSwitches: ReadonlySet<string>,
+): NetLookup => {
+  const nets = buildNets(document, definitions, { pressedSwitches }, new Set());
+  return {
+    netOf: nets.netOf,
+    netState: computeNetStates(document, definitions, nets),
+  };
 };
 
 /**

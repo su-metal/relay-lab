@@ -201,29 +201,53 @@ describe("端子台は全端子が常時導通する（design.md §5.1）", () =
   });
 });
 
-describe("ダイオードは MVP では常に開放（design.md §5.4）", () => {
-  const document = circuit({ PS1: POWER, D1: DIODE, L1: LAMP }, [
-    // +24V → アノード → カソード → ランプ → 0V。順方向に繋いでも通さない
-    wire("PS1:plus", "D1:a"),
-    wire("D1:k", "L1:1"),
-    wire("L1:2", "PS1:zero"),
-  ]);
+describe("ダイオードは順方向にだけ電流を通す（design.md §5.4）", () => {
+  /** +24V → D1 → ランプ → 0V。`from` 側をアノードにするか変えて向きを試す */
+  const inSeries = (first: "a" | "k") =>
+    circuit({ PS1: POWER, D1: DIODE, L1: LAMP }, [
+      wire("PS1:plus", `D1:${first}`),
+      wire(`D1:${first === "a" ? "k" : "a"}`, "L1:1"),
+      wire("L1:2", "PS1:zero"),
+    ]);
 
-  it("順方向でも 2 端子は union されずランプは点かない", () => {
-    const result = step(document);
+  it("順方向（+24V → A → K → ランプ）ならランプが点く", () => {
+    const result = step(inSeries("a"));
     expect(result.status).toBe("stable");
-    expect(result.netOf.get("D1:a")).not.toBe(result.netOf.get("D1:k"));
+    expect([...result.litLamps]).toEqual(["L1"]);
+  });
+
+  it("逆向きに挿すとランプが点かない", () => {
+    const result = step(inSeries("k"));
+    expect(result.status).toBe("stable");
     expect([...result.litLamps]).toEqual([]);
   });
 
-  it("電源に直結しても短絡と判定されない（負荷と同じ扱い）", () => {
+  it("導通しても 2 端子は union されない（負荷と同じ扱い・§5.2）", () => {
+    const result = step(inSeries("a"));
+    // ネットは別のまま。電位だけがアノード → カソードへ伝わっている
+    expect(result.netOf.get("D1:a")).not.toBe(result.netOf.get("D1:k"));
+  });
+
+  it("負荷を挟まず順方向で電源に直結すると短絡として検出される", () => {
     const across = circuit({ PS1: POWER, D1: DIODE }, [
       wire("PS1:plus", "D1:a"),
       wire("D1:k", "PS1:zero"),
     ]);
     const result = step(across);
     expect(
-      result.warnings.filter((w) => w.code === "power-short-circuit"),
-    ).toEqual([]);
+      result.warnings.find((w) => w.code === "power-short-circuit")?.severity,
+    ).toBe("error");
+    const reversed = result.warnings.find((w) => w.code === "diode-reversed");
+    expect(reversed?.severity).toBe("error");
+    expect(reversed?.componentId).toBe("D1");
+  });
+
+  it("逆向きに電源へ直結する分には短絡しない（遮断しているだけ）", () => {
+    const across = circuit({ PS1: POWER, D1: DIODE }, [
+      wire("PS1:plus", "D1:k"),
+      wire("D1:a", "PS1:zero"),
+    ]);
+    const result = step(across);
+    expect(result.warnings.filter((w) => w.severity === "error")).toEqual([]);
   });
 });

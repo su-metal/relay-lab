@@ -4,11 +4,10 @@
  * 実型番を持たない汎用部品。端子は「アノード / カソード」であって
  * 実端子番号ではないため `number` を持たせない。
  *
- * **MVP では常に開放（非導通）として扱う。** 単体ダイオードは一方向にしか
- * 導通せず、無向グラフである Union-Find では原理的に表現できないため
- * （design.md §5.4）。エンジン側の `conductingPairs()` は `kind: "diode"` に
- * 対して空配列を返す実装が Step 2 の時点で入っており、この定義を足しても
- * エンジンは 1 行も変わらない。
+ * **端子は union しない。** 一方通行は無向グラフの Union-Find では表せないため、
+ * 導通は `engine/diode.ts` の有向な電位伝搬（アノード → カソード）で表現する
+ * （design.md §5.4）。この定義に書くのは向きの出どころ（どちらがアノードか）だけで、
+ * 「逆起電力を吸収する」「逆向きなら短絡する」という挙動はすべてそこから導かれる。
  */
 
 import type { ComponentDefinition } from "@/circuit/types";
@@ -42,7 +41,7 @@ export const genericDiode: ComponentDefinition = {
     anodeTerminal: "a",
     cathodeTerminal: "k",
   },
-  visual: { width: 140, height: 110 },
+  visual: { width: 140, height: 190 },
   source: GENERIC_TERMINAL_SOURCE,
   verified: false,
 };

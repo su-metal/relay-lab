@@ -17,6 +17,9 @@ import type {
 import { terminalKey, terminalRefKey } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
+import { inspectDiodes } from "./diode";
+import type { NetLookup } from "./graph";
+
 /**
  * 警告文に使う部品の呼び名。
  * ユーザーが付けたラベル（"RY1"）があればそれを、無ければ型番を使う。
@@ -26,16 +29,34 @@ export const describeComponent = (
   definition: ComponentDefinition,
 ): string => instance.label ?? definition.model;
 
+/** インスタンス ID から呼び名を引く。見つからなければ ID をそのまま返す */
+const nameResolver = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+): ((componentId: string) => string) => {
+  const names = new Map<string, string>();
+  for (const instance of document.components) {
+    const definition = definitions.get(instance.definitionId);
+    if (!definition) continue;
+    names.set(instance.id, describeComponent(instance, definition));
+  }
+  return (componentId) => names.get(componentId) ?? componentId;
+};
+
 /**
- * 電源短絡。+ 端子と 0V 端子が同一ネットに落ちている状態。
+ * 電源短絡。+ 側の電位と 0V 側の電位が同じネットに乗っている状態。
  *
  * 負荷を union しない設計（design.md §5.2）のおかげで、
  * これは「配線ミスで電源が直結された」ことと厳密に一致する。
+ *
+ * ネット ID の一致ではなく `NetState` の 2 ビットで見るのは、順方向の
+ * ダイオードを経由した短絡（§5.4）を取りこぼさないため。ダイオードは
+ * union されないので + 側と 0V 側は別ネットのままだが、電位は伝わっている。
  */
 export const detectPowerShortCircuits = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
-  netOf: ReadonlyMap<string, number>,
+  lookup: NetLookup,
 ): Warning[] => {
   const warnings: Warning[] = [];
 
@@ -45,19 +66,69 @@ export const detectPowerShortCircuits = (
     const { electrical } = definition;
     if (electrical.kind !== "power") continue;
 
-    const plusNet = netOf.get(
+    const plusNet = lookup.netOf.get(
       terminalKey(instance.id, electrical.positiveTerminal),
     );
-    const zeroNet = netOf.get(terminalKey(instance.id, electrical.zeroTerminal));
-    if (plusNet === undefined || zeroNet === undefined) continue;
-    if (plusNet !== zeroNet) continue;
+    if (plusNet === undefined) continue;
+    const state = lookup.netState.get(plusNet);
+    if (!state?.reachesPlus || !state.reachesZero) continue;
 
     warnings.push({
       code: "power-short-circuit",
       severity: "error",
-      message: `${describeComponent(instance, definition)} の + 側と 0V 側が同じネットに繋がっています（電源短絡）。`,
+      message: `${describeComponent(instance, definition)} の + 側と 0V 側が導通しています（電源短絡）。`,
       componentId: instance.id,
     });
+  }
+
+  return warnings;
+};
+
+/**
+ * ダイオードの向きの誤り（design.md §5.4）。
+ *
+ * 2 通りを検出する。
+ *
+ * 1. **コイルと並列のダイオードが逆向き** —— 逆起電力吸収（還流）ダイオードは
+ *    カソードをコイルの + 側へ向ける。逆に挿すと通電中ずっと順方向になり、
+ *    コイルと並列の短絡経路になる。**通電しているかに関係なく配線の誤りなので、
+ *    接点が開いていて今は電流が流れていなくても警告する。**
+ * 2. **負荷を挟まずに + と 0V をまたぐ順方向のダイオード** ——
+ *    電源直結と同じで、実機ではダイオードに電流が集中して焼損する。
+ *
+ * 逆向きに入っていて単に電流を遮断しているだけのダイオードは警告しない。
+ * 逆流防止として意図的に入れる配線と区別できないため。
+ */
+export const detectDiodeOrientation = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  lookup: NetLookup,
+): Warning[] => {
+  const warnings: Warning[] = [];
+  const nameOf = nameResolver(document, definitions);
+
+  for (const diode of inspectDiodes(document, definitions, lookup)) {
+    const name = nameOf(diode.componentId);
+
+    if (diode.flyback?.orientation === "reversed") {
+      const relay = nameOf(diode.flyback.relayId);
+      warnings.push({
+        code: "diode-reversed",
+        severity: "error",
+        message: `${name} の向きが逆です。逆起電力を吸収するには カソード（K）を ${relay} のコイルの + 側へ向けてください。このままではコイルに通電した瞬間に順方向の短絡経路になり、${relay} は励磁せずダイオードが焼損します。`,
+        componentId: diode.componentId,
+      });
+      continue;
+    }
+
+    if (diode.shorting) {
+      warnings.push({
+        code: "diode-reversed",
+        severity: "error",
+        message: `${name} が順方向のまま + 側と 0V 側をまたいでいます。間に負荷が無いためダイオードが焼損します（向きを確認してください）。`,
+        componentId: diode.componentId,
+      });
+    }
   }
 
   return warnings;

@@ -12,8 +12,16 @@ export { atPlus, atZero, polarityAcross } from "./potential";
 export type { Polarity } from "./potential";
 export { closedContactPairs, evaluateCoil } from "./relay";
 export type { CoilEvaluation, TerminalPair } from "./relay";
+export { collectDiodeEdges, inspectDiodes, spreadThroughDiodes } from "./diode";
+export type {
+  DiodeBias,
+  DiodeEdge,
+  DiodeInspection,
+  FlybackOrientation,
+} from "./diode";
 export {
   describeComponent,
+  detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,
   statusWarnings,

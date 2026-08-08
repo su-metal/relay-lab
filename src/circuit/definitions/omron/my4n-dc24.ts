@@ -16,5 +16,5 @@ export const omronMy4nDc24 = defineMyRelay({
   // 表示 LED が点灯しない、という理解（design.md §4.4「要検証」）。
   // 内蔵ダイオード付きの MY4N-D2 は "strict"。
   polarity: "indicator",
-  visual: { width: 260, height: 220 },
+  visual: { width: 260, height: 240 },
 });
