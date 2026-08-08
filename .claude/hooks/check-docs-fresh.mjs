@@ -51,7 +51,9 @@ if (input.stop_hook_active) process.exit(0);
 
 let changed;
 try {
-  const out = execFileSync("git", ["status", "--porcelain"], {
+  // -uall が必須。既定では未追跡ディレクトリが "?? src/" の 1 行に畳まれ、
+  // 配下の src/circuit/types/... が WATCHED に一致しなくなる。
+  const out = execFileSync("git", ["status", "--porcelain", "-uall"], {
     cwd: projectDir,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
