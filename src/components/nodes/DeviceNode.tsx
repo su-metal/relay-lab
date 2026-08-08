@@ -19,7 +19,8 @@ import styles from "./DeviceNode.module.css";
 import { bodyForCategory } from "./bodies";
 
 function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) {
-  const { definition, label, simulation, terminalStates } = data;
+  const { definition, terminals, flipped, label, simulation, terminalStates } =
+    data;
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
@@ -29,6 +30,9 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
       className={styles.node}
       data-category={definition.category}
       data-selected={selected ? "true" : undefined}
+      // 図記号（SVG）だけを鏡像にするための目印。
+      // 端子は `data.terminals` 側で既に反転済みで、文字は反転させない
+      data-flipped={flipped ? "true" : undefined}
       // `simulation` の有無がそのまま「シミュレーション中か」を表す
       data-running={simulation ? "true" : undefined}
       data-energized={simulation?.energized ? "true" : undefined}
@@ -63,7 +67,8 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
         )}
       </div>
 
-      {definition.terminals.map((terminal) => (
+      {/* 定義の端子ではなく、反転を織り込んだ `data.terminals` を描く */}
+      {terminals.map((terminal) => (
         <DeviceTerminal
           key={terminal.id}
           terminal={terminal}

@@ -13,6 +13,19 @@
   color: var(--text);
 }
 
+/*
+ * 左右反転した部品では図記号も鏡像にする（design.md §8.1）。
+ * ダイオードの三角や電池の長線／短線は向きで意味が決まるので、
+ * 端子だけ反転して図記号を据え置くと A / K と絵が食い違う。
+ *
+ * **鏡像にするのは SVG だけ。** キャプションや押下ボタンは文字なので、
+ * 反転させると読めなくなる。`data-flipped` は DeviceNode がノードの外枠に
+ * 付ける属性で、CSS Modules がハッシュしないため別モジュールからでも指せる。
+ */
+[data-flipped="true"] .symbol {
+  transform: scaleX(-1);
+}
+
 .caption {
   font-size: 10px;
   line-height: 1.3;

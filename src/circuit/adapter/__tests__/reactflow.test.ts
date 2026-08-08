@@ -14,6 +14,7 @@ import {
   connectionFromReactFlow,
   hasTerminalPair,
   isSameTerminalPair,
+  layoutTerminals,
   toDeviceNodes,
   toWireEdges,
 } from "@/circuit/adapter/reactflow";
@@ -85,6 +86,91 @@ describe("toDeviceNodes", () => {
     const nodes = toDeviceNodes(document, componentRegistry, ["cmp-relay"]);
     expect(nodes.find((node) => node.id === "cmp-power")?.selected).toBe(false);
     expect(nodes.find((node) => node.id === "cmp-relay")?.selected).toBe(true);
+  });
+});
+
+describe("左右反転（layoutTerminals）", () => {
+  const relay = componentRegistry.get("omron-my4n-dc24");
+  const power = componentRegistry.get("power-dc24v");
+
+  it("反転していなければ定義の配列をそのまま返す", () => {
+    if (!relay) throw new Error("MY4N の定義が無い");
+    // 参照ごと同じであること。反転しない部品で毎回 14 個コピーしない
+    expect(layoutTerminals(relay, false)).toBe(relay.terminals);
+  });
+
+  it("x 座標を鏡像にし、左右の辺を入れ替える", () => {
+    if (!power) throw new Error("電源の定義が無い");
+    const flipped = layoutTerminals(power, true);
+
+    // 電源の端子は 2 つとも右辺（x: 1）にある
+    expect(power.terminals.map((t) => [t.side, t.position.x])).toEqual([
+      ["right", 1],
+      ["right", 1],
+    ]);
+    expect(flipped.map((t) => [t.side, t.position.x])).toEqual([
+      ["left", 0],
+      ["left", 0],
+    ]);
+  });
+
+  it("上下の端子は辺が変わらず、x だけが鏡像になる", () => {
+    if (!relay) throw new Error("MY4N の定義が無い");
+    const flipped = layoutTerminals(relay, true);
+    // 端子 1 は第1接点 NC。上辺・x = 0.2（4 接点中 1 番目）
+    const before = relay.terminals.find((t) => t.id === "1");
+    const after = flipped.find((t) => t.id === "1");
+
+    expect(before?.side).toBe("top");
+    expect(after?.side).toBe("top");
+    expect(after?.position.x).toBeCloseTo(1 - (before?.position.x ?? 0));
+    expect(after?.position.y).toBe(before?.position.y);
+  });
+
+  it("端子の同一性（ID・ラベル・番号・役割）には触れない", () => {
+    if (!relay) throw new Error("MY4N の定義が無い");
+    const flipped = layoutTerminals(relay, true);
+
+    // ここが変わると CircuitConnection の指す先が壊れる
+    expect(flipped.map((t) => t.id)).toEqual(relay.terminals.map((t) => t.id));
+    expect(flipped.map((t) => t.number)).toEqual(
+      relay.terminals.map((t) => t.number),
+    );
+    expect(flipped.map((t) => t.role)).toEqual(
+      relay.terminals.map((t) => t.role),
+    );
+  });
+
+  it("定義そのものは書き換えない（他のインスタンスに波及させない）", () => {
+    if (!power) throw new Error("電源の定義が無い");
+    layoutTerminals(power, true);
+    expect(power.terminals[0].side).toBe("right");
+    expect(power.terminals[0].position.x).toBe(1);
+  });
+});
+
+describe("toDeviceNodes と反転", () => {
+  it("インスタンスの flipped を端子配置とノードデータに反映する", () => {
+    const flippedDocument: CircuitDocument = {
+      ...document,
+      components: document.components.map((component) =>
+        component.id === "cmp-power"
+          ? { ...component, flipped: true }
+          : component,
+      ),
+    };
+    const nodes = toDeviceNodes(flippedDocument, componentRegistry);
+    const powerNode = nodes.find((node) => node.id === "cmp-power");
+    const relayNode = nodes.find((node) => node.id === "cmp-relay");
+
+    expect(powerNode?.data.flipped).toBe(true);
+    expect(powerNode?.data.terminals.map((t) => t.side)).toEqual([
+      "left",
+      "left",
+    ]);
+    // 反転していない部品は既定のまま
+    expect(relayNode?.data.flipped).toBe(false);
+    expect(relayNode?.data.terminals).toBe(relayNode?.data.definition.terminals);
   });
 });
 

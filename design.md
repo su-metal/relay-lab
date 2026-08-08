@@ -63,6 +63,8 @@ src/
       useSimulationSync.ts       # 入力変化 → simulate() の再実行トリガー（§8.2）
       useDocumentPersistence.ts  # LocalStorage への保存・復元の駆動（§8.4）
       useHistoryShortcuts.ts     # Undo / Redo のキーボード操作（§8.4）
+      useFlipShortcut.ts         # F キーで選択部品を左右反転（§8.1）
+      keyboard.ts                # 自前ショートカット共通の入力欄除外（§8.1）
       *.module.css
     nodes/
       DeviceNode.tsx             # 汎用ノード（定義駆動で描画）
@@ -302,6 +304,7 @@ type CircuitDocument = {
     definitionId: string       // ComponentDefinition.id
     label?: string             // "RY1" "S1" などのユーザー付与名
     position: { x: number; y: number }
+    flipped?: boolean          // 左右反転して描くか（省略 = 反転なし）
   }[]
   connections: CircuitConnection[]
   viewport: { x: number; y: number; zoom: number }
@@ -309,6 +312,8 @@ type CircuitDocument = {
 ```
 
 `terminalKey()` を関数にしてあるのは、キー書式を 1 箇所に閉じるため。各所で `` `${a}:${b}` `` を手書きすると、書式がずれた瞬間にネット引きが静かに失敗する。
+
+**`flipped` は見た目だけの属性で、電気的な意味を一切持たない。** 反転しても端子 ID・端子番号・役割は変わらず、`CircuitConnection` も `ElectricalDefinition` もまったく同じものを指す。**エンジンはこのフィールドを読まない**（§8.1）。`ComponentDefinition` 側ではなくインスタンス側に置いてあるのは、同じ型番を反転して並べられる必要があるため。定義は全インスタンスで共有する不変データなので、そこに向きを持たせると 1 個の反転が全部に波及する。
 
 ### 3.4 シミュレーション入出力
 
@@ -670,6 +675,7 @@ React Flow のノード移動は毎フレーム `onNodesChange` を発火する�
 |---|---|---|
 | 全体 | JSON として読めない / `version` が 1 でない / `components`・`connections` が配列でない | ドキュメントごと不採用（`invalid`） |
 | 部品 | ID が無い・重複・レジストリに無い `definitionId`・座標が数値でない | その部品を落とす |
+| 部品の `flipped` | `true` 以外（欠損・型違い） | **部品は落とさず**「反転なし」へ倒す |
 | 配線 | 端子参照が不正・両端の部品または端子が実在しない・ID 重複・同一端子ペアの重複 | その配線を落とす |
 | ビューポート | 数値でない / `zoom <= 0` | 既定値へ戻す |
 
@@ -731,8 +737,44 @@ React Flow 側に状態を持たせない（CLAUDE.md 設計原則 4）。
 `addConnection` の両方から呼ぶ。
 
 **キャンバス操作。** 左ドラッグ＝パン、Shift+ドラッグ＝範囲選択、Ctrl/Cmd+クリック＝複数選択、
-Delete / Backspace / **D** ＝削除。左ドラッグを範囲選択にすると、配線しようとして端子を掴み損ねる
-たびに選択枠が出てパンできなくなるため採らない。
+Delete / Backspace / **D** ＝削除、**F** ＝選択中の部品を左右反転。左ドラッグを範囲選択にすると、
+配線しようとして端子を掴み損ねるたびに選択枠が出てパンできなくなるため採らない。
+
+#### 部品の左右反転（`flipped`）
+
+電源は右辺に、ダイオードは左右に端子が固定されているため、向きを変えられないと図面の
+右側に置いた部品から線が本体を横切って出ていく。反転は `CircuitComponentInstance.flipped`
+（§3.3）1 つで表し、**描画側だけで解決する。**
+
+| 反転で変わるもの | 変わらないもの |
+|---|---|
+| 端子の相対座標 `x` → `1 - x` | 端子の ID・ラベル・実端子番号・`role`・`description` |
+| 端子の `side`（left ⇄ right、top / bottom は不変） | `CircuitConnection`（配線は端子 ID で繋がっている） |
+| 図記号（SVG）の左右 | `ElectricalDefinition` とエンジンの判定結果すべて |
+
+**`ComponentDefinition` は書き換えない。** 定義は全インスタンスで共有する不変データなので、
+`adapter/reactflow.ts` の `layoutTerminals()` が反転済みの端子配列を新たに作り、
+`DeviceNodeData.terminals` に載せる。`DeviceNode` は `definition.terminals` ではなく
+**こちらを描く。** 反転していない部品では定義の配列をそのまま返し、無駄なコピーを作らない
+（MY4N は 1 個で端子 14 個）。
+
+**`side` を写し替えないと壊れる。** 座標だけ反転しても React Flow の Handle の向きは
+元のままなので、配線が部品の内側へ回り込んで出ていく。
+
+**図記号は SVG だけを `scaleX(-1)` する。** ダイオードの三角や電池の長線／短線は向きが
+意味を持つので、端子だけ反転すると絵と端子ラベルが食い違う。一方でキャプションや
+押しボタンの操作ボタンは文字なので、鏡像にすると読めなくなる。`DeviceNode` が外枠へ付ける
+`data-flipped` を `bodies.module.css` 側から拾って SVG に限定して掛ける
+（`data-*` は CSS Modules がハッシュしないため、モジュールをまたいで指せる）。
+
+**反転は Undo 履歴に積む。** 端子の出る辺が変わって配線の取り回しが大きく動くので、
+ラベル編集（積まない）とは違い「1 手戻したい操作」になる。
+
+**F 単独にキーを割り当てられるのは、削除の D と同じ条件を自前で満たしているから。**
+`useFlipShortcut` は `window` に直接ハンドラーを載せるため、React Flow が内部で行っている
+入力欄の除外が効かない。共有の `isTextEntry()`（`components/circuit/keyboard.ts`）で
+input / textarea / contenteditable を自分で除外する。Ctrl / Cmd / Alt が付いていれば
+ブラウザの検索（Ctrl+F）を奪わないよう何もしない。
 
 ホイールは `panOnScroll` によりズームではなくパン（縦）に割り当てており、
 **Shift+ホイールで横パン**になる（React Flow 12 が Windows でこの分岐を持つ）。

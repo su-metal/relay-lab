@@ -161,6 +161,9 @@ export const parseDocument = (
           ? entry.label
           : undefined,
       position: { x: entry.position.x, y: entry.position.y },
+      // 見た目だけの属性なので、値が壊れていても部品ごと捨てずに
+      // 「反転なし」へ倒す。true 以外はすべて未反転として読む
+      flipped: entry.flipped === true ? true : undefined,
     });
     terminalsOf.set(
       entry.id,

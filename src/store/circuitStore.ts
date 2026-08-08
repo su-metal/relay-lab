@@ -97,6 +97,14 @@ export type CircuitStore = {
   setComponentLabel: (componentId: string, label: string) => void;
 
   /**
+   * 部品を左右反転する（トグル）。複数渡せば **それぞれを個別に**反転する。
+   *
+   * 見た目だけの変更だが **履歴には積む。** 反転すると端子の出る辺が変わり、
+   * 配線の取り回しが大きく動くので、ラベル編集と違って「1 手戻したい操作」になる。
+   */
+  flipComponents: (componentIds: readonly string[]) => void;
+
+  /**
    * React Flow の接続イベントから配線を足す。
    * 端子以外への接続と重複配線はここで捨てる（adapter が判定する）。
    */
@@ -289,6 +297,27 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           ),
         },
       }));
+    },
+
+    flipComponents: (componentIds) => {
+      if (componentIds.length === 0) return;
+      const targets = new Set(componentIds);
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (!targets.has(component.id)) return component;
+          changed = true;
+          // 反転していない状態は `flipped` を持たない形に戻す。
+          // false を書き込むと保存 JSON に意味の無いフィールドが増える
+          const flipped = component.flipped === true;
+          return flipped
+            ? { ...component, flipped: undefined }
+            : { ...component, flipped: true };
+        });
+        // 選択が空振り（存在しない ID だけ）なら履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
     },
 
     removeComponents: (componentIds) => {

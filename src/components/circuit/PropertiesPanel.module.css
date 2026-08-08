@@ -77,6 +77,42 @@
   border-color: var(--accent);
 }
 
+/* 部品への操作（左右反転）。名前欄と仕様表の間に置く */
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.action {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel);
+  cursor: pointer;
+  transition:
+    border-color 0.1s ease-out,
+    color 0.1s ease-out;
+}
+
+.action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.flippedBadge {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .rows {
   display: flex;
   flex-direction: column;

@@ -20,6 +20,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { WarningList } from "./WarningList";
 import { useDocumentPersistence } from "./useDocumentPersistence";
+import { useFlipShortcut } from "./useFlipShortcut";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useSimulationSync } from "./useSimulationSync";
 import styles from "./CircuitWorkspace.module.css";
@@ -38,6 +39,7 @@ function Workspace() {
   // 保存・復元も同じく 1 箇所（design.md §8.4）
   const persistence = useDocumentPersistence();
   useHistoryShortcuts();
+  useFlipShortcut();
 
   return (
     <div className={styles.workspace}>

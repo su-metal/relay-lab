@@ -148,6 +148,65 @@ describe("削除と選択", () => {
   });
 });
 
+describe("左右反転", () => {
+  it("トグルで反転し、1 手で戻せる", () => {
+    const id = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const before = store().past.length;
+
+    store().flipComponents([id]);
+    expect(store().document.components[0]?.flipped).toBe(true);
+    expect(store().past).toHaveLength(before + 1);
+
+    store().flipComponents([id]);
+    // 反転していない状態は flipped を持たない形に戻す（保存 JSON を汚さない）
+    expect(store().document.components[0]?.flipped).toBeUndefined();
+
+    store().undo();
+    expect(store().document.components[0]?.flipped).toBe(true);
+  });
+
+  it("複数選択はそれぞれを個別に反転する", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const lamp = store().addComponent(dc24vLamp, { x: 200, y: 0 });
+    store().flipComponents([power]);
+
+    // すでに反転している電源は元へ、していないランプは反転へ
+    store().flipComponents([power, lamp]);
+
+    const flippedOf = (id: string) =>
+      store().document.components.find((component) => component.id === id)
+        ?.flipped;
+    expect(flippedOf(power)).toBeUndefined();
+    expect(flippedOf(lamp)).toBe(true);
+  });
+
+  it("配線には影響しない（端子 ID は変わらない）", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const lamp = store().addComponent(dc24vLamp, { x: 200, y: 0 });
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: lamp,
+      targetHandle: "1",
+    });
+    const before = store().document.connections;
+
+    store().flipComponents([power]);
+
+    expect(store().document.connections).toEqual(before);
+  });
+
+  it("存在しない ID だけなら履歴を汚さない", () => {
+    store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const before = store().past.length;
+
+    store().flipComponents(["cmp-missing"]);
+    store().flipComponents([]);
+
+    expect(store().past).toHaveLength(before);
+  });
+});
+
 describe("replaceDocument", () => {
   it("読み込み前の回路へ Undo で戻れないようにする", () => {
     store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });

@@ -42,6 +42,7 @@ export function PropertiesPanel() {
   const setComponentLabel = useCircuitStore(
     (state) => state.setComponentLabel,
   );
+  const flipComponents = useCircuitStore((state) => state.flipComponents);
 
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
@@ -77,6 +78,7 @@ export function PropertiesPanel() {
           onLabelChange={(label) =>
             setComponentLabel(inspection.instance.id, label)
           }
+          onFlip={() => flipComponents([inspection.instance.id])}
         />
       )}
     </aside>
@@ -86,9 +88,10 @@ export function PropertiesPanel() {
 type DetailsProps = {
   inspection: ComponentInspection;
   onLabelChange: (label: string) => void;
+  onFlip: () => void;
 };
 
-function ComponentDetails({ inspection, onLabelChange }: DetailsProps) {
+function ComponentDetails({ inspection, onLabelChange, onFlip }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
 
@@ -109,6 +112,20 @@ function ComponentDetails({ inspection, onLabelChange }: DetailsProps) {
             onBlur={(event) => onLabelChange(event.target.value.trim())}
           />
         </label>
+
+        {/*
+          左右反転（design.md §8.1）。端子の出る辺が入れ替わるので、
+          電源を右に置く図面でも配線が本体を横切らずに済む。
+          押している状態が続く操作ではないので aria-pressed は使わない
+        */}
+        <div className={styles.actions}>
+          <button type="button" className={styles.action} onClick={onFlip}>
+            左右反転（F）
+          </button>
+          {instance.flipped && (
+            <span className={styles.flippedBadge}>反転中</span>
+          )}
+        </div>
 
         <dl className={styles.rows}>
           <Row name="メーカー">{definition.manufacturer ?? "—"}</Row>

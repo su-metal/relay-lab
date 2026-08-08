@@ -14,11 +14,7 @@ import { useEffect } from "react";
 
 import { useCircuitStore } from "@/store/circuitStore";
 
-const isTextEntry = (target: EventTarget | null): boolean =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable ||
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement);
+import { isTextEntry } from "./keyboard";
 
 export function useHistoryShortcuts(): void {
   const undo = useCircuitStore((state) => state.undo);

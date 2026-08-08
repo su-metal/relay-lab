@@ -167,6 +167,39 @@ describe("parseDocument の要素検証", () => {
     expect(result.dropped).toHaveLength(2);
   });
 
+  it("左右反転の状態を保存して読み戻す", () => {
+    const flipped: CircuitDocument = {
+      ...document,
+      components: document.components.map((component) =>
+        component.id === "cmp-power"
+          ? { ...component, flipped: true }
+          : component,
+      ),
+    };
+    const result = parseDocument(serializeDocument(flipped), componentRegistry);
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.flipped).toBe(true);
+    expect(result.document.components[1]?.flipped).toBeUndefined();
+  });
+
+  it("flipped が壊れていても部品ごと捨てず、反転なしとして読む", () => {
+    const result = roundTrip({
+      ...document,
+      components: document.components.map((component) => ({
+        ...component,
+        flipped: "yes",
+      })),
+    });
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components).toHaveLength(2);
+    expect(result.document.components[0]?.flipped).toBeUndefined();
+    expect(result.dropped).toEqual([]);
+  });
+
   it("ズーム 0 のような描画不能なビューポートは既定へ戻す", () => {
     const result = roundTrip({
       ...document,

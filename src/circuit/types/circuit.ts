@@ -16,6 +16,14 @@ export type CircuitComponentInstance = {
   /** "RY1" "S1" などのユーザー付与名 */
   label?: string;
   position: { x: number; y: number };
+  /**
+   * 左右反転して描くか（design.md §8.1）。省略は反転なし。
+   *
+   * **見た目だけの属性で、電気的な意味は一切持たない。** 反転しても端子 ID は
+   * 変わらず、`CircuitConnection` も `ComponentDefinition.electrical` も
+   * まったく同じものを指す。エンジンはこのフィールドを読まない。
+   */
+  flipped?: boolean;
 };
 
 export type CircuitDocument = {
