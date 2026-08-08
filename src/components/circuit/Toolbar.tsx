@@ -16,6 +16,8 @@ import { APP_NAME } from "@/lib/app-info";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
+import { RANGE_SELECTION_TARGETS } from "./range-selection";
+import type { RangeSelectionTarget } from "./range-selection";
 import type { PersistenceStatus } from "./useDocumentPersistence";
 import styles from "./Toolbar.module.css";
 
@@ -45,7 +47,17 @@ const SAVE_LABEL: Record<PersistenceStatus, string> = {
   error: "保存に失敗しました",
 };
 
-export function Toolbar({ saveStatus }: { saveStatus: PersistenceStatus }) {
+export type ToolbarProps = {
+  saveStatus: PersistenceStatus;
+  rangeSelectionTarget: RangeSelectionTarget;
+  onRangeSelectionTargetChange: (value: RangeSelectionTarget) => void;
+};
+
+export function Toolbar({
+  saveStatus,
+  rangeSelectionTarget,
+  onRangeSelectionTargetChange,
+}: ToolbarProps) {
   const { fitView } = useReactFlow();
 
   const componentCount = useCircuitStore(
@@ -128,6 +140,39 @@ export function Toolbar({ saveStatus }: { saveStatus: PersistenceStatus }) {
         >
           ↷ やり直す
         </button>
+      </div>
+
+      <div className={styles.group}>
+        {/*
+          何もない所を左ドラッグすれば常に範囲選択になるので、モードの切り替えは
+          置かない。ここにあるのは枠が拾う対象だけ（design.md §8.6）。
+          画面移動は Shift+ドラッグ・中／右ドラッグ・ホイール
+        */}
+        <span
+          className={styles.groupLabel}
+          title="何もない所をドラッグすると範囲選択します。画面を動かすときは Shift+ドラッグ（中ボタン／右ドラッグ・ホイールでも可）"
+        >
+          ⬚ 範囲選択
+        </span>
+        <div
+          className={styles.segmented}
+          role="group"
+          aria-label="範囲選択の対象"
+        >
+          {RANGE_SELECTION_TARGETS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={styles.segment}
+              onClick={() => onRangeSelectionTargetChange(option.value)}
+              aria-pressed={rangeSelectionTarget === option.value}
+              data-active={rangeSelectionTarget === option.value || undefined}
+              title={option.title}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className={styles.group}>

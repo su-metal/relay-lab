@@ -19,8 +19,8 @@ import type {
   ComponentInspection,
   ContactInspection,
 } from "@/circuit/adapter/inspection";
-import { componentRegistry } from "@/circuit/definitions";
-import type { ElectricalDefinition } from "@/circuit/types";
+import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
+import type { ComponentDefinition, ElectricalDefinition } from "@/circuit/types";
 import {
   CATEGORY_LABELS,
   COIL_POLARITY_LABELS,
@@ -43,6 +43,9 @@ export function PropertiesPanel() {
     (state) => state.setComponentLabel,
   );
   const flipComponents = useCircuitStore((state) => state.flipComponents);
+  const replaceComponentDefinition = useCircuitStore(
+    (state) => state.replaceComponentDefinition,
+  );
 
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
@@ -79,6 +82,9 @@ export function PropertiesPanel() {
             setComponentLabel(inspection.instance.id, label)
           }
           onFlip={() => flipComponents([inspection.instance.id])}
+          onReplace={(definition) =>
+            replaceComponentDefinition(inspection.instance.id, definition)
+          }
         />
       )}
     </aside>
@@ -89,11 +95,24 @@ type DetailsProps = {
   inspection: ComponentInspection;
   onLabelChange: (label: string) => void;
   onFlip: () => void;
+  onReplace: (definition: ComponentDefinition) => void;
 };
 
-function ComponentDetails({ inspection, onLabelChange, onFlip }: DetailsProps) {
+function ComponentDetails({
+  inspection,
+  onLabelChange,
+  onFlip,
+  onReplace,
+}: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
+  // 交換候補は同じカテゴリ内だけ（design.md §8.3）。カテゴリを跨ぐと
+  // ElectricalDefinition.kind ごと変わり、部品交換ではなく作り直しになる
+  const replaceCandidates = componentDefinitions.filter(
+    (candidate) =>
+      candidate.category === definition.category &&
+      candidate.id !== definition.id,
+  );
 
   return (
     <div className={styles.sections}>
@@ -126,6 +145,36 @@ function ComponentDetails({ inspection, onLabelChange, onFlip }: DetailsProps) {
             <span className={styles.flippedBadge}>反転中</span>
           )}
         </div>
+
+        {/*
+          部品交換。接続（componentId + terminalId 参照）はインスタンス ID を
+          変えずに定義だけ差し替えるので維持される。差し替え先に無い端子への
+          配線だけが黙って外れる（同じカテゴリ内限定・design.md §7 / §8.3）
+        */}
+        {replaceCandidates.length > 0 && (
+          <label className={styles.labelField}>
+            <span className={styles.fieldName}>部品交換</span>
+            <select
+              className={styles.labelInput}
+              value=""
+              onChange={(event) => {
+                const target = replaceCandidates.find(
+                  (candidate) => candidate.id === event.target.value,
+                );
+                if (target) onReplace(target);
+              }}
+            >
+              <option value="" disabled>
+                交換先を選択…
+              </option>
+              {replaceCandidates.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.model}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <dl className={styles.rows}>
           <Row name="メーカー">{definition.manufacturer ?? "—"}</Row>

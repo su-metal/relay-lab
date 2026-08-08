@@ -11,7 +11,14 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { dc24vLamp, dc24vPowerSupply } from "@/circuit/definitions";
+import {
+  dc24vLamp,
+  dc24vPowerSupply,
+  omronMy2nDc24,
+  omronMy4nDc24,
+  pushbuttonNc,
+  pushbuttonNo,
+} from "@/circuit/definitions";
 import type { CircuitDocument } from "@/circuit/types";
 import { useCircuitStore } from "@/store/circuitStore";
 
@@ -129,6 +136,79 @@ describe("削除と選択", () => {
     expect(store().document.connections).toHaveLength(1);
   });
 
+  it("範囲選択でまとめて消しても履歴は 1 手（Undo 1 回で全部戻る）", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const lampA = store().addComponent(dc24vLamp, { x: 200, y: 0 });
+    const lampB = store().addComponent(dc24vLamp, { x: 400, y: 0 });
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: lampA,
+      targetHandle: "1",
+    });
+    store().addConnection({
+      source: lampA,
+      sourceHandle: "2",
+      target: lampB,
+      targetHandle: "1",
+    });
+    const wires = store().document.connections.map((connection) => connection.id);
+    expect(wires).toHaveLength(2);
+
+    const before = store().past.length;
+    // 部品 3 個と配線 2 本 = 要素 5 個を 1 回の削除として渡す
+    store().removeElements([power, lampA, lampB], wires);
+
+    expect(store().document.components).toHaveLength(0);
+    expect(store().document.connections).toHaveLength(0);
+    expect(store().past).toHaveLength(before + 1);
+
+    store().undo();
+    expect(store().document.components).toHaveLength(3);
+    expect(store().document.connections).toHaveLength(2);
+  });
+
+  it("配線だけを消しても部品は残る", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const lamp = store().addComponent(dc24vLamp, { x: 200, y: 0 });
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: lamp,
+      targetHandle: "1",
+    });
+    const wire = store().document.connections[0]!.id;
+
+    store().removeElements([], [wire]);
+
+    expect(store().document.connections).toHaveLength(0);
+    expect(store().document.components).toHaveLength(2);
+  });
+
+  it("存在しない ID だけなら履歴を汚さない", () => {
+    store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const before = store().past.length;
+
+    store().removeElements(["cmp-missing"], ["wire-missing"]);
+    store().removeElements([], []);
+
+    expect(store().past).toHaveLength(before);
+  });
+
+  it("setSelectedConnections は選択を丸ごと差し替える", () => {
+    store().setSelectedConnections(["wire-a", "wire-b"]);
+    expect(store().selectedConnectionIds).toEqual(["wire-a", "wire-b"]);
+
+    // 枠を縮めて外れた配線は残さない
+    store().setSelectedConnections(["wire-b"]);
+    expect(store().selectedConnectionIds).toEqual(["wire-b"]);
+
+    // 中身が同じなら参照も変えない（範囲選択中の毎フレーム再描画を止める）
+    const kept = store().selectedConnectionIds;
+    store().setSelectedConnections(["wire-b"]);
+    expect(store().selectedConnectionIds).toBe(kept);
+  });
+
   it("Undo で消えた部品を選択したままにしない", () => {
     const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
     store().setComponentSelected(power, true);
@@ -204,6 +284,89 @@ describe("左右反転", () => {
     store().flipComponents([]);
 
     expect(store().past).toHaveLength(before);
+  });
+});
+
+describe("部品の交換（接続を維持したまま定義を差し替える）", () => {
+  it("端子 ID が一致する交換（A接点→B接点）では配線が 1 本も切れない", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const button = store().addComponent(pushbuttonNo, { x: 200, y: 0 });
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: button,
+      targetHandle: "1",
+    });
+    const before = store().past.length;
+
+    store().replaceComponentDefinition(button, pushbuttonNc);
+
+    expect(
+      store().document.components.find((c) => c.id === button)?.definitionId,
+    ).toBe(pushbuttonNc.id);
+    expect(store().document.connections).toHaveLength(1);
+    expect(store().past).toHaveLength(before + 1);
+
+    store().undo();
+    expect(
+      store().document.components.find((c) => c.id === button)?.definitionId,
+    ).toBe(pushbuttonNo.id);
+  });
+
+  it("接点が減る交換（MY4N→MY2N）では、無くなった端子への配線だけを間引く", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const relay = store().addComponent(omronMy4nDc24, { x: 200, y: 0 });
+    // MY2N でも維持される第1接点（1-5-9）と、MY2N には無くなる第2接点（2-6-10）
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: relay,
+      targetHandle: "9",
+    });
+    store().addConnection({
+      source: power,
+      sourceHandle: "zero",
+      target: relay,
+      targetHandle: "10",
+    });
+    expect(store().document.connections).toHaveLength(2);
+
+    store().replaceComponentDefinition(relay, omronMy2nDc24);
+
+    expect(
+      store().document.components.find((c) => c.id === relay)?.definitionId,
+    ).toBe(omronMy2nDc24.id);
+    const remaining = store().document.connections;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.to.terminalId).toBe("9");
+  });
+
+  it("存在しない部品や同じ定義への交換は空振り（履歴を汚さない）", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const before = store().past.length;
+
+    store().replaceComponentDefinition("cmp-missing", dc24vLamp);
+    store().replaceComponentDefinition(power, dc24vPowerSupply);
+
+    expect(store().past).toHaveLength(before);
+  });
+
+  it("交換で外れた配線が選択中だったら選択からも外す", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const relay = store().addComponent(omronMy4nDc24, { x: 200, y: 0 });
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: relay,
+      targetHandle: "2",
+    });
+    const wire = store().document.connections[0]!.id;
+    store().setConnectionSelected(wire, true);
+
+    store().replaceComponentDefinition(relay, omronMy2nDc24);
+
+    expect(store().document.connections).toHaveLength(0);
+    expect(store().selectedConnectionIds).toEqual([]);
   });
 });
 

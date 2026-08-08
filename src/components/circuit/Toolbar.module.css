@@ -54,6 +54,62 @@
   cursor: not-allowed;
 }
 
+/* 入っているモードを塗りで示す */
+.button[data-active] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+/* セグメントが何の設定なのかを示す見出し（範囲選択の対象） */
+.groupLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/*
+ * 範囲選択の対象（部品＋配線 / 部品 / 配線）。
+ * 3 つのうち必ず 1 つが入っている排他選択なので、独立したボタンではなく
+ * 連結したセグメントで「どれか 1 つ」であることを見せる。
+ */
+.segmented {
+  display: flex;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segment {
+  padding: 0 10px;
+  border: none;
+  border-left: 1px solid var(--border);
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.12s ease-out,
+    background 0.12s ease-out;
+}
+
+.segment:first-child {
+  border-left: none;
+}
+
+.segment:hover {
+  background: var(--bg);
+}
+
+.segment[data-active] {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
 /* 収束結果。発振はエラーではないので赤にしない（design.md §5.5） */
 .status {
   padding: 2px 10px;

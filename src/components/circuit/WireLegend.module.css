@@ -1,0 +1,47 @@
+.legend {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 6px 12px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+  /* 図面を読む邪魔をしない。キャンバス操作はこの下の要素に通す */
+  pointer-events: auto;
+  user-select: none;
+}
+
+.item {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* 見本は実際の配線と同じ 2px の線で描く。四角い色チップだと線の破線が伝わらない */
+.swatch {
+  width: 18px;
+  border-top: 2px solid var(--wire-inactive);
+}
+
+.plus {
+  border-top-color: var(--wire-plus);
+}
+
+.zero {
+  border-top-color: var(--wire-minus);
+}
+
+.control {
+  border-top-color: var(--wire-control);
+}
+
+.isolated {
+  border-top-style: dashed;
+}

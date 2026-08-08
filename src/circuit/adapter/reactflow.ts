@@ -32,8 +32,14 @@ import {
 /** 全部品が使う唯一のノード種別。型番ごとのノードは作らない（design.md §2） */
 export const DEVICE_NODE_TYPE = "device";
 
-/** 配線の Edge 種別。直交配線に近い見た目になる */
-export const WIRE_EDGE_TYPE = "smoothstep";
+/**
+ * 配線の Edge 種別（`components/edges/WireEdge.tsx`）。
+ *
+ * 標準の `"smoothstep"` ではなく自前の Edge を使う。折れる位置をずらして
+ * 配線の重なりを解くため（レーン分離・design.md §8.7）。見た目は smoothstep と
+ * 同じ直交配線で、経路の計算も React Flow の `getSmoothStepPath` に任せている。
+ */
+export const WIRE_EDGE_TYPE = "wire";
 
 /**
  * `DeviceNode` が描画に使うデータ。
@@ -178,11 +184,28 @@ export const toDeviceNodes = (
   return nodes;
 };
 
+/**
+ * `WireEdge` が描画に使うデータ。
+ *
+ * 電気的な意味は持たない **表示だけの値**。`CircuitConnection` には入れず、
+ * ノードの `terminals` と同じく毎回組み立てる（design.md §8.7）。
+ */
+export type WireEdgeData = {
+  /**
+   * 幹線（中間の直線区間）をずらす量。キャンバス座標の px で、符号は
+   * 縦の幹線なら右が正、横の幹線なら下が正。0 なら既定の経路。
+   */
+  lane?: number;
+};
+
+export type WireEdge = Edge<WireEdgeData, typeof WIRE_EDGE_TYPE>;
+
 /** 1 接続を React Flow の Edge にする */
 export const toWireEdge = (
   connection: CircuitConnection,
   selected = false,
-): Edge => ({
+  lane = 0,
+): WireEdge => ({
   id: connection.id,
   type: WIRE_EDGE_TYPE,
   source: connection.from.componentId,
@@ -190,15 +213,21 @@ export const toWireEdge = (
   target: connection.to.componentId,
   targetHandle: handleIdOf(connection.to.terminalId),
   selected,
+  data: { lane },
 });
 
 export const toWireEdges = (
   document: CircuitDocument,
   selectedConnectionIds: readonly string[] = [],
-): Edge[] => {
+  lanes: ReadonlyMap<string, number> = new Map(),
+): WireEdge[] => {
   const selected = new Set(selectedConnectionIds);
   return document.connections.map((connection) =>
-    toWireEdge(connection, selected.has(connection.id)),
+    toWireEdge(
+      connection,
+      selected.has(connection.id),
+      lanes.get(connection.id) ?? 0,
+    ),
   );
 };
 

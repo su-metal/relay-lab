@@ -7,6 +7,11 @@
   /* 緑の線は細字だと読みにくいので、文字・細線用に一段暗い緑を用意する */
   --wire-energized-text: #15803d;
   --wire-short: #dc2626;
+  /*
+   * 停止中の制御線（design.md §5.8）。実務の盤配線の黄に寄せる。
+   * 純黄（#eab308）は 2px の線にすると薄い背景に埋もれるので一段暗く取る
+   */
+  --wire-control: #ca8a04;
 
   --bg: #f8fafc;
   --panel: #ffffff;
@@ -18,6 +23,8 @@
   /* 操作系 */
   --accent: #2563eb;
   --accent-soft: #bfdbfe;
+  /* 入っているモードの下地。--accent の文字を 11px で載せるので薄く取る */
+  --accent-tint: #eff6ff;
   --run: #16a34a;
 
   /* 部品ノード */

@@ -13,12 +13,14 @@
  */
 
 import { ReactFlowProvider } from "@xyflow/react";
+import { useState } from "react";
 
 import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { WarningList } from "./WarningList";
+import type { RangeSelectionTarget } from "./range-selection";
 import { useDocumentPersistence } from "./useDocumentPersistence";
 import { useFlipShortcut } from "./useFlipShortcut";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -41,9 +43,18 @@ function Workspace() {
   useHistoryShortcuts();
   useFlipShortcut();
 
+  // 範囲選択の設定は画面の操作モードで、保存対象でも履歴の対象でもない。
+  // circuitStore に混ぜず、操作バーとキャンバスがここで共有する（design.md §8.6）
+  const [rangeSelectionTarget, setRangeSelectionTarget] =
+    useState<RangeSelectionTarget>("both");
+
   return (
     <div className={styles.workspace}>
-      <Toolbar saveStatus={persistence.status} />
+      <Toolbar
+        saveStatus={persistence.status}
+        rangeSelectionTarget={rangeSelectionTarget}
+        onRangeSelectionTargetChange={setRangeSelectionTarget}
+      />
 
       {persistence.notices.length > 0 && (
         <LoadNotices
@@ -54,7 +65,7 @@ function Workspace() {
 
       <div className={styles.columns}>
         <ComponentPalette />
-        <CircuitCanvas />
+        <CircuitCanvas rangeSelectionTarget={rangeSelectionTarget} />
         <div className={styles.inspector}>
           <PropertiesPanel />
           <WarningList />

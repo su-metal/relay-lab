@@ -1,0 +1,27 @@
+/*
+ * 配線の縁取り（design.md §8.7）。
+ *
+ * レーン分離でも離しきれない箇所は残る ―― 部品が近すぎて幹線を動かす余地が無い
+ * 場合と、そもそも直交する 2 本が交わっている場合。そこで**ホバー中と選択中の
+ * 1 本だけ**、背景色の帯を下に敷いて周りの線を抜く。線が団子になっていても、
+ * マウスを乗せた 1 本の経路は端から端まで追える。
+ *
+ * 帯が効くのはその配線が最前面に来ているときだけなので、`CircuitCanvas` 側で
+ * ホバー中の Edge に `zIndex` を与え、選択中は `elevateEdgesOnSelect` に任せる。
+ */
+.halo {
+  fill: none;
+  stroke: var(--canvas-bg);
+  stroke-width: 9;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0;
+  /* 当たり判定は本体の interaction path が持つ。帯で掴めると線から離れて選べてしまう */
+  pointer-events: none;
+  transition: opacity 0.12s ease-out;
+}
+
+:global(.react-flow__edge):hover > .halo,
+:global(.react-flow__edge.selected) > .halo {
+  opacity: 1;
+}

@@ -27,20 +27,35 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
 
   /*
-   * 反転したら React Flow に端子を測り直させる（design.md §8.1）。
+   * 端子の並びが変わったら React Flow に測り直させる（design.md §8.1）。
    *
    * **これが無いと配線が端子から外れる。** React Flow は端子の座標
    * （handleBounds）をノードごとにキャッシュしており、更新するのは
    * ①ノードのサイズが変わったとき（ResizeObserver）②`type` /
    * `sourcePosition` / `targetPosition` が変わったとき の 2 つだけ。
-   * 左右反転はそのどれにも当たらない — 寸法は同じまま、端子の DOM だけが
-   * 反対側へ移る。結果、Edge は**反転前の位置**に貼り付いたまま残り、
+   * 左右反転（寸法は同じまま端子の DOM だけが反対側へ移る）も、
+   * 部品交換（`replaceComponentDefinition`）で寸法が同じ型番へ移った場合も、
+   * そのどちらにも当たらない。結果、Edge だけが**変更前の座標**に貼り付き、
    * 配線が部品から切れて見える（接続そのものは保たれている）。
+   *
+   * **依存には「測り直すべき条件」そのものを 1 本のキーで渡す。**
+   * `flipped` や `definition.id` のような *要因* を並べる形にすると、
+   * 端子配置を動かす要因が増えるたびに依存配列の長さが変わり、
+   * Fast Refresh が「配列のサイズが変わった」と警告する（開発時のみ）。
+   * ここで見たいのは要因ではなく結果 —— 実際に描く Handle の
+   * ID・辺・位置が変わったか —— なので、それを文字列にして渡す。
    */
+  const terminalSignature = terminals
+    .map(
+      (terminal) =>
+        `${terminal.id}:${terminal.side}:${terminal.position.x},${terminal.position.y}`,
+    )
+    .join("|");
+
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => {
     updateNodeInternals(id);
-  }, [id, flipped, updateNodeInternals]);
+  }, [id, terminalSignature, updateNodeInternals]);
 
   return (
     <div

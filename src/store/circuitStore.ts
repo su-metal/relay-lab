@@ -86,7 +86,17 @@ export type CircuitStore = {
   /** パレットからのドロップ。`position` はキャンバス座標系の左上 */
   addComponent: (definition: ComponentDefinition, position: Point) => string;
   moveComponent: (componentId: string, position: Point) => void;
-  removeComponents: (componentIds: readonly string[]) => void;
+
+  /**
+   * 部品と配線を **1 手として**消す。部品を消せばその端子に繋がる配線も道連れ。
+   *
+   * 削除の入口はこれ 1 本に絞る。要素ごとに呼べる API を残すと、範囲選択で
+   * 5 個消したときに履歴が 5 手積まれ、1 回の削除を戻すのに 5 回 Undo が要る。
+   */
+  removeElements: (
+    componentIds: readonly string[],
+    connectionIds: readonly string[],
+  ) => void;
 
   /**
    * インスタンスのラベル（"RY1"）を変更する。空文字は未設定（`undefined`）に戻す。
@@ -105,14 +115,38 @@ export type CircuitStore = {
   flipComponents: (componentIds: readonly string[]) => void;
 
   /**
+   * インスタンスの `definitionId` だけを差し替える（同じ ID・位置・ラベルは維持）。
+   *
+   * 接続 (`CircuitConnection`) は componentId + terminalId で端子を指すので、
+   * 差し替え後の定義に無い端子を指す配線だけを間引けば、他の配線は
+   * インスタンス ID が同じままつながり続ける。A 接点 → B 接点のようにラベルが
+   * 一致する差し替えでは配線は 1 本も切れない。MY4N → MY2N のように接点が
+   * 減る差し替えでは、無くなった端子への配線だけが黙って外れる（design.md §7）。
+   *
+   * 履歴は 1 手。差し替え先が無い ID・現在と同じ定義への差し替えは空振りとして
+   * 履歴を汚さない。
+   */
+  replaceComponentDefinition: (
+    componentId: string,
+    definition: ComponentDefinition,
+  ) => void;
+
+  /**
    * React Flow の接続イベントから配線を足す。
    * 端子以外への接続と重複配線はここで捨てる（adapter が判定する）。
    */
   addConnection: (params: Connection) => void;
-  removeConnections: (connectionIds: readonly string[]) => void;
 
   setComponentSelected: (componentId: string, selected: boolean) => void;
   setConnectionSelected: (connectionId: string, selected: boolean) => void;
+  /**
+   * 選択中の配線を丸ごと差し替える。範囲選択中に「枠に触れた配線」を
+   * 毎フレーム組み立て直すための入口（design.md §8.6）。
+   * 1 本ずつのトグルでは、枠を縮めたときに外れた配線が選択に残る。
+   */
+  setSelectedConnections: (connectionIds: readonly string[]) => void;
+  /** 同上、部品側 */
+  setSelectedComponents: (componentIds: readonly string[]) => void;
   selectOnlyComponent: (componentId: string) => void;
   clearSelection: () => void;
   removeSelected: () => void;
@@ -146,6 +180,17 @@ const withSelected = (
   const has = ids.includes(id);
   if (selected === has) return ids;
   return selected ? [...ids, id] : ids.filter((current) => current !== id);
+};
+
+/**
+ * 同じ ID 集合か（順序は問わない）。
+ * 範囲選択中は毎フレーム選択を組み立て直すので、中身が同じなら
+ * ここで弾いて再描画を止める（MY4N 1 個で端子 14 個ぶんの描画が走る）。
+ */
+const sameIds = (a: readonly string[], b: readonly string[]): boolean => {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((id) => set.has(id));
 };
 
 /** 存在しなくなった ID を選択から外す。変化が無ければ同じ配列を返す */
@@ -320,23 +365,77 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
       });
     },
 
-    removeComponents: (componentIds) => {
-      if (componentIds.length === 0) return;
-      const removed = new Set(componentIds);
+    replaceComponentDefinition: (componentId, definition) => {
       set((state) => {
-        const next = removeFromDocument(state.document, removed, new Set());
-        if (next.components.length === state.document.components.length) {
+        const target = state.document.components.find(
+          (component) => component.id === componentId,
+        );
+        if (!target || target.definitionId === definition.id) return {};
+
+        const terminalIds = new Set(
+          definition.terminals.map((terminal) => terminal.id),
+        );
+        const components = state.document.components.map((component) =>
+          component.id === componentId
+            ? { ...component, definitionId: definition.id }
+            : component,
+        );
+        // 差し替え後に存在しない端子を指す配線だけを間引く。両端とも残っている
+        // 配線には触れない — 接続はインスタンス ID を指すので、定義が変わっても
+        // 端子 ID さえ一致すればつながったままでよい
+        const connections = state.document.connections.filter((connection) => {
+          if (
+            connection.from.componentId === componentId &&
+            !terminalIds.has(connection.from.terminalId)
+          ) {
+            return false;
+          }
+          if (
+            connection.to.componentId === componentId &&
+            !terminalIds.has(connection.to.terminalId)
+          ) {
+            return false;
+          }
+          return true;
+        });
+
+        const next = { ...state.document, components, connections };
+        const alive = idsOf(next);
+        return {
+          ...commit(state, next),
+          selectedConnectionIds: retained(
+            state.selectedConnectionIds,
+            alive.connections,
+          ),
+        };
+      });
+    },
+
+    removeElements: (componentIds, connectionIds) => {
+      if (componentIds.length + connectionIds.length === 0) return;
+      set((state) => {
+        const next = removeFromDocument(
+          state.document,
+          new Set(componentIds),
+          new Set(connectionIds),
+        );
+        // 空振り（存在しない ID だけ）なら履歴を汚さない
+        if (
+          next.components.length === state.document.components.length &&
+          next.connections.length === state.document.connections.length
+        ) {
           return {};
         }
+        const alive = idsOf(next);
         return {
           ...commit(state, next),
           selectedComponentIds: retained(
             state.selectedComponentIds,
-            new Set(next.components.map((component) => component.id)),
+            alive.components,
           ),
           selectedConnectionIds: retained(
             state.selectedConnectionIds,
-            new Set(next.connections.map((connection) => connection.id)),
+            alive.connections,
           ),
         };
       });
@@ -353,24 +452,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           connections: [...state.document.connections, candidate],
         }),
       );
-    },
-
-    removeConnections: (connectionIds) => {
-      if (connectionIds.length === 0) return;
-      const removed = new Set(connectionIds);
-      set((state) => {
-        const next = removeFromDocument(state.document, new Set(), removed);
-        if (next.connections.length === state.document.connections.length) {
-          return {};
-        }
-        return {
-          ...commit(state, next),
-          selectedConnectionIds: retained(
-            state.selectedConnectionIds,
-            new Set(next.connections.map((connection) => connection.id)),
-          ),
-        };
-      });
     },
 
     setComponentSelected: (componentId, selected) =>
@@ -397,6 +478,20 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           : { selectedConnectionIds: next };
       }),
 
+    setSelectedConnections: (connectionIds) =>
+      set((state) =>
+        sameIds(state.selectedConnectionIds, connectionIds)
+          ? {}
+          : { selectedConnectionIds: [...connectionIds] },
+      ),
+
+    setSelectedComponents: (componentIds) =>
+      set((state) =>
+        sameIds(state.selectedComponentIds, componentIds)
+          ? {}
+          : { selectedComponentIds: [...componentIds] },
+      ),
+
     // 警告一覧から該当部品へ飛ぶ操作。他の選択は解く（design.md §8.4）
     selectOnlyComponent: (componentId) =>
       set({
@@ -407,31 +502,12 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
     clearSelection: () =>
       set({ selectedComponentIds: [], selectedConnectionIds: [] }),
 
-    // 部品と配線を 1 回の操作として消す。removeConnections → removeComponents と
-    // 順に呼ぶと Undo 2 回分の履歴になり、1 回の削除が 2 手で戻ることになる
+    // 選択の削除も removeElements を通す。「配線を消してから部品を消す」と
+    // 順に呼ぶと Undo 2 手ぶんの履歴になり、1 回の削除が 2 手で戻ることになる
     removeSelected: () => {
-      const { selectedComponentIds, selectedConnectionIds } = get();
-      if (selectedComponentIds.length + selectedConnectionIds.length === 0) {
-        return;
-      }
-      set((state) => {
-        const next = removeFromDocument(
-          state.document,
-          new Set(selectedComponentIds),
-          new Set(selectedConnectionIds),
-        );
-        if (
-          next.components.length === state.document.components.length &&
-          next.connections.length === state.document.connections.length
-        ) {
-          return {};
-        }
-        return {
-          ...commit(state, next),
-          selectedComponentIds: [],
-          selectedConnectionIds: [],
-        };
-      });
+      const { selectedComponentIds, selectedConnectionIds, removeElements } =
+        get();
+      removeElements(selectedComponentIds, selectedConnectionIds);
     },
 
     setViewport: (viewport) =>

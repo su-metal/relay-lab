@@ -68,14 +68,66 @@
   }
 }
 
+/*
+ * 停止中の役割色（design.md §5.8）。実行中の状態色（上記 .wire*）とは
+ * 排他で、どちらか一方しか Edge に載らない。+ 側 / 0V 側は実行中と同じ
+ * 赤・青を使う —— 停止中と実行中で同じ線の色が変わると、色が「状態」なのか
+ * 「役割」なのか読み手が判断できなくなるため。
+ */
+.canvas .wireRolePlus :global(.react-flow__edge-path) {
+  stroke: var(--wire-plus);
+}
+
+.canvas .wireRoleZero :global(.react-flow__edge-path) {
+  stroke: var(--wire-minus);
+}
+
+.canvas .wireRoleControl :global(.react-flow__edge-path) {
+  stroke: var(--wire-control);
+}
+
+/*
+ * どう動作させても電源に届かない線。色は既定の灰のままにして、
+ * 破線でだけ区別する。「配線し忘れ」は警告ではなく気付きの手がかりなので、
+ * 制作途中の回路で目立ちすぎないようにする。
+ */
+.canvas .wireRoleIsolated :global(.react-flow__edge-path) {
+  stroke-dasharray: 5 4;
+}
+
 .canvas :global(.react-flow__edge.selected .react-flow__edge-path) {
   stroke: var(--accent);
   stroke-width: 3;
 }
 
+/*
+ * ホバー中の配線を 1 段太くする（design.md §8.7）。
+ *
+ * レーン分離でも離しきれない箇所 —— 部品が近すぎて幹線をずらす余地が無い場合と、
+ * 直交する 2 本がそもそも交わっている場合 —— を、線 1 本ずつ辿れるようにする。
+ * 色は変えない。色は電位や役割の意味を持っているので、ホバーで上書きすると
+ * 「今どの色の線に触れているのか」が分からなくなる。
+ *
+ * **選択中の指定より後ろに置くこと。** 詳細度が同じ（クラス 3 個＋擬似クラス）なので、
+ * 先に書くと選択中の配線をホバーしても太くならない。
+ */
+.canvas :global(.react-flow__edge:hover .react-flow__edge-path) {
+  stroke-width: 4;
+}
+
 .canvas :global(.react-flow__connection-path) {
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+/*
+ * 範囲選択の枠（design.md §8.6）。React Flow の既定色は薄い青一色で、
+ * ドット背景のキャンバスでは輪郭が読みにくい。枠線をアクセント色の破線にして
+ * 「今どこまで囲えているか」を配線と区別できるようにする。
+ */
+.canvas :global(.react-flow__selection) {
+  border: 1px dashed var(--accent);
+  background: rgb(37 99 235 / 8%);
 }
 
 /* ノードの既定枠は DeviceNode 側で描くので消す */
