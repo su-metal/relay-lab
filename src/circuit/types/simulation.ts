@@ -7,6 +7,15 @@
 export type SimulationInput = {
   /** 押下中の押しボタンの componentId（インスタンス ID） */
   pressedSwitches: ReadonlySet<string>;
+  /**
+   * 直前の励磁状態（前回の `SimulationResult.energizedRelays`）。収束計算の初期値になる。
+   *
+   * 自己保持回路はボタンを離した状態で「全 OFF」と「励磁継続」の 2 つが
+   * ともに安定解になる双安定回路であり、どちらに落ちるかは直前の状態でしか決まらない。
+   * 毎回すべて非励磁から解き直すと自己保持が再現できない（design.md §5.5）。
+   * 省略時は全リレー非励磁から始める（新規回路・リセット時）。
+   */
+  previousEnergizedRelays?: ReadonlySet<string>;
 };
 
 /**

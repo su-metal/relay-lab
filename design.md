@@ -70,9 +70,11 @@ src/
 
   circuit/
     engine/
+      index.ts                   # 公開インターフェース。UI 層はここだけを import する
       simulate.ts                # 収束ループ（エントリポイント）
       graph.ts                   # Union-Find とネット構築
       relay.ts                   # コイル判定・接点内部接続の生成
+      potential.ts               # ネット電位の読み取り（atPlus / atZero / polarityAcross）
       validation.ts              # 短絡・極性・未接続の検出
     types/
       index.ts                   # 再エクスポート。利用側は "@/circuit/types" から取る
@@ -111,6 +113,8 @@ src/
   circuit/engine/__tests__/
     scenarios.test.ts            # 検証回路 テスト1〜5
 ```
+
+**`potential.ts` を分けた理由。** 「+ 側にいる / 0V 側にいる」の解釈はコイル（`relay.ts`）とランプ（`simulate.ts`）の双方が必要とする。`graph.ts` に置くと `graph.ts → relay.ts → graph.ts` の循環参照になるため、依存の末端として独立させた。依存の向きは `potential.ts ← relay.ts ← graph.ts ← simulate.ts` の一本道。
 
 **テストの配置。** エンジンのテストは `src/circuit/engine/__tests__/`、部品定義のテストは
 `src/circuit/definitions/__tests__/` に置く。どちらも `check-docs-fresh.mjs` の監視対象配下なので、
@@ -261,6 +265,7 @@ type CircuitDocument = {
 ```ts
 type SimulationInput = {
   pressedSwitches: ReadonlySet<string>   // 押下中の componentId
+  previousEnergizedRelays?: ReadonlySet<string>  // 直前の励磁状態。収束計算の初期値
 }
 
 type SimulationStatus = "stable" | "oscillating" | "not-converged"
@@ -282,6 +287,8 @@ type NetState = {
 ```
 
 出力側のコレクションを `Readonly*` にしているのは、UI 側が結果を書き換えてストアと不整合を起こすのを型で防ぐため。エンジン内部では通常の `Set` / `Map` を組み立ててそのまま返してよい。
+
+**`previousEnergizedRelays` を入力に持つ理由（Step 2 で判明）。** 自己保持回路はボタンを離した状態で「全リレー非励磁」と「励磁継続」の**両方が安定解になる双安定回路**であり、どちらに落ちるかは直前の状態でしか決まらない。毎回すべて非励磁から解き直すと、ボタンを離した瞬間に必ず全 OFF 側の解へ落ち、自己保持が原理的に再現できない（検証回路テスト 3・4）。前回の `SimulationResult.energizedRelays` をそのまま渡すことで、UI 側は状態遷移を意識せずに済む。省略時は全リレー非励磁から始める（新規回路・シミュレーション開始時）。
 
 `Warning` は §5.7 の 5 種に対応する。
 
@@ -442,14 +449,15 @@ switch (coil.polarity) {
 
 ### 5.5 収束ループ
 
-```ts
-const MAX_SIMULATION_ITERATIONS = 100
+実装は `MAX_ITERATIONS`（`src/lib/app-info.ts`）を参照する。
 
+```ts
 function simulate(doc, defs, input): SimulationResult {
-  let energized = new Set<string>()   // 初期状態は全リレー非励磁
+  // 直前の励磁状態から始める。全 OFF から解き直すと自己保持が再現できない（§3.4）
+  let energized = new Set(input.previousEnergizedRelays ?? [])
   const history: string[] = []
 
-  for (let i = 0; i < MAX_SIMULATION_ITERATIONS; i++) {
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
     const graph = buildGraph(doc, defs, input, energized)  // §5.1
     const nets  = computeNets(graph, doc, defs)            // reachesPlus/Zero
     const next  = evaluateCoils(nets, doc, defs)           // §5.3
@@ -471,6 +479,10 @@ function simulate(doc, defs, input): SimulationResult {
 
 **発振の検出について:** B 接点による自励発振（ブザー回路）は、配線として正しくても必ず起きる。反復上限だけで判定すると正しい回路を「不正な接続」と誤って警告してしまうため、励磁状態のシグネチャ履歴を持ち、同じ状態が再出現したら `oscillating` として区別する。UI では「この回路は発振します（ブザー動作）」と、エラーではなく挙動として提示する。
 
+**返す状態は「最後にグラフを組んだときの励磁状態」。** `oscillating` で打ち切った場合、接点の開閉状態と `energizedRelays` が食い違うと UI の表示が矛盾する。そこで各反復のスナップショット（グラフ構築に使った励磁状態・ネット・警告）を保持し、打ち切り理由によらずその組をそのまま返す。`stable` の場合は次状態と一致しているので差は出ない。
+
+**インターロックと同時押し。** 相互 b 接点のインターロック回路で全 OFF から 2 つの起動ボタンを同時に押すと、「両方励磁 → 両方消磁」を繰り返して `oscillating` になる。これは実機でも競合する条件であり、誤判定ではない。片方が先に励磁していれば（`previousEnergizedRelays` 経由で伝わる）1 反復で `stable` に収束する。
+
 ### 5.6 配線色の決定（要件書 §8 の具体化）
 
 各ネットの `{ reachesPlus, reachesZero }` から決める。
@@ -480,9 +492,21 @@ function simulate(doc, defs, input): SimulationResult {
 | false | false | グレー（非通電） |
 | true | false | 赤（+24V 側） |
 | false | true | 青（0V 側） |
-| true | true | 緑・太線・発光（通電中） |
+| true | true | — （§5.7 の電源短絡。下記の通り緑ではない） |
 
 色だけに依存しないよう、通電中は線幅と発光表現を併用する（要件書 §8）。
+
+**「緑＝通電中」は 2 ビットだけでは決まらない（Step 2 で判明）。** 負荷をグラフ上で union しない設計（§5.2）の下では、`reachesPlus && reachesZero` が成立するネットは +24V 端子と 0V 端子が直結された状態、すなわち **§5.7 の電源短絡そのもの**になる。正常な回路にこのネットは現れない。したがって Step 4 の配線色は次のように決める。
+
+| 条件 | 表示 |
+|---|---|
+| どちらにも到達しない | グレー（非通電） |
+| + 側のみ | 赤 |
+| 0V 側のみ | 青 |
+| **通電中の負荷（励磁コイル・点灯ランプ）に隣接するネット** | 緑・太線・発光 |
+| 両方に到達 | 電源短絡として警告表示（赤の点滅など、通電とは別扱い） |
+
+緑は「電流が流れている経路」であり、判定には負荷側の結果（`energizedRelays` / `litLamps`）が要る。エンジンはネットの 2 ビットを返すところまでを責務とし、緑の割り当ては UI 層（Step 4）で行う。
 
 ### 5.7 警告の検出（validation.ts）
 
@@ -502,6 +526,8 @@ function simulate(doc, defs, input): SimulationResult {
 2. **ダイオードの整流作用は再現しない**（§5.4）。
 3. **電圧・電流・消費電力の数値は扱わない。** 導通の有無のみ。定格電圧の不一致（DC24V ランプに AC100V など）は MVP では検出しない。
 4. **時間の概念がない。** タイマーリレー、接点のチャタリング、動作／復帰時間は扱わない。発振回路は「発振する」と判定するのみで、周期は再現しない。
+5. **同時に変化する入力の競合は解けない。** すべてのコイルを一斉に評価するため、相互 b 接点のインターロック回路で全 OFF から 2 つの起動ボタンを同時に押した場合、実機のように「わずかに早い方が勝つ」のではなく `oscillating` になる（§5.5）。動作時間を持たない以上、どちらが勝つかを決める根拠が無い。
+6. **`simulate()` は履歴を持たない純粋関数。** 自己保持のような双安定回路の状態は呼び出し側が `previousEnergizedRelays` で繋ぐ（§3.4）。渡し忘れると自己保持が毎回解けてしまうため、`simulationStore` 側で必ず前回結果を渡すこと。
 
 これらは `PropertiesPanel` または初回起動時のヘルプで明示し、ユーザーが誤解しないようにする。
 
