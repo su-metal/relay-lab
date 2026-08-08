@@ -761,6 +761,20 @@ Delete / Backspace / **D** ＝削除、**F** ＝選択中の部品を左右反�
 **`side` を写し替えないと壊れる。** 座標だけ反転しても React Flow の Handle の向きは
 元のままなので、配線が部品の内側へ回り込んで出ていく。
 
+**反転したら `updateNodeInternals(id)` を必ず呼ぶ。** これが無いと**配線が端子から
+外れたまま残る。** React Flow は端子の座標を `handleBounds` としてノードごとに
+キャッシュしており、測り直すのは ①ノードの寸法が変わったとき（ResizeObserver）
+②`type` / `sourcePosition` / `targetPosition` が変わったとき の 2 つだけ。左右反転は
+そのどちらにも当たらない — 寸法は同じままで、端子の DOM だけが反対側へ移る。
+結果、`CircuitConnection` は保たれているのに Edge だけが反転前の座標に貼り付き、
+「接続が切れた」ように見える。`DeviceNode` が `flipped` の変化を見て
+`useUpdateNodeInternals()` を呼ぶことで解決する。
+
+なお `useUpdateNodeInternals()` は `requestAnimationFrame` 越しに測り直すため、
+**タブが非表示の間は実行されない**（ブラウザが rAF も ResizeObserver も止めるため）。
+表示に戻れば React Flow 自身の ResizeObserver も含めて測り直しが走るので実害は無いが、
+自動テストでこの経路を検証するときは踏む。
+
 **図記号は SVG だけを `scaleX(-1)` する。** ダイオードの三角や電池の長線／短線は向きが
 意味を持つので、端子だけ反転すると絵と端子ラベルが食い違う。一方でキャプションや
 押しボタンの操作ボタンは文字なので、鏡像にすると読めなくなる。`DeviceNode` が外枠へ付ける

@@ -8,8 +8,9 @@
  * **新型番の追加が定義ファイル 1 枚で完結する**ことを UI 側で保証しているのがここ。
  */
 
+import { useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import { memo } from "react";
+import { memo, useEffect } from "react";
 
 import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
 import { hasRealTerminalNumbers } from "@/lib/component-display";
@@ -24,6 +25,22 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
+
+  /*
+   * 反転したら React Flow に端子を測り直させる（design.md §8.1）。
+   *
+   * **これが無いと配線が端子から外れる。** React Flow は端子の座標
+   * （handleBounds）をノードごとにキャッシュしており、更新するのは
+   * ①ノードのサイズが変わったとき（ResizeObserver）②`type` /
+   * `sourcePosition` / `targetPosition` が変わったとき の 2 つだけ。
+   * 左右反転はそのどれにも当たらない — 寸法は同じまま、端子の DOM だけが
+   * 反対側へ移る。結果、Edge は**反転前の位置**に貼り付いたまま残り、
+   * 配線が部品から切れて見える（接続そのものは保たれている）。
+   */
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, flipped, updateNodeInternals]);
 
   return (
     <div
