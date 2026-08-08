@@ -35,6 +35,8 @@
 
 `.claude/hooks/check-docs-fresh.mjs`（Stop フック）が `src/circuit/{types,definitions,engine}/` の未コミット差分と `design.md` を突き合わせ、更新漏れがあれば終了をブロックする。整形やコメント修正など更新不要な場合は、理由を述べて終了してよい。**このフックは初回コミット以降のみ動作する。**
 
+このため、ツールチェーン疎通など回路モデルと無関係なテストは `src/__tests__/` に置き、監視対象ディレクトリを汚さない。
+
 ## 開発フロー
 
 Step 単位（`requirements.md` 参照）で以下を回す。
@@ -43,5 +45,12 @@ Step 単位（`requirements.md` 参照）で以下を回す。
 2. 実装し、`npm test` で検証する。成功を主張せず、テスト出力を示す
 3. コミットする
 4. 次の Step の前に `/clear` する
+
+Stop フックは 2 本ある（`.claude/settings.json`）。
+
+| フック | 役割 |
+|---|---|
+| `check-tests-pass.mjs` | `vitest run` を実行し、落ちていれば終了をブロックして出力を差し戻す。`node_modules` が無い間は素通り |
+| `check-docs-fresh.mjs` | 上記のドキュメント更新漏れを検出する。初回コミット以降のみ動作 |
 
 タスク分解と進捗は `TodoWrite` で管理する（`tasklist.md` は作らない）。記述はすべて日本語。

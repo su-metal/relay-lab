@@ -7,6 +7,13 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/check-tests-pass.mjs"],
+            "timeout": 120,
+            "statusMessage": "テストを実行中..."
+          },
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/check-docs-fresh.mjs"],
             "timeout": 15,
             "statusMessage": "ドキュメントの更新漏れを確認中..."

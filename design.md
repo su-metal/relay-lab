@@ -33,10 +33,23 @@
 ## 2. ディレクトリ構成
 
 ```
+package.json
+tsconfig.json                    # strict / paths "@/*" → "./src/*"
+next.config.ts
+vitest.config.ts                 # environment: node / include: src/**/*.test.ts
+.claude/
+  launch.json                    # dev サーバー起動設定
+  settings.json                  # Stop フックの登録
+  hooks/
+    check-tests-pass.mjs         # npm test の検証ゲート
+    check-docs-fresh.mjs         # design.md の更新漏れ検出
+
 src/
   app/
     layout.tsx
     page.tsx                     # 3カラムレイアウト
+    globals.css                  # 配色変数（配線色は §5.6）とリセット
+    page.module.css
 
   components/
     circuit/
@@ -85,9 +98,19 @@ src/
     circuitStore.ts
     simulationStore.ts
 
+  lib/
+    app-info.ts                  # アプリ名・収束の最大反復回数など UI とエンジンの共有定数
+
+  __tests__/
+    setup.test.ts                # ツールチェーン疎通のスモークテスト
+
   circuit/engine/__tests__/
     scenarios.test.ts            # 検証回路 テスト1〜5
 ```
+
+**テストの配置。** エンジンのテストは `src/circuit/engine/__tests__/` に置く。ツールチェーン自体の
+疎通テストだけ `src/__tests__/` に分ける — `src/circuit/{types,definitions,engine}/` は
+`check-docs-fresh.mjs` の監視対象で、ここにファイルを増やすと design.md の更新が要求されるため。
 
 **要件書の構成からの変更点:** 型番ごとのノードコンポーネント（`RelayNode.tsx` 等）を作らず、汎用 `DeviceNode` が `ComponentDefinition` を読んで描画する。カテゴリ固有の差分（ランプの発光、押しボタンの押下表現）だけを `bodies/` に切り出す。これにより「新型番の追加＝定義ファイル 1 枚」を保証する。
 
