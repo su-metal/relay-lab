@@ -59,6 +59,7 @@ src/
       PropertiesPanel.tsx
       Toolbar.tsx
       palette-dnd.ts             # D&D の MIME と読み取り
+      useSimulationSync.ts       # 入力変化 → simulate() の再実行トリガー（§8.2）
       *.module.css
     nodes/
       DeviceNode.tsx             # 汎用ノード（定義駆動で描画）
@@ -107,12 +108,14 @@ src/
         registry.test.ts         # レジストリ取得と §4.1 端子表の突き合わせ
     adapter/
       reactflow.ts               # Node/Edge ⇄ CircuitDocument
+      simulation-view.ts         # SimulationResult → 配線色・部品状態（§5.6・§8.2）
       __tests__/
         reactflow.test.ts        # 往復変換と重複配線の判定（§8.1）
+        simulation-view.test.ts  # 配線色の導出（§5.6）
 
   store/
     circuitStore.ts
-    simulationStore.ts           # Step 4
+    simulationStore.ts           # 実行時状態のみ（§7）
 
   lib/
     app-info.ts                  # アプリ名・収束の最大反復回数など UI とエンジンの共有定数
@@ -129,7 +132,12 @@ src/
 
 **adapter のテストが `check-docs-fresh.mjs` の監視外にある理由。** 監視対象は
 `types/` `definitions/` `engine/`（＝回路モデルそのもの）で、`adapter/` は表示との変換層。
-ここは design.md §8.1 と対応するので、変換規則を変えたときは §8.1 を直す。
+ここは design.md §8.1・§8.2 と対応するので、変換規則を変えたときはそちらを直す。
+
+**`simulation-view.ts` を adapter に置いた理由。** 「どのネットを緑にするか」は
+エンジンの 2 ビットだけでは決まらず、負荷側の結果と突き合わせる必要がある（§5.6）。
+これをエンジンに入れると表示都合が回路モデルへ染み出すので、adapter 側で受け持つ。
+React を import しない純粋関数なので、UI を起動せずに配線色を検証できる。
 
 **テストの配置。** エンジンのテストは `src/circuit/engine/__tests__/`、部品定義のテストは
 `src/circuit/definitions/__tests__/` に置く。どちらも `check-docs-fresh.mjs` の監視対象配下なので、
@@ -523,6 +531,26 @@ function simulate(doc, defs, input): SimulationResult {
 
 緑は「電流が流れている経路」であり、判定には負荷側の結果（`energizedRelays` / `litLamps`）が要る。エンジンはネットの 2 ビットを返すところまでを責務とし、緑の割り当ては UI 層（Step 4）で行う。
 
+**Step 4 での実装。** `adapter/simulation-view.ts` の `WireState`（5 値）に落とす。
+
+```ts
+type WireState = "inactive" | "plus" | "zero" | "energized" | "short"
+```
+
+| 値 | 条件 | 表示 |
+|---|---|---|
+| `inactive` | どちらにも到達しない | グレー・2px |
+| `plus` | + 側のみ | 赤 |
+| `zero` | 0V 側のみ | 青 |
+| `energized` | 通電中の負荷に隣接するネット | 緑・3.5px・発光 |
+| `short` | 両方に到達 | 赤・3.5px・点滅 |
+
+判定順は **`short` を最初に置く。** 短絡したネットを緑（正常な通電）として描くと、最も危険な配線ミスが最も安全に見える。
+
+「通電中の負荷に隣接するネット」は、励磁したコイルの `positiveTerminal` / `negativeTerminal` と、点灯したランプの 2 端子が属するネットを集めて求める。負荷は union されていない（§5.2）ので、電流の経路はこの 2 点からしか辿れない。
+
+同じ `WireState` を**端子の色にも使う。** 端子を無彩色のままにすると、接点の先で色が途切れて配線が切れているように見える。
+
 ### 5.7 警告の検出（validation.ts）
 
 | 警告 | `WarningCode` | 既定の `severity` | 検出方法 |
@@ -558,9 +586,13 @@ React Flow のノード移動は毎フレーム `onNodesChange` を発火する�
 
 ### simulationStore（実行時のみ）
 
-`running` / `pressedSwitches` / 最新の `SimulationResult` を保持。保存対象に含めない。押しボタンの `onMouseDown` / `onMouseUp` で `pressedSwitches` を更新し、変更のたびに `simulate()` を呼ぶ。
+`running` / `pressedSwitches` / 最新の `SimulationResult` を保持。保存対象に含めない。押しボタンの `onPointerDown` / `onPointerUp` で `pressedSwitches` を更新し、変更のたびに `simulate()` を呼ぶ。
 
 **ストアを分けた理由:** 保存対象とシミュレーション一時状態を混在させると、保存 JSON に実行時状態が混入し、Undo 履歴もシミュレーション中の変化で汚染される。
+
+**ストア間の依存は `simulationStore → circuitStore` の一方向だけ**（`evaluate()` が `useCircuitStore.getState().document` を読む）。回路が変わればシミュレーションを解き直すべきだが、シミュレーション結果が回路を書き換えることは無い。
+
+**`start()` は前回の結果を捨てる。** 残すと前回の励磁状態が `previousEnergizedRelays` として引き継がれ、押していない自己保持回路が最初から励磁した状態で立ち上がる。停止 → 開始が「電源を入れ直す」操作になるよう、`stop()` も `pressedSwitches` ごとクリアする。
 
 ---
 
@@ -618,6 +650,48 @@ Delete / Backspace ＝削除。左ドラッグを範囲選択にすると、配�
 **`visual` は端子番号の可読性で決める。** 型番表示が図記号を押し出さない大きさが必要で、
 汎用部品の「型番」は長い日本語（"押しボタン A接点（モーメンタリ）"）になる。
 Step 3 で 押しボタン 160×125 / 電源 150×110 / ランプ 140×130 / MY4N 260×220 に調整した。
+
+### 8.2 エンジンの接続（Step 4 で確定）
+
+**再計算のトリガーは `useSimulationSync` の 1 箇所だけ。** `simulate()` は履歴を
+持たない純粋関数なので、入力（回路 / 押下状態 / 実行状態）が変わったら誰かが
+呼び直す必要がある。各コンポーネントが思い思いに `evaluate()` を叩くと、同じ入力で
+何度も解いたり逆に解き忘れたりするので、`CircuitWorkspace` から 1 回呼ぶ形に集約した。
+
+- 依存に `document` 全体ではなく `components` / `connections` を並べる。
+  **パンやズームで `viewport` が変わるたびに回路を解き直さないため。**
+- `result` は依存に入れない。入れると 評価 → 結果更新 → 再評価 の無限ループになる
+
+**シミュレーション状態はノードの `data` に載せて配る。**
+`DeviceNodeData` に `simulation`（励磁 / 点灯 / 押下）と `terminalStates` を持たせ、
+`toDeviceNodes()` が `SimulationView` から詰める。ノードは元々ドキュメントから
+毎回組み直す派生データなので、実行中に組み直しても §8.1 の `measured` の約束さえ
+守れば壊れない。
+
+**`simulation` が `undefined` であることが「停止中」を表す。** 別途 `running`
+フラグを持たせると、停止中なのに `energized: false` が描画側へ流れ、
+「消磁した」と「そもそも動いていない」が区別できなくなる。
+
+**押しボタンはボディ側の `<button>` で操作する。**
+
+- モーメンタリなので `onPointerDown` で押下、`onPointerUp` で復帰。
+  `pointerleave` / `pointercancel` でも必ず復帰させる。ボタン外でマウスを離したまま
+  押下状態が残ると、自己保持の検証で「離したのに保持が効いている」と誤読する
+- React Flow の `nodrag` クラスを付け、`stopPropagation()` も併用してノードドラッグと
+  競合させない
+- キーボードは `keydown` / `keyup` で扱う。`button` 既定の `click` では
+  「押しっぱなし」を表現できない
+
+**配線色は CSS Modules のクラスで当てる。** `WireState` → クラス の対応表を
+`CircuitCanvas` が持ち、React Flow の Edge の `className` として渡す。
+セレクタは `.canvas .wireXxx :global(.react-flow__edge-path)` の 3 クラスで、
+既定色（2 クラス）より強く、選択中（`.react-flow__edge.selected` を含む 4 クラス）
+より弱い。**実行中でも選択した配線はアクセント色で判別できる**必要があるため、
+この強さの順序は崩さないこと。
+
+**警告は Step 4 では一覧表示しない。** 操作バーに出すのは収束結果
+（`実行中` / `発振中（ブザー動作）` / `収束しません`）だけで、`Warning[]` の
+提示は Step 6。発振はエラーではないので、赤ではなく警告色で出す（§5.5）。
 
 ---
 

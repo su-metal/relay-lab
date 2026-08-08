@@ -18,8 +18,8 @@ import { DeviceTerminal } from "./DeviceTerminal";
 import styles from "./DeviceNode.module.css";
 import { bodyForCategory } from "./bodies";
 
-function DeviceNodeComponent({ data, selected }: NodeProps<DeviceNodeType>) {
-  const { definition, label } = data;
+function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) {
+  const { definition, label, simulation, terminalStates } = data;
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
@@ -29,6 +29,10 @@ function DeviceNodeComponent({ data, selected }: NodeProps<DeviceNodeType>) {
       className={styles.node}
       data-category={definition.category}
       data-selected={selected ? "true" : undefined}
+      // `simulation` の有無がそのまま「シミュレーション中か」を表す
+      data-running={simulation ? "true" : undefined}
+      data-energized={simulation?.energized ? "true" : undefined}
+      data-lit={simulation?.lit ? "true" : undefined}
       style={{
         width: definition.visual.width,
         height: definition.visual.height,
@@ -46,7 +50,11 @@ function DeviceNodeComponent({ data, selected }: NodeProps<DeviceNodeType>) {
             {definition.model}
           </span>
         </div>
-        <Body definition={definition} />
+        <Body
+          definition={definition}
+          componentId={id}
+          simulation={simulation}
+        />
         {/* 未検証の端子データを検証済みに見せない（CLAUDE.md 設計原則 5） */}
         {showUnverified && (
           <span className={styles.unverified} title={definition.source}>
@@ -56,7 +64,11 @@ function DeviceNodeComponent({ data, selected }: NodeProps<DeviceNodeType>) {
       </div>
 
       {definition.terminals.map((terminal) => (
-        <DeviceTerminal key={terminal.id} terminal={terminal} />
+        <DeviceTerminal
+          key={terminal.id}
+          terminal={terminal}
+          state={terminalStates?.get(terminal.id)}
+        />
       ))}
     </div>
   );

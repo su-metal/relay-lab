@@ -82,7 +82,8 @@ export function PropertiesPanel() {
       )}
 
       <p className={styles.note}>
-        端子ごとの状態表示は Step 5、シミュレーションは Step 4 で有効になります。
+        端子ごとの導通状態とコイルの励磁状態のリアルタイム表示は Step 5
+        で有効になります。
       </p>
     </aside>
   );

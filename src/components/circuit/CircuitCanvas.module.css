@@ -17,10 +17,55 @@
   box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
 }
 
-/* 配線の既定色。通電状態による色分けは Step 4 で state 由来に差し替える */
+/* 配線の既定色（非通電）。状態別の色は下の .wire* が上書きする */
 .canvas :global(.react-flow__edge-path) {
   stroke: var(--wire-inactive);
   stroke-width: 2;
+  transition:
+    stroke 0.12s ease-out,
+    stroke-width 0.12s ease-out;
+}
+
+/*
+ * 状態別の配線色（design.md §5.6）。クラスは React Flow が Edge の
+ * `className` として `<g>` に載せる。`.canvas` を前置して詳細度を
+ * 既定色（クラス 2 個）より 1 段高くしている。
+ *
+ * 選択中の配線は `.react-flow__edge.selected`（クラス 4 個）でさらに上を行くので、
+ * 実行中でも選択したものはアクセント色で判別できる。
+ */
+.canvas .wirePlus :global(.react-flow__edge-path) {
+  stroke: var(--wire-plus);
+}
+
+.canvas .wireZero :global(.react-flow__edge-path) {
+  stroke: var(--wire-minus);
+}
+
+/* 通電中。色覚に依存しないよう線幅と発光も併用する（要件書 §8） */
+.canvas .wireEnergized :global(.react-flow__edge-path) {
+  stroke: var(--wire-energized);
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 4px var(--wire-energized));
+}
+
+/*
+ * 電源短絡。§5.6 の通り「通電」とは別扱いにする。
+ * 緑と紛れないよう点滅させ、配線ミスとして目立たせる。
+ */
+.canvas .wireShort :global(.react-flow__edge-path) {
+  stroke: var(--wire-short);
+  stroke-width: 3.5;
+  animation: shortCircuit 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes shortCircuit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.25;
+  }
 }
 
 .canvas :global(.react-flow__edge.selected .react-flow__edge-path) {

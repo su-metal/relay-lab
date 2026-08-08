@@ -1,3 +1,4 @@
+import type { DeviceSimulationState } from "@/circuit/adapter/simulation-view";
 import type { ComponentDefinition } from "@/circuit/types";
 
 /**
@@ -8,4 +9,11 @@ import type { ComponentDefinition } from "@/circuit/types";
  */
 export type BodyProps = {
   definition: ComponentDefinition;
+  /** 部品インスタンス ID。押しボタンの押下操作（Step 4）で使う */
+  componentId: string;
+  /**
+   * シミュレーション中の状態。**停止中は `undefined`。**
+   * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
+   */
+  simulation?: DeviceSimulationState;
 };

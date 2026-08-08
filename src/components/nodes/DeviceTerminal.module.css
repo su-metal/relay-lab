@@ -95,3 +95,29 @@
 .terminal[data-role="power_zero"] .handle {
   border-color: var(--wire-minus);
 }
+
+/*
+ * シミュレーション中の電位（design.md §5.6）。
+ * 上の data-role と同じ詳細度なので、**必ずこの順で後ろに置くこと。**
+ * 電源端子だけ役割色が残ると、実行中に配線と端子の色が食い違う。
+ */
+.terminal[data-state="plus"] .handle {
+  border-color: var(--wire-plus);
+  background: var(--wire-plus);
+}
+
+.terminal[data-state="zero"] .handle {
+  border-color: var(--wire-minus);
+  background: var(--wire-minus);
+}
+
+.terminal[data-state="energized"] .handle {
+  border-color: var(--wire-energized-text);
+  background: var(--wire-energized);
+  box-shadow: 0 0 6px var(--wire-energized);
+}
+
+.terminal[data-state="short"] .handle {
+  border-color: var(--wire-short);
+  background: var(--wire-short);
+}

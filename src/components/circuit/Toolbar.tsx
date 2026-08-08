@@ -3,17 +3,31 @@
 /**
  * 操作バー（上部）。
  *
- * ▶ / ■ はシミュレーション用で、実際に動くのは Step 4（エンジン接続）。
- * Step 3 では配置と配線に必要な操作だけを有効にしてある。
+ * ▶ / ■ でシミュレーションを開始・停止する。実行中の状態表示は
+ * 収束の結果（`SimulationStatus`）までに留め、警告の一覧表示は Step 6。
  */
 
 import { useReactFlow } from "@xyflow/react";
 import { useCallback } from "react";
 
+import type { SimulationStatus } from "@/circuit/types";
 import { APP_NAME } from "@/lib/app-info";
 import { useCircuitStore } from "@/store/circuitStore";
+import { useSimulationStore } from "@/store/simulationStore";
 
 import styles from "./Toolbar.module.css";
+
+/**
+ * 収束結果の表示文言（design.md §5.5）。
+ *
+ * **発振はエラーではない。** B 接点による自励発振（ブザー回路）は
+ * 配線として正しくても必ず起きるので、挙動として提示する。
+ */
+const STATUS_LABEL: Record<SimulationStatus, string> = {
+  stable: "実行中",
+  oscillating: "発振中（ブザー動作）",
+  "not-converged": "収束しません",
+};
 
 export function Toolbar() {
   const { fitView } = useReactFlow();
@@ -32,6 +46,11 @@ export function Toolbar() {
   );
   const removeSelected = useCircuitStore((state) => state.removeSelected);
 
+  const running = useSimulationStore((state) => state.running);
+  const status = useSimulationStore((state) => state.result?.status);
+  const start = useSimulationStore((state) => state.start);
+  const stop = useSimulationStore((state) => state.stop);
+
   const selectedCount =
     selectedComponentIds.length + selectedConnectionIds.length;
 
@@ -47,19 +66,26 @@ export function Toolbar() {
         <button
           type="button"
           className={styles.run}
-          disabled
-          title="Step 4（エンジン接続）で有効になります"
+          onClick={start}
+          disabled={running}
+          title="回路を解いて通電状態を表示します"
         >
           ▶ シミュレーション開始
         </button>
         <button
           type="button"
           className={styles.button}
-          disabled
-          title="Step 4（エンジン接続）で有効になります"
+          onClick={stop}
+          disabled={!running}
+          title="シミュレーションを停止し、押下状態と励磁状態を捨てます"
         >
           ■ 停止
         </button>
+        {running && (
+          <span className={styles.status} data-status={status ?? "stable"}>
+            {STATUS_LABEL[status ?? "stable"]}
+          </span>
+        )}
       </div>
 
       <div className={styles.group}>

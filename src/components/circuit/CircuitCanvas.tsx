@@ -38,9 +38,12 @@ import {
   toWireEdges,
 } from "@/circuit/adapter/reactflow";
 import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
+import { buildSimulationView } from "@/circuit/adapter/simulation-view";
+import type { WireState } from "@/circuit/adapter/simulation-view";
 import { componentRegistry, getComponentDefinition } from "@/circuit/definitions";
 import { DeviceNode } from "@/components/nodes/DeviceNode";
 import { useCircuitStore } from "@/store/circuitStore";
+import { useSimulationStore } from "@/store/simulationStore";
 
 import { readDefinitionId } from "./palette-dnd";
 import styles from "./CircuitCanvas.module.css";
@@ -50,6 +53,21 @@ const nodeTypes = { [DEVICE_NODE_TYPE]: DeviceNode };
 
 /** Delete / Backspace のどちらでも削除できるようにする */
 const DELETE_KEYS = ["Delete", "Backspace"];
+
+/**
+ * 配線の表示状態 → CSS Modules のクラス（design.md §5.6）。
+ *
+ * React Flow は Edge の `className` を `<g class="react-flow__edge ...">` に
+ * 載せるので、ハッシュ済みのモジュールクラスをここで解決して渡す。
+ * 非通電は既定色（`.canvas` 側）に任せるためクラスを付けない。
+ */
+const WIRE_CLASS: Record<WireState, string | undefined> = {
+  inactive: undefined,
+  plus: styles.wirePlus,
+  zero: styles.wireZero,
+  energized: styles.wireEnergized,
+  short: styles.wireShort,
+};
 
 export function CircuitCanvas() {
   const { screenToFlowPosition } = useReactFlow();
@@ -75,13 +93,27 @@ export function CircuitCanvas() {
   );
   const setViewport = useCircuitStore((state) => state.setViewport);
 
+  const result = useSimulationStore((state) => state.result);
+  const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
+
+  // 停止中は result が null で、ビューは空＝すべて非通電として描かれる
+  const view = useMemo(
+    () =>
+      buildSimulationView(document, componentRegistry, result, pressedSwitches),
+    [document, result, pressedSwitches],
+  );
+
   const nodes = useMemo(
-    () => toDeviceNodes(document, componentRegistry, selectedComponentIds),
-    [document, selectedComponentIds],
+    () => toDeviceNodes(document, componentRegistry, selectedComponentIds, view),
+    [document, selectedComponentIds, view],
   );
   const edges = useMemo(
-    () => toWireEdges(document, selectedConnectionIds),
-    [document, selectedConnectionIds],
+    () =>
+      toWireEdges(document, selectedConnectionIds).map((edge) => {
+        const state = view.wireOf.get(edge.id) ?? "inactive";
+        return { ...edge, className: WIRE_CLASS[state] };
+      }),
+    [document, selectedConnectionIds, view],
   );
 
   const onNodesChange = useCallback(

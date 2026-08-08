@@ -4,6 +4,9 @@
   --wire-plus: #ef4444;
   --wire-minus: #3b82f6;
   --wire-energized: #22c55e;
+  /* 緑の線は細字だと読みにくいので、文字・細線用に一段暗い緑を用意する */
+  --wire-energized-text: #15803d;
+  --wire-short: #dc2626;
 
   --bg: #f8fafc;
   --panel: #ffffff;
@@ -25,6 +28,8 @@
   --terminal-hover: #2563eb;
   --coil-fill: #eef2ff;
   --lamp-off: #f1f5f9;
+  --lamp-on: #fbbf24;
+  --lamp-on-border: #b45309;
 
   /* 未検証バッジ（design.md §4.4） */
   --warn-bg: #fef3c7;

@@ -10,6 +10,7 @@
 import { Handle, Position } from "@xyflow/react";
 
 import { handleIdOf } from "@/circuit/adapter/reactflow";
+import type { WireState } from "@/circuit/adapter/simulation-view";
 import type { TerminalDefinition, TerminalSide } from "@/circuit/types";
 
 import styles from "./DeviceTerminal.module.css";
@@ -24,14 +25,20 @@ const HANDLE_POSITION: Record<TerminalSide, Position> = {
 
 type Props = {
   terminal: TerminalDefinition;
+  /**
+   * シミュレーション中の電位状態。停止中は `undefined`。
+   * 端子と配線を同じ色にしないと、接点の先で色が途切れて配線が切れて見える。
+   */
+  state?: WireState;
 };
 
-export function DeviceTerminal({ terminal }: Props) {
+export function DeviceTerminal({ terminal, state }: Props) {
   return (
     <div
       className={styles.terminal}
       data-side={terminal.side}
       data-role={terminal.role}
+      data-state={state}
       style={{
         left: `${terminal.position.x * 100}%`,
         top: `${terminal.position.y * 100}%`,

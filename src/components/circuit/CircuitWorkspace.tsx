@@ -14,9 +14,13 @@ import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
+import { useSimulationSync } from "./useSimulationSync";
 import styles from "./CircuitWorkspace.module.css";
 
 export function CircuitWorkspace() {
+  // シミュレーションの再計算はここ 1 箇所からだけ駆動する（design.md §8.2）
+  useSimulationSync();
+
   return (
     <ReactFlowProvider>
       <div className={styles.workspace}>
