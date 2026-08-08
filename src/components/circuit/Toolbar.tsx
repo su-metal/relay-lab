@@ -136,7 +136,7 @@ export function Toolbar({ saveStatus }: { saveStatus: PersistenceStatus }) {
           className={styles.button}
           onClick={removeSelected}
           disabled={selectedCount === 0}
-          title="選択中の部品と配線を削除します（Delete キーでも可）"
+          title="選択中の部品と配線を削除します（Delete / Backspace / D キーでも可）"
         >
           選択を削除
           {selectedCount > 0 && ` (${selectedCount})`}

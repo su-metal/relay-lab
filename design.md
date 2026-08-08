@@ -731,8 +731,17 @@ React Flow 側に状態を持たせない（CLAUDE.md 設計原則 4）。
 `addConnection` の両方から呼ぶ。
 
 **キャンバス操作。** 左ドラッグ＝パン、Shift+ドラッグ＝範囲選択、Ctrl/Cmd+クリック＝複数選択、
-Delete / Backspace ＝削除。左ドラッグを範囲選択にすると、配線しようとして端子を掴み損ねる
+Delete / Backspace / **D** ＝削除。左ドラッグを範囲選択にすると、配線しようとして端子を掴み損ねる
 たびに選択枠が出てパンできなくなるため採らない。
+
+ホイールは `panOnScroll` によりズームではなくパン（縦）に割り当てており、
+**Shift+ホイールで横パン**になる（React Flow 12 が Windows でこの分岐を持つ）。
+
+**削除に D 単独を足せるのは、React Flow の `deleteKeyCode` が入力欄を除外しているから。**
+`useKeyPress(..., { actInsideInputWithModifier: false })` が `isInputDOMNode()` を見ており、
+修飾キー無しの打鍵が input / textarea / contenteditable にあるときは発火しない。
+部品名の入力やパレット検索に "d" を打っても回路は消えない。**自前でキー処理を書く場合は
+この除外を自分で実装すること**（`useHistoryShortcuts` の `isTextEntry` が同じ役割）。
 
 **「未検証」バッジは実端子番号を持つ型番にだけ出す。** 汎用部品（電源 / 押しボタン / ランプ）は
 `verified: false` だが実端子番号そのものが無く、検証対象が存在しない（§4.4 / §4.5）。

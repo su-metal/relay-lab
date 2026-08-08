@@ -51,8 +51,22 @@ import styles from "./CircuitCanvas.module.css";
 /** 部品はすべて 1 種類のノードで描く（design.md §2）。再生成しないよう外に置く */
 const nodeTypes = { [DEVICE_NODE_TYPE]: DeviceNode };
 
-/** Delete / Backspace のどちらでも削除できるようにする */
-const DELETE_KEYS = ["Delete", "Backspace"];
+/**
+ * 削除のキー。Delete / Backspace に加えて **D 単独**でも消せるようにする。
+ *
+ * Delete キーはフルサイズキーボードでは右上の端にあり、配線しながら片手で
+ * 押すには遠い。D は「配線ドラッグ → 掴み損ねた線を消す」の往復が
+ * ホームポジションのまま済む。
+ *
+ * **入力欄では発火しない。** React Flow の `deleteKeyCode` は
+ * `useKeyPress(..., { actInsideInputWithModifier: false })` 経由で
+ * `isInputDOMNode()` を見ており、修飾キー無しの打鍵が input / textarea /
+ * contenteditable に入っているときは無視される。部品名やパレット検索に
+ * "d" を打っても回路は消えない。
+ *
+ * 大文字も入れているのは CapsLock 対策（`event.key` が "D" になる）。
+ */
+const DELETE_KEYS = ["Delete", "Backspace", "d", "D"];
 
 /**
  * 配線の表示状態 → CSS Modules のクラス（design.md §5.6）。
