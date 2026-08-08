@@ -115,6 +115,15 @@
   stroke-width: 4;
 }
 
+/*
+ * つなぎ替えの掴み手のカーソル（design.md §8.8）。React Flow の既定は move だが、
+ * ここでするのは「移動」ではなく「線の端を掴んで引き直す」操作なので grab を出す。
+ * 点そのものの見た目は `WireEdge.module.css` の .grip が描く。
+ */
+.canvas :global(.react-flow__edgeupdater) {
+  cursor: grab;
+}
+
 .canvas :global(.react-flow__connection-path) {
   stroke: var(--accent);
   stroke-width: 2;

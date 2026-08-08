@@ -25,3 +25,30 @@
 :global(.react-flow__edge.selected) > .halo {
   opacity: 1;
 }
+
+/*
+ * つなぎ替えの掴み手（design.md §8.8）。
+ *
+ * 掴める場所そのものは React Flow が透明な円で常に持っているが、透明なままでは
+ * **一度繋いだ線を引き直せることに気付けない。** ホバー / 選択したときだけ点を出し、
+ * 「ここを掴めば引き直せる」と分かるようにする。
+ *
+ * 常時表示にはしない。配線が数十本ある図面では端子のそばに点が散らばり、
+ * 端子番号（本プロダクトが最優先で読ませたいもの）が読み取りにくくなる。
+ */
+.grip {
+  /* 半径は SVG 側の属性で持つ（CSS の r は Safari が新しめでないと効かない） */
+  fill: var(--accent);
+  /* キャンバス色で縁取り、線や他の配線に重なっても点として読めるようにする */
+  stroke: var(--canvas-bg);
+  stroke-width: 2;
+  opacity: 0;
+  /* 掴む当たり判定は React Flow の透明な円が持つ。ここで奪わない */
+  pointer-events: none;
+  transition: opacity 0.12s ease-out;
+}
+
+:global(.react-flow__edge):hover > .grip,
+:global(.react-flow__edge.selected) > .grip {
+  opacity: 1;
+}

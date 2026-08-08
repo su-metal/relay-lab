@@ -17,6 +17,7 @@ import { create } from "zustand";
 import {
   connectionFromReactFlow,
   hasTerminalPair,
+  isSameTerminalPair,
 } from "@/circuit/adapter/reactflow";
 import type {
   CircuitDocument,
@@ -136,6 +137,18 @@ export type CircuitStore = {
    * 端子以外への接続と重複配線はここで捨てる（adapter が判定する）。
    */
   addConnection: (params: Connection) => void;
+
+  /**
+   * 既存の配線の端を掴み直して、別の端子へ繋ぎ替える（design.md §8.8）。
+   *
+   * **配線 ID を変えない。** 同じ 1 本を引き回しただけなので、消して張り直すのでは
+   * なく端子参照だけを差し替える。ID が変わると選択が外れ、レーン（§8.7）も
+   * 振り直しになり、「今掴んでいる線」が画面上で別物にすり替わる。
+   *
+   * 履歴は 1 手。空振り（存在しない ID・掴んで同じ端子へ戻した・既に同じ端子ペアの
+   * 配線がある）は履歴を汚さない。
+   */
+  reconnectConnection: (connectionId: string, params: Connection) => void;
 
   setComponentSelected: (componentId: string, selected: boolean) => void;
   setConnectionSelected: (connectionId: string, selected: boolean) => void;
@@ -452,6 +465,32 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           connections: [...state.document.connections, candidate],
         }),
       );
+    },
+
+    reconnectConnection: (connectionId, params) => {
+      // 引き直した先の端子ペアを、**同じ ID の**接続として組み立てる
+      const candidate = connectionFromReactFlow(params, connectionId);
+      // 端子 → 端子 でない落とし先（部品本体・自己接続）は無視して元のまま残す
+      if (!candidate) return;
+
+      set((state) => {
+        const current = state.document.connections.find(
+          (connection) => connection.id === connectionId,
+        );
+        if (!current) return {};
+        // 掴んで同じ端子へ戻しただけ。何も変わっていないので履歴を積まない
+        if (isSameTerminalPair(current, candidate)) return {};
+        // 引き直した先に既に同じ 1 本がある。重ねて張るのではなく元のまま残す
+        // （自分自身は hasTerminalPair 側で除かれる）
+        if (hasTerminalPair(state.document, candidate)) return {};
+
+        return commit(state, {
+          ...state.document,
+          connections: state.document.connections.map((connection) =>
+            connection.id === connectionId ? candidate : connection,
+          ),
+        });
+      });
     },
 
     setComponentSelected: (componentId, selected) =>

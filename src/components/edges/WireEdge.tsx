@@ -16,12 +16,49 @@
  * 足すだけで、折れ方の規則は React Flow と同じものが使われる。
  */
 
-import { BaseEdge, getSmoothStepPath } from "@xyflow/react";
+import { BaseEdge, Position, getSmoothStepPath } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 
 import type { WireEdge as WireEdgeType } from "@/circuit/adapter/reactflow";
 
 import styles from "./WireEdge.module.css";
+
+/**
+ * つなぎ替えの掴み手の半径（design.md §8.8）。React Flow の `reconnectRadius` に
+ * そのまま渡す値で、当たり判定の円は**端子から外向きにこの距離ずらした点**を
+ * 中心に置かれる（`EdgeUpdateAnchors`）。
+ *
+ * 既定の 10 では狭い。端子側は Handle が半径 12px ぶんの当たり判定を持ち、
+ * ノードは Edge より手前に描かれるので、端子に近い側は端子に取られる。
+ * 14 にすると端子の外に十分な帯（12〜28px）が残り、**掴み手を狙ったのに
+ * 新しい配線が伸び始める**という取り違えが起きにくい。
+ *
+ * 折れ線が端子から真っ直ぐ出る距離（`getSmoothStepPath` の既定オフセット 20px）
+ * より内側なので、この位置に打つ点は必ず線の上に乗る。
+ */
+export const WIRE_RECONNECT_RADIUS = 14;
+
+/** 見えている掴み手の点の半径。当たり判定（上記 14px）より小さくてよい */
+const GRIP_RADIUS = 4;
+
+/** 端子から外向き（配線が出ていく向き）へ `distance` px ずらす */
+const shiftOutward = (
+  x: number,
+  y: number,
+  position: Position,
+  distance: number,
+): { x: number; y: number } => {
+  switch (position) {
+    case Position.Left:
+      return { x: x - distance, y };
+    case Position.Right:
+      return { x: x + distance, y };
+    case Position.Top:
+      return { x, y: y - distance };
+    case Position.Bottom:
+      return { x, y: y + distance };
+  }
+};
 
 export function WireEdge({
   id,
@@ -55,6 +92,21 @@ export function WireEdge({
     centerY: lane === 0 ? undefined : (sourceY + targetY) / 2 + lane,
   });
 
+  // 掴み手の当たり判定は React Flow（EdgeUpdateAnchors）が透明な円で持っている。
+  // ここで描くのは**見えるようにするための点だけ**なので、同じ位置に重ねる
+  const sourceGrip = shiftOutward(
+    sourceX,
+    sourceY,
+    sourcePosition,
+    WIRE_RECONNECT_RADIUS,
+  );
+  const targetGrip = shiftOutward(
+    targetX,
+    targetY,
+    targetPosition,
+    WIRE_RECONNECT_RADIUS,
+  );
+
   return (
     <>
       {/* 本体より先に描くことで下に敷かれる。当たり判定には出さない */}
@@ -66,6 +118,23 @@ export function WireEdge({
         markerStart={markerStart}
         markerEnd={markerEnd}
         interactionWidth={interactionWidth}
+      />
+      {/*
+        つなぎ替えの掴み手（design.md §8.8）。ホバー / 選択中だけ現れる。
+        当たり判定は React Flow の透明な円が持つので、こちらは
+        `pointer-events: none` にして掴む邪魔をしない
+      */}
+      <circle
+        className={styles.grip}
+        cx={sourceGrip.x}
+        cy={sourceGrip.y}
+        r={GRIP_RADIUS}
+      />
+      <circle
+        className={styles.grip}
+        cx={targetGrip.x}
+        cy={targetGrip.y}
+        r={GRIP_RADIUS}
       />
     </>
   );
