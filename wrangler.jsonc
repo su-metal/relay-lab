@@ -1,0 +1,23 @@
+{
+  // Cloudflare Workers への配置設定。
+  //
+  // **このファイルが無いと `wrangler deploy` はデプロイを始める前に
+  // プロジェクトを自動判定し、「Next.js なら SSR だろう」と決めつけて
+  // OpenNext アダプタ（@opennextjs/cloudflare）を勝手に導入する。**
+  // 本アプリは `next.config.ts` の `output: "export"` による静的書き出しで、
+  // サーバを持たない（バックエンド無しは CLAUDE.md の前提）。
+  // OpenNext は `.next/standalone` を探して ENOENT で落ちるため、
+  // 「静的アセットだけを配る Worker」だと明示してその判定自体を止める。
+  //
+  // Worker 名は既存のものと一致させること。変えると別の Worker が新規に作られる。
+  "name": "relay-lab",
+  "compatibility_date": "2026-08-08",
+  "assets": {
+    // `next build`（output: "export"）の出力先。.gitignore 済み
+    "directory": "./out",
+    // 見つからないパスは Next が書き出した out/404.html を 404 で返す
+    "not_found_handling": "404-page",
+    // 既定値。/foo と /foo/ の揺れを Next の書き出し構造に合わせて吸収する
+    "html_handling": "auto-trailing-slash"
+  }
+}
