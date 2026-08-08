@@ -175,3 +175,66 @@ describe("inspectComponent", () => {
     expect(inspect("l1", [])?.contacts).toEqual([]);
   });
 });
+
+/**
+ * 逆起電力吸収ダイオードの読み取り（design.md §5.4）。
+ *
+ * 「どのコイルと並列か・向きは正しいか」は**配線そのものの性質**であって
+ * 実行中にしか決まらない値ではない。停止中でもパネルに出せることを確かめる。
+ */
+describe("inspectComponent（ダイオード）", () => {
+  /** RY1 のコイル（14 が +、13 が −）と並列にダイオードを 1 本足す */
+  const withDiode = (toCoilPlus: "a" | "k"): CircuitDocument => ({
+    ...document,
+    components: [
+      ...document.components,
+      { id: "d1", definitionId: "diode-generic", label: "D1", position: at(620, 0) },
+    ],
+    connections: [
+      ...document.connections,
+      wire("w-d-plus", ["d1", toCoilPlus], ["ry1", "14"]),
+      wire("w-d-minus", ["d1", toCoilPlus === "k" ? "a" : "k"], ["ry1", "13"]),
+    ],
+  });
+
+  const inspectDiodeIn = (
+    doc: CircuitDocument,
+    pressed: readonly string[] | null,
+  ) => {
+    const pressedSwitches = new Set(pressed ?? []);
+    const result =
+      pressed === null
+        ? null
+        : simulate(doc, componentRegistry, { pressedSwitches });
+    return inspectComponent(doc, componentRegistry, result, pressedSwitches, "d1")
+      ?.diode;
+  };
+
+  it("停止中でも「どのコイルと並列か」と向きが読める", () => {
+    expect(inspectDiodeIn(withDiode("k"), null)).toMatchObject({
+      flyback: { relayId: "ry1", orientation: "protective" },
+      flybackRelayName: "RY1",
+    });
+    expect(inspectDiodeIn(withDiode("a"), null)?.flyback?.orientation).toBe(
+      "reversed",
+    );
+  });
+
+  it("正しい向きなら通電中も逆バイアスで、短絡していない", () => {
+    expect(inspectDiodeIn(withDiode("k"), ["s1"])).toMatchObject({
+      bias: "reverse",
+      shorting: false,
+    });
+  });
+
+  it("逆挿しは通電すると順方向になり短絡する", () => {
+    expect(inspectDiodeIn(withDiode("a"), ["s1"])).toMatchObject({
+      bias: "forward",
+      shorting: true,
+    });
+  });
+
+  it("ダイオード以外の部品は diode を持たない", () => {
+    expect(inspect("ry1", [])?.diode).toBeUndefined();
+  });
+});

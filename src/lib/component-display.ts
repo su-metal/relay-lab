@@ -1,4 +1,8 @@
-import type { WireState } from "@/circuit/adapter/simulation-view";
+import type {
+  DeviceSimulationState,
+  WireState,
+} from "@/circuit/adapter/simulation-view";
+import type { DiodeBias } from "@/circuit/engine";
 import type {
   CoilPolarity,
   ComponentCategory,
@@ -73,6 +77,24 @@ export const COIL_POLARITY_NOTES: Record<CoilPolarity, string> = {
   strict: "逆接では励磁しません（内蔵ダイオードが順方向）。",
 };
 
+/** ダイオードのバイアスの日本語表示（design.md §5.4） */
+export const DIODE_BIAS_LABELS: Record<DiodeBias, string> = {
+  forward: "順方向（導通）",
+  reverse: "逆方向（遮断）",
+  none: "電位差なし",
+};
+
+/**
+ * コイルと並列でないダイオードに添える説明。
+ *
+ * リレーコイルは誘導負荷で、消磁の瞬間に逆起電力（サージ）を出す。
+ * これを吸収するのが**コイルと並列**に、カソードをコイルの + 側へ向けて
+ * 入れる還流ダイオード。この 1 行があるかどうかで、
+ * ダイオードを直列に入れてしまう誤りを減らせる。
+ */
+export const DIODE_HINT =
+  "順方向（A → K）にだけ電流を通します。逆起電力を吸収させるにはコイルと並列に、カソードをコイルの + 側へ向けて入れます。";
+
 /** 端子・配線の電位状態の日本語表示（design.md §5.6） */
 export const WIRE_STATE_LABELS: Record<WireState, string> = {
   inactive: "非通電",
@@ -80,4 +102,91 @@ export const WIRE_STATE_LABELS: Record<WireState, string> = {
   zero: "0V 側",
   energized: "通電中",
   short: "短絡",
+};
+
+/**
+ * ノード内表示用に詰めた型番表示。
+ *
+ * 汎用部品の型番は補足の丸カッコ（"押しボタン A接点（モーメンタリ）" の
+ * "（モーメンタリ）" 等）を含むと、部品ノードの幅に収まらず末尾が見切れる。
+ * カッコの中身は `modelSummaryOf()` のホバーツールチップで読めるので、
+ * ノード内表示（`DeviceNode.module.css` の `.model`）ではここで削る。
+ */
+export const shortModelLabel = (model: string): string =>
+  model.replace(/（[^（）]*）$/u, "");
+
+/** ホバーで出す型番詳細（`modelSummaryOf` の戻り値） */
+export type ModelSummary = {
+  /** 短縮していない正式な表示名（メーカー + 型番） */
+  title: string;
+  /** タイトルに続けて出す補足行 */
+  lines: string[];
+};
+
+/**
+ * 部品の見出し（`.heading`）にホバーした際の詳細表示。
+ *
+ * ノード内では `shortModelLabel()` で削った情報（正式な型番・端子数・
+ * 検証状態）をここにまとめる。ノードの表示を削った分、ホバー側の
+ * 情報量を増やして埋め合わせる（見切れ対策）。
+ */
+export const modelSummaryOf = (
+  definition: ComponentDefinition,
+): ModelSummary => {
+  const title = definition.manufacturer
+    ? `${definition.manufacturer} ${definition.model}`
+    : definition.model;
+
+  const verificationLine = hasRealTerminalNumbers(definition)
+    ? definition.verified
+      ? "検証済み（実端子番号）"
+      : "未検証（実端子番号）"
+    : "実端子番号なし";
+
+  return {
+    title,
+    lines: [
+      `${CATEGORY_LABELS[definition.category]} ・ ${definition.terminals.length} 端子`,
+      verificationLine,
+    ],
+  };
+};
+
+/** ホバーで出す部品ステータスの表示内容（`deviceStatusOf` の戻り値） */
+export type DeviceStatus = {
+  label: string;
+  /** 励磁・点灯・押下など「オン」寄りの状態か。ツールチップの強調表示に使う */
+  active: boolean;
+};
+
+/**
+ * 部品にホバーした際の主要ステータス表示（design.md §8.3）。
+ *
+ * `electrical.kind` ごとに「一目で確認したい状態」が違う
+ * （リレーは励磁、ランプは点灯、押しボタンは押下）ので、ここで 1 つに絞る。
+ * 電源・ダイオード・端子台は動的な状態を持たないので `undefined` を返し、
+ * ノード側はツールチップ自体を出さない。
+ * シミュレーション停止中（`simulation` が `undefined`）も同様。
+ */
+export const deviceStatusOf = (
+  definition: ComponentDefinition,
+  simulation: DeviceSimulationState | undefined,
+): DeviceStatus | undefined => {
+  if (!simulation) return undefined;
+  switch (definition.electrical.kind) {
+    case "relay":
+      return simulation.energized
+        ? { label: "励磁中", active: true }
+        : { label: "非励磁", active: false };
+    case "lamp":
+      return simulation.lit
+        ? { label: "点灯中", active: true }
+        : { label: "消灯", active: false };
+    case "switch":
+      return simulation.pressed
+        ? { label: "押下中", active: true }
+        : { label: "未押下", active: false };
+    default:
+      return undefined;
+  }
 };

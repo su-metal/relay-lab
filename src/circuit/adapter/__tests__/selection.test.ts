@@ -75,7 +75,7 @@ describe("terminalPoint", () => {
         dc24vPowerSupply,
         "plus",
       ),
-    ).toEqual({ x: 150, y: 33 });
+    ).toEqual({ x: 150, y: 39 });
   });
 
   it("左右反転した部品では鏡像の位置を返す", () => {
@@ -90,7 +90,7 @@ describe("terminalPoint", () => {
         dc24vPowerSupply,
         "plus",
       ),
-    ).toEqual({ x: 0, y: 33 });
+    ).toEqual({ x: 0, y: 39 });
   });
 });
 

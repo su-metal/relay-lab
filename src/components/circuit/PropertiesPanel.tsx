@@ -25,6 +25,8 @@ import {
   CATEGORY_LABELS,
   COIL_POLARITY_LABELS,
   COIL_POLARITY_NOTES,
+  DIODE_BIAS_LABELS,
+  DIODE_HINT,
   TERMINAL_ROLE_LABELS,
   WIRE_STATE_LABELS,
   hasRealTerminalNumbers,
@@ -396,20 +398,52 @@ function ElectricalSection({
         </section>
       );
 
-    case "diode":
+    case "diode": {
+      const { diode } = inspection;
+      const flyback = diode?.flyback;
+      const relay = diode?.flybackRelayName ?? "コイル";
+      // 端子 ID（"a" / "k"）ではなく表示ラベル（"A" / "K"）で見せる。
+      // リレーは ID がそのまま実端子番号なので差が出ないが、汎用部品は別物
+      const labelOf = (terminalId: string) =>
+        inspection.terminals.find((entry) => entry.terminal.id === terminalId)
+          ?.terminal.label ?? terminalId;
       return (
         <section className={styles.section}>
           <h3 className={styles.heading}>ダイオード</h3>
           <dl className={styles.rows}>
-            <Row name="アノード">{electrical.anodeTerminal}</Row>
-            <Row name="カソード">{electrical.cathodeTerminal}</Row>
+            <Row name="アノード">{labelOf(electrical.anodeTerminal)}</Row>
+            <Row name="カソード">{labelOf(electrical.cathodeTerminal)}</Row>
+            <Row name="役割">
+              {/* 配線の性質なので停止中でも出す（design.md §5.4） */}
+              {flyback ? (
+                <span
+                  className={styles.stateBadge}
+                  data-on={String(flyback.orientation === "protective")}
+                >
+                  {flyback.orientation === "protective"
+                    ? `${relay} の逆起電力を吸収`
+                    : `${relay} と並列・向きが逆`}
+                </span>
+              ) : (
+                "—"
+              )}
+            </Row>
+            <Row name="向き">
+              {device && diode ? (
+                DIODE_BIAS_LABELS[diode.bias]
+              ) : (
+                <span className={styles.idle}>—（停止中）</span>
+              )}
+            </Row>
           </dl>
-          {/* MVP では整流作用を扱わない（design.md §5.4・§6-2） */}
           <p className={styles.hint}>
-            MVP では常に開放として扱います（整流作用は未実装）。
+            {flyback?.orientation === "reversed"
+              ? `カソード（${labelOf(electrical.cathodeTerminal)}）を ${relay} のコイルの + 側へ向けてください。このままでは通電した瞬間に短絡します。`
+              : DIODE_HINT}
           </p>
         </section>
       );
+    }
 
     case "terminal":
       return (

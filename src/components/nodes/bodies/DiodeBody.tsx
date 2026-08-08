@@ -7,8 +7,10 @@ import styles from "./bodies.module.css";
  * 端子ラベル A / K と一致させて描く。**向きが読めることがこの部品の全て**で、
  * 端子番号のような追加情報は無い。
  *
- * MVP では常に開放なので通電表現は持たない（design.md §5.4）。
- * 通電中の見た目を作ると、導通していないのに電流が流れているように見える。
+ * **通電表現は持たない。** 順方向なら電位を通す（design.md §5.4）が、それは
+ * 両側の端子と配線の色として既に出ている。記号まで光らせると、逆方向で
+ * 遮断しているのか順方向で通しているのかを色の違いで読ませることになり、
+ * 「三角の向き」という一番確実な手がかりから目を逸らさせる。
  */
 export function DiodeBody() {
   return (
@@ -25,7 +27,7 @@ export function DiodeBody() {
         <line x1="34" y1="5" x2="34" y2="21" />
         <line x1="34" y1="13" x2="52" y2="13" />
       </svg>
-      <span className={styles.caption}>整流作用は未実装</span>
+      <span className={styles.caption}>A → K のみ導通</span>
     </div>
   );
 }

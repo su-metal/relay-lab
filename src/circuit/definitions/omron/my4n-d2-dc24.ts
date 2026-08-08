@@ -18,5 +18,5 @@ export const omronMy4nD2Dc24 = defineMyRelay({
   contactRows: MY4N_CONTACT_ROWS,
   polarity: "strict",
   coilNote: "ダイオード内蔵・極性厳守",
-  visual: { width: 260, height: 220 },
+  visual: { width: 260, height: 240 },
 });

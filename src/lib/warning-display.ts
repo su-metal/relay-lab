@@ -12,6 +12,7 @@ import type { Warning, WarningCode, WarningSeverity } from "@/circuit/types";
 export const WARNING_CODE_LABELS: Record<WarningCode, string> = {
   "power-short-circuit": "電源短絡",
   "coil-polarity-reversed": "コイル極性",
+  "diode-reversed": "ダイオードの向き",
   "unconnected-terminal": "未接続の端子",
   oscillating: "発振",
   "not-converged": "収束しません",

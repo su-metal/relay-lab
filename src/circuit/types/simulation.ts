@@ -29,12 +29,18 @@ export type NetState = {
   reachesZero: boolean;
 };
 
-/** 警告の種別（design.md §5.7 の 5 種に対応） */
+/** 警告の種別（design.md §5.7 の 6 種に対応） */
 export type WarningCode =
-  /** +24V 端子と 0V 端子が同一ネットになっている */
+  /** +24V 端子と 0V 端子が導通している */
   | "power-short-circuit"
   /** コイルに逆極性で電圧がかかっている */
   | "coil-polarity-reversed"
+  /**
+   * ダイオードの向きが逆。
+   * コイルと並列の逆起電力吸収ダイオードが逆向き、または
+   * 負荷を挟まずに順方向で + と 0V をまたいでいる（design.md §5.4）
+   */
+  | "diode-reversed"
   /** どの接続にも現れない端子がある */
   | "unconnected-terminal"
   /** 励磁状態が振動して収束しない（B 接点による自励発振） */

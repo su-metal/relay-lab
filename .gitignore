@@ -18,6 +18,9 @@ next-env.d.ts
 .vercel
 *.tsbuildinfo
 
+# cloudflare
+.wrangler/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

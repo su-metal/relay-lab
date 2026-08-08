@@ -44,7 +44,7 @@ export const genericTerminalBlock: ComponentDefinition = {
     kind: "terminal",
     terminals: terminals.map((terminal) => terminal.id),
   },
-  visual: { width: 200, height: 110 },
+  visual: { width: 200, height: 170 },
   source: GENERIC_TERMINAL_SOURCE,
   verified: false,
 };
