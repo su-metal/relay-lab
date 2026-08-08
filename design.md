@@ -75,6 +75,7 @@ src/
       relay.ts                   # コイル判定・接点内部接続の生成
       validation.ts              # 短絡・極性・未接続の検出
     types/
+      index.ts                   # 再エクスポート。利用側は "@/circuit/types" から取る
       component.ts
       terminal.ts
       connection.ts
@@ -82,6 +83,7 @@ src/
       simulation.ts
     definitions/
       index.ts                   # 全定義のレジストリ
+      source-notes.ts            # 汎用部品の出典定型文（§4.5）
       omron/
         my2n-dc24.ts
         my4n-dc24.ts
@@ -91,6 +93,8 @@ src/
       lamps.ts
       diodes.ts
       terminals.ts
+      __tests__/
+        registry.test.ts         # レジストリ取得と §4.1 端子表の突き合わせ
     adapter/
       reactflow.ts               # Node/Edge ⇄ CircuitDocument
 
@@ -108,15 +112,27 @@ src/
     scenarios.test.ts            # 検証回路 テスト1〜5
 ```
 
-**テストの配置。** エンジンのテストは `src/circuit/engine/__tests__/` に置く。ツールチェーン自体の
-疎通テストだけ `src/__tests__/` に分ける — `src/circuit/{types,definitions,engine}/` は
-`check-docs-fresh.mjs` の監視対象で、ここにファイルを増やすと design.md の更新が要求されるため。
+**テストの配置。** エンジンのテストは `src/circuit/engine/__tests__/`、部品定義のテストは
+`src/circuit/definitions/__tests__/` に置く。どちらも `check-docs-fresh.mjs` の監視対象配下なので、
+テストを足すと design.md の更新が要求される。これは意図した挙動で、定義データとドキュメントの
+端子表を必ず同時に直させるための仕掛け。ツールチェーン自体の疎通テストだけは回路モデルと
+無関係なので `src/__tests__/` に分ける。
 
 **要件書の構成からの変更点:** 型番ごとのノードコンポーネント（`RelayNode.tsx` 等）を作らず、汎用 `DeviceNode` が `ComponentDefinition` を読んで描画する。カテゴリ固有の差分（ランプの発光、押しボタンの押下表現）だけを `bodies/` に切り出す。これにより「新型番の追加＝定義ファイル 1 枚」を保証する。
 
 ---
 
 ## 3. 型定義
+
+実装は `src/circuit/types/` の 5 ファイルに対応する。
+
+| ファイル | 定義する型 |
+|---|---|
+| `terminal.ts` | `TerminalRole` / `TerminalSide` / `TerminalDefinition` |
+| `component.ts` | `ComponentCategory` / `CoilPolarity` / `RelayContact` / `RelayDefinition` / `ElectricalDefinition` / `ComponentDefinition` / `ComponentDefinitionRegistry` |
+| `connection.ts` | `TerminalRef` / `CircuitConnection` / `terminalKey()` |
+| `circuit.ts` | `CircuitComponentInstance` / `CircuitDocument` |
+| `simulation.ts` | `SimulationInput` / `NetState` / `WarningCode` / `WarningSeverity` / `Warning` / `SimulationStatus` / `SimulationResult` |
 
 ### 3.1 部品定義
 
@@ -131,15 +147,17 @@ type TerminalRole =
   | "anode" | "cathode"
   | "generic"
 
+type TerminalSide = "top" | "right" | "bottom" | "left"  // React Flow Handle の向き
+
 type TerminalDefinition = {
   id: string            // 内部ID。原則として端子番号と同じ文字列
   label: string         // 画面表示（"14" など）
-  number?: string       // 実端子番号
+  number?: string       // 実端子番号。汎用部品は持たない（§4.5）
   role: TerminalRole
   contactGroup?: string // "c1".."c4" — 同一接点に属する COM/NO/NC を束ねる
   description?: string  // ツールチップ本文（"コイル + / DC24V"）
   position: { x: number; y: number }  // 部品内の相対座標 0..1
-  side: "top" | "right" | "bottom" | "left"  // React Flow Handle の向き
+  side: TerminalSide
 }
 
 type ComponentDefinition = {
@@ -150,10 +168,15 @@ type ComponentDefinition = {
   terminals: TerminalDefinition[]
   electrical: ElectricalDefinition
   visual: { width: number; height: number }
-  source?: string            // 端子データの出典URL
+  source?: string            // 端子データの出典（データシートURL、汎用部品は §4.5 の定型文）
   verified: boolean          // 実機/データシートで検証済みか
 }
+
+// 定義ID → 定義。simulate() の第2引数 defs の型（§5.5）
+type ComponentDefinitionRegistry = ReadonlyMap<string, ComponentDefinition>
 ```
+
+`ComponentDefinitionRegistry` を Map にしているのは、**エンジンに部品の一覧を知らせないため。** エンジンは `CircuitDocument` に現れた `definitionId` を引くだけで、どんな型番が存在するかを知らない。新型番を足してもエンジンの入力の型は変わらない。
 
 `ElectricalDefinition` はカテゴリごとの判別可能ユニオンとする。
 
@@ -203,11 +226,20 @@ type RelayContact = {
 ### 3.3 回路ドキュメント（保存対象）
 
 ```ts
+type TerminalRef = {
+  componentId: string   // 部品インスタンスID
+  terminalId: string    // TerminalDefinition.id
+}
+
 type CircuitConnection = {
   id: string
-  from: { componentId: string; terminalId: string }
-  to:   { componentId: string; terminalId: string }
+  from: TerminalRef
+  to:   TerminalRef
 }
+
+// Map/Set のキー書式。SimulationResult.netOf のキーもこれで作る
+const terminalKey = (componentId: string, terminalId: string) =>
+  `${componentId}:${terminalId}`
 
 type CircuitDocument = {
   version: 1
@@ -222,20 +254,24 @@ type CircuitDocument = {
 }
 ```
 
+`terminalKey()` を関数にしてあるのは、キー書式を 1 箇所に閉じるため。各所で `` `${a}:${b}` `` を手書きすると、書式がずれた瞬間にネット引きが静かに失敗する。
+
 ### 3.4 シミュレーション入出力
 
 ```ts
 type SimulationInput = {
-  pressedSwitches: Set<string>   // 押下中の componentId
+  pressedSwitches: ReadonlySet<string>   // 押下中の componentId
 }
 
+type SimulationStatus = "stable" | "oscillating" | "not-converged"
+
 type SimulationResult = {
-  energizedRelays: Set<string>   // componentId
-  litLamps: Set<string>
-  netOf: Map<string, number>            // "compId:termId" → ネットID
-  netState: Map<number, NetState>       // ネットID → 電位状態
+  energizedRelays: ReadonlySet<string>   // componentId
+  litLamps: ReadonlySet<string>
+  netOf: ReadonlyMap<string, number>     // terminalKey() → ネットID
+  netState: ReadonlyMap<number, NetState>  // ネットID → 電位状態
   warnings: Warning[]
-  status: "stable" | "oscillating" | "not-converged"
+  status: SimulationStatus
   iterations: number
 }
 
@@ -244,6 +280,31 @@ type NetState = {
   reachesZero: boolean
 }
 ```
+
+出力側のコレクションを `Readonly*` にしているのは、UI 側が結果を書き換えてストアと不整合を起こすのを型で防ぐため。エンジン内部では通常の `Set` / `Map` を組み立ててそのまま返してよい。
+
+`Warning` は §5.7 の 5 種に対応する。
+
+```ts
+type WarningCode =
+  | "power-short-circuit"       // +24V と 0V が同一ネット
+  | "coil-polarity-reversed"    // コイルに逆極性で電圧
+  | "unconnected-terminal"      // どの接続にも現れない端子
+  | "oscillating"               // 励磁状態が振動する
+  | "not-converged"             // 反復上限に到達
+
+type WarningSeverity = "error" | "warning" | "info"
+
+type Warning = {
+  code: WarningCode
+  severity: WarningSeverity
+  message: string          // UI にそのまま出せる日本語
+  componentId?: string
+  terminalId?: string
+}
+```
+
+**`severity` を別に持つ理由:** 発振は配線として正しくても必ず起きる挙動（ブザー回路）であり、エラーとして赤く出すべきではない（§5.5）。コードと深刻度を分けておくと、同じ `oscillating` を「意図した発振なら info、想定外なら warning」と後から出し分けられる。
 
 ---
 
@@ -259,6 +320,19 @@ type NetState = {
 | 4 回路目 | 4 | 8 | 12 |
 
 コイル: **13 = (−) / 14 = (+)**
+
+`polarity` は `"indicator"`（逆接でも励磁するが表示 LED が点灯しない）。§4.4 の通りこの理解自体が要検証。
+
+**画面上の端子配置。** 実ソケット（PYF14A）の物理ピン配置は模さない。§8 の「実端子番号が視覚的に読み取れることを最優先」に従い、規則性のある配置にする。
+
+| 辺 | 端子 |
+|---|---|
+| 上 | NC 1・2・3・4 |
+| 下 | NO 5・6・7・8 |
+| 右 | COM 9・10・11・12 |
+| 左 | コイル 14 (+)・13 (−) |
+
+第 i 接点について「上が NC、下が NO、右が COM」で必ず揃い、3 端子は `contactGroup: "c1".."c4"` で束ねられる。定義ファイル (`omron/my4n-dc24.ts`) では上表と同じ 4 行のテーブルから 12 端子を生成しており、端子表とコードが 1 対 1 に対応する。
 
 ### 4.2 OMRON MY2N DC24V — 8 ピン（ソケット PYF08A 系）
 
@@ -284,6 +358,7 @@ MY4N の 1 回路目と 4 回路目だけを使った配置になっており、
 | MY2N 接点 1-5-9 / 4-8-12 | 高 | 複数資料が一致 |
 | MY4N-D2 の逆接時挙動 | 中 | データシートに「DC タイプの極性を逆にしないこと」の注記はあるが、逆接時の具体的挙動の明記は未確認 |
 | MY2N / MY4N（-D2 なし）DC タイプの極性 | **要検証** | 「N」は表示 LED 付きを意味し、データシートに「DC タイプは極性に注意」の注記がある。コイル自体は無極性で逆接でも励磁するが表示 LED が点灯しない、という理解で `polarity: "indicator"` としている。実機での確認が必要 |
+| 汎用部品（電源 / 押しボタン / ランプ）の端子呼称 | 実端子番号ではない | §4.5。実型番を持たないため検証対象そのものが存在しない |
 
 **すべての定義ファイルに `verified: false` と `source` を記載して実装する。** ユーザーによる実機／公式データシート検証後に `verified: true` へ更新する。パレット上では未検証の型番にバッジを表示する。
 
@@ -293,6 +368,22 @@ MY4N の 1 回路目と 4 回路目だけを使った配置になっており、
 - [ミニパワーリレー MY 日本語データシート](https://s-tekt.com/manual/omron/my.pdf)
 - [パワーリレーとソケットの端子番号 — でんきメモ](https://memo-labo.com/socket.php)
 - [MY4N DC24 製品ページ — オムロン制御機器](https://www.ia.omron.com/product/item/7507/)
+
+### 4.5 汎用部品の端子呼称（電源 / 押しボタン / ランプ）
+
+この 3 種は実型番を持たないため、**実端子番号も存在しない。** 実型番の端子番号と混同させないよう、次の扱いで統一する。
+
+| 定義 ID | 型番表示 | 端子ラベル | 役割 |
+|---|---|---|---|
+| `power-dc24v` | DC24V 電源 | `+24V` / `0V` | `power_positive` / `power_zero` |
+| `switch-pushbutton-no` | 押しボタン A接点（モーメンタリ） | `1` / `2` | `common` / `normally_open` |
+| `switch-pushbutton-nc` | 押しボタン B接点（モーメンタリ） | `1` / `2` | `common` / `normally_closed` |
+| `lamp-dc24v` | DC24V 表示ランプ | `1` / `2` | `generic` / `generic`（極性なし） |
+
+- `TerminalDefinition.number`（実端子番号）は**持たせない**。ラベルはあくまで呼称
+- `source` には URL ではなく `definitions/source-notes.ts` の `GENERIC_TERMINAL_SOURCE`（実端子番号ではない旨の定型文）を入れる。`verified` は実型番と同じく `false`
+
+**押しボタンに IEC 慣例の 13-14（a 接点）/ 11-12（b 接点）を当てる案は採らない。** MY4N のコイル 13 / 14 と番号が衝突し、初学者が「実端子番号どうしを繋いでいる」と誤解する。本プロダクトの価値は実端子番号の正しさにあるので、実在しない番号を実在するかのように見せる方が害が大きい。
 
 ---
 
@@ -395,13 +486,13 @@ function simulate(doc, defs, input): SimulationResult {
 
 ### 5.7 警告の検出（validation.ts）
 
-| 警告 | 検出方法 |
-|---|---|
-| 電源短絡 | +24V 端子と 0V 端子が同一ネット |
-| コイル極性逆 | §5.3 の `reverse` 判定 |
-| 未接続端子 | どの `CircuitConnection` にも現れない端子 |
-| 発振 | §5.5 の履歴一致 |
-| 収束しない | 100 回反復して安定しない |
+| 警告 | `WarningCode` | 既定の `severity` | 検出方法 |
+|---|---|---|---|
+| 電源短絡 | `power-short-circuit` | error | +24V 端子と 0V 端子が同一ネット |
+| コイル極性逆 | `coil-polarity-reversed` | `strict` は error / `indicator` は warning | §5.3 の `reverse` 判定 |
+| 未接続端子 | `unconnected-terminal` | info | どの `CircuitConnection` にも現れない端子 |
+| 発振 | `oscillating` | info | §5.5 の履歴一致 |
+| 収束しない | `not-converged` | error | 100 回反復して安定しない |
 
 ---
 
