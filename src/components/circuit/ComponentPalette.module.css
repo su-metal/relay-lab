@@ -21,6 +21,71 @@
   color: var(--text-muted);
 }
 
+/* 検索窓（Step 7）。パレットの先頭に置き、スクロールしても見失わない */
+.search {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 6px 26px 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* type="search" の既定の×は Safari にしか出ないので自前で置く */
+.searchInput::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.searchClear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.searchClear:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
+.searchCount {
+  margin: 0 0 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.empty {
+  margin: 4px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 .group {
   margin-bottom: 12px;
 }

@@ -4,8 +4,9 @@ import type { BodyProps } from "./types";
 /**
  * 専用ボディを持たないカテゴリのフォールバック。
  *
- * 現状はダイオードと端子台（Step 7 で `DiodeBody` / `TerminalBlockBody` を足す）。
- * **未知のカテゴリでも画面が壊れないことを保証するのがこのボディの役目。**
+ * Step 7 で全 6 カテゴリに専用ボディが揃ったため、現在どのカテゴリからも
+ * 参照されていない。**未知のカテゴリでも画面が壊れないことを保証するのが
+ * このボディの役目**なので、使われていないからといって消さない。
  */
 export function GenericBody({ definition }: BodyProps) {
   return (

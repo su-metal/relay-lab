@@ -5,7 +5,8 @@
  * エンジンは `ComponentDefinitionRegistry`（ID → 定義の Map）を受け取るだけで、
  * 一覧も型番も知らない（CLAUDE.md 設計原則 2）。
  *
- * Step 7 で MY2N / MY4N-D2 / 端子台 / ダイオードをここに追加する。
+ * Step 7 で MY2N / MY4N-D2 / 端子台 / ダイオードを足したが、
+ * **エンジンの差分は 0 行**（requirements.md US-F）。
  */
 
 import type {
@@ -14,18 +15,26 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
+import { genericDiode } from "./diodes";
 import { dc24vLamp } from "./lamps";
+import { omronMy2nDc24 } from "./omron/my2n-dc24";
+import { omronMy4nD2Dc24 } from "./omron/my4n-d2-dc24";
 import { omronMy4nDc24 } from "./omron/my4n-dc24";
 import { dc24vPowerSupply } from "./power";
 import { pushbuttonNc, pushbuttonNo } from "./switches";
+import { genericTerminalBlock } from "./terminals";
 
 /** パレットの表示順もこの並びに従う */
 export const componentDefinitions: readonly ComponentDefinition[] = [
   dc24vPowerSupply,
   pushbuttonNo,
   pushbuttonNc,
+  omronMy2nDc24,
   omronMy4nDc24,
+  omronMy4nD2Dc24,
   dc24vLamp,
+  genericDiode,
+  genericTerminalBlock,
 ];
 
 /** 定義 ID → 定義。エンジンへ渡すのはこれ（design.md §5.5 の `defs`） */
@@ -71,4 +80,14 @@ export const listComponentDefinitions = (
       )
     : [...componentDefinitions];
 
-export { dc24vLamp, dc24vPowerSupply, omronMy4nDc24, pushbuttonNc, pushbuttonNo };
+export {
+  dc24vLamp,
+  dc24vPowerSupply,
+  genericDiode,
+  genericTerminalBlock,
+  omronMy2nDc24,
+  omronMy4nD2Dc24,
+  omronMy4nDc24,
+  pushbuttonNc,
+  pushbuttonNo,
+};

@@ -76,6 +76,16 @@
   text-align: center;
 }
 
+/* ダイオード: 三角を塗って向き（アノード → カソード）を読み取りやすくする */
+.diodeArrow {
+  fill: currentColor;
+}
+
+/* 端子台: ねじ端子。短絡バーの線と重なるので塗りつぶす */
+.terminalScrew {
+  fill: var(--panel);
+}
+
 /* スイッチ: 閉じている接点は通電色で描き、開閉が一目で分かるようにする */
 .contactClosed {
   stroke: var(--wire-energized-text);

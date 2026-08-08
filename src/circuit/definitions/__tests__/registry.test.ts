@@ -10,21 +10,25 @@ import {
 } from "@/circuit/definitions";
 
 /**
- * Step 1 の完了判定「レジストリから型番で定義を取得できる」を実証するテスト。
+ * 「レジストリから型番で定義を取得できる」を実証するテスト。
  *
- * MY4N の端子データは design.md §4.1 の表と突き合わせる。
+ * 端子データは design.md §4.1〜§4.3 の表と突き合わせる。
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("Step 1 の 5 定義が登録されている", () => {
+  it("Step 7 までの 9 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
+      "omron-my2n-dc24",
       "omron-my4n-dc24",
+      "omron-my4n-d2-dc24",
       "lamp-dc24v",
+      "diode-generic",
+      "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(5);
+    expect(componentRegistry.size).toBe(9);
   });
 
   it("型番から定義を取得できる", () => {
@@ -46,7 +50,7 @@ describe("部品定義レジストリ", () => {
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(5);
+    expect(listComponentDefinitions()).toHaveLength(9);
   });
 
   it("全定義が未検証であり、端子データの出典を持つ", () => {
@@ -148,5 +152,123 @@ describe("OMRON MY4N DC24V の端子データ（design.md §4.1）", () => {
   it("実端子番号は未検証のまま扱う", () => {
     expect(my4n.verified).toBe(false);
     expect(my4n.source).toMatch(/^https?:\/\//);
+  });
+});
+
+describe("OMRON MY2N DC24V の端子データ（design.md §4.2）", () => {
+  const my2n = requireComponentDefinition("omron-my2n-dc24");
+
+  /**
+   * **本アプリの価値の中核。** 8 ピンだからといって 1〜8 に詰め直さず、
+   * MY4N の 1 回路目と 4 回路目を使った飛び番のまま表示する
+   * （requirements.md US-F）。
+   */
+  it("端子番号が 1・4・5・8・9・12・13・14 の飛び番のまま", () => {
+    expect(my2n.terminals).toHaveLength(8);
+    expect(my2n.terminals.map((t) => t.number)).toEqual([
+      "1",
+      "4",
+      "5",
+      "8",
+      "9",
+      "12",
+      "13",
+      "14",
+    ]);
+  });
+
+  it("2 接点の NC / NO / COM が §4.2 の表と一致する", () => {
+    if (my2n.electrical.kind !== "relay") throw new Error("relay ではない");
+    expect(
+      my2n.electrical.relay.contacts.map((c) => [
+        c.id,
+        c.ncTerminal,
+        c.noTerminal,
+        c.commonTerminal,
+      ]),
+    ).toEqual([
+      ["c1", "1", "5", "9"],
+      ["c2", "4", "8", "12"],
+    ]);
+  });
+
+  it("コイルは MY4N と同じ 14 = (+) / 13 = (−) で極性は indicator", () => {
+    if (my2n.electrical.kind !== "relay") throw new Error("relay ではない");
+    expect(my2n.electrical.relay.coil).toMatchObject({
+      positiveTerminal: "14",
+      negativeTerminal: "13",
+      polarity: "indicator",
+    });
+  });
+
+  it("接点の説明は回路番号（第1・第2）で振られる", () => {
+    // 端子番号が飛んでいても「2 回路目」であることが読めなければ意味がない
+    expect(my2n.terminals.find((t) => t.id === "4")?.description).toContain(
+      "第2接点",
+    );
+    expect(my2n.terminals.find((t) => t.id === "4")?.contactGroup).toBe("c2");
+  });
+});
+
+describe("OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）", () => {
+  const my4n = requireComponentDefinition("omron-my4n-dc24");
+  const d2 = requireComponentDefinition("omron-my4n-d2-dc24");
+
+  /**
+   * MY4N との差が `polarity` の 1 値だけであること＝データ駆動設計が
+   * 機能していることの証明（requirements.md US-F）。
+   */
+  it("端子構成は MY4N と完全に同一", () => {
+    expect(d2.terminals.map((t) => [t.id, t.role, t.contactGroup])).toEqual(
+      my4n.terminals.map((t) => [t.id, t.role, t.contactGroup]),
+    );
+    if (d2.electrical.kind !== "relay" || my4n.electrical.kind !== "relay") {
+      throw new Error("relay ではない");
+    }
+    expect(d2.electrical.relay.contacts).toEqual(
+      my4n.electrical.relay.contacts,
+    );
+  });
+
+  it("MY4N との差はコイルの極性だけ", () => {
+    if (d2.electrical.kind !== "relay" || my4n.electrical.kind !== "relay") {
+      throw new Error("relay ではない");
+    }
+    expect(d2.electrical.relay.coil.polarity).toBe("strict");
+    expect(my4n.electrical.relay.coil.polarity).toBe("indicator");
+    expect({ ...d2.electrical.relay.coil, polarity: null }).toEqual({
+      ...my4n.electrical.relay.coil,
+      polarity: null,
+    });
+  });
+
+  it("コイル端子の説明にダイオード内蔵を明記する", () => {
+    expect(d2.terminals.find((t) => t.id === "14")?.description).toContain(
+      "ダイオード内蔵",
+    );
+  });
+});
+
+describe("汎用部品の追加（design.md §4.5）", () => {
+  it("ダイオードはアノード / カソードを持ち、実端子番号を持たない", () => {
+    const diode = requireComponentDefinition("diode-generic");
+    expect(diode.category).toBe("diode");
+    expect(diode.terminals.map((t) => [t.label, t.role])).toEqual([
+      ["A", "anode"],
+      ["K", "cathode"],
+    ]);
+    // 実型番を持たないので実端子番号も存在しない
+    expect(diode.terminals.every((t) => t.number === undefined)).toBe(true);
+  });
+
+  it("端子台は全端子を `electrical.terminals` に列挙する", () => {
+    const block = requireComponentDefinition("terminal-block-6p");
+    if (block.electrical.kind !== "terminal") throw new Error("terminal ではない");
+    // ここに漏れがあるとその端子だけ導通しない静かなバグになる
+    expect(block.electrical.terminals).toEqual(
+      block.terminals.map((t) => t.id),
+    );
+    expect(block.electrical.terminals).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(block.terminals.every((t) => t.number === undefined)).toBe(true);
   });
 });

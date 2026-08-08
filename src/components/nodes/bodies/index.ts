@@ -10,11 +10,13 @@ import type { ComponentType } from "react";
 
 import type { ComponentCategory } from "@/circuit/types";
 
+import { DiodeBody } from "./DiodeBody";
 import { GenericBody } from "./GenericBody";
 import { LampBody } from "./LampBody";
 import { PowerSupplyBody } from "./PowerSupplyBody";
 import { RelayBody } from "./RelayBody";
 import { SwitchBody } from "./SwitchBody";
+import { TerminalBlockBody } from "./TerminalBlockBody";
 import type { BodyProps } from "./types";
 
 const BODIES: Record<ComponentCategory, ComponentType<BodyProps>> = {
@@ -22,9 +24,8 @@ const BODIES: Record<ComponentCategory, ComponentType<BodyProps>> = {
   switch: SwitchBody,
   relay: RelayBody,
   lamp: LampBody,
-  // Step 7 で DiodeBody / TerminalBlockBody に置き換える
-  diode: GenericBody,
-  terminal: GenericBody,
+  diode: DiodeBody,
+  terminal: TerminalBlockBody,
 };
 
 export const bodyForCategory = (
