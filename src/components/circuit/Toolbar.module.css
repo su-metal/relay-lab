@@ -83,3 +83,19 @@
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* 自動保存の状態（design.md §8.4）。保存できていない状況だけ色を付ける */
+.save {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.save[data-status="unavailable"],
+.save[data-status="error"] {
+  padding: 2px 8px;
+  border: 1px solid var(--warn-border);
+  border-radius: 999px;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}

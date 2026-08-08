@@ -92,6 +92,10 @@ export function CircuitCanvas() {
     (state) => state.setConnectionSelected,
   );
   const setViewport = useCircuitStore((state) => state.setViewport);
+  const beginComponentDrag = useCircuitStore(
+    (state) => state.beginComponentDrag,
+  );
+  const endComponentDrag = useCircuitStore((state) => state.endComponentDrag);
 
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
@@ -121,8 +125,8 @@ export function CircuitCanvas() {
       for (const change of changes) {
         switch (change.type) {
           case "position":
-            // ドラッグ中は毎フレーム来る。Step 6 の Undo 履歴に積むのは
-            // ここではなく onNodeDragStop（design.md §7）
+            // ドラッグ中は毎フレーム来る。Undo 履歴に積むのは
+            // ここではなく onNodeDragStart / Stop の対（design.md §7）
             if (change.position) moveComponent(change.id, change.position);
             break;
           case "remove":
@@ -207,6 +211,10 @@ export function CircuitCanvas() {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        // 履歴のスナップショットはドラッグの前後 1 対だけ取る（design.md §7）。
+        // 位置そのものは onNodesChange が毎フレーム書き込んでいる
+        onNodeDragStart={beginComponentDrag}
+        onNodeDragStop={endComponentDrag}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onMoveEnd={onMoveEnd}

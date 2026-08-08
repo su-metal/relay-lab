@@ -57,9 +57,12 @@ src/
       CircuitCanvas.tsx
       ComponentPalette.tsx
       PropertiesPanel.tsx
+      WarningList.tsx            # 診断（警告一覧・§8.4）
       Toolbar.tsx
       palette-dnd.ts             # D&D の MIME と読み取り
       useSimulationSync.ts       # 入力変化 → simulate() の再実行トリガー（§8.2）
+      useDocumentPersistence.ts  # LocalStorage への保存・復元の駆動（§8.4）
+      useHistoryShortcuts.ts     # Undo / Redo のキーボード操作（§8.4）
       *.module.css
     nodes/
       DeviceNode.tsx             # 汎用ノード（定義駆動で描画）
@@ -106,6 +109,10 @@ src/
       terminals.ts
       __tests__/
         registry.test.ts         # レジストリ取得と §4.1 端子表の突き合わせ
+    persistence/
+      document-storage.ts        # CircuitDocument ⇄ JSON と LocalStorage（§7）
+      __tests__/
+        document-storage.test.ts # 往復と壊れた保存データの検証
     adapter/
       reactflow.ts               # Node/Edge ⇄ CircuitDocument
       simulation-view.ts         # SimulationResult → 配線色・部品状態（§5.6・§8.2）
@@ -116,13 +123,16 @@ src/
         inspection.test.ts       # 接点の開閉と停止中の区別（§8.3）
 
   store/
-    circuitStore.ts
+    circuitStore.ts              # ドキュメント＋選択＋Undo/Redo 履歴（§7）
     simulationStore.ts           # 実行時状態のみ（§7）
+    __tests__/
+      circuitStore.test.ts       # 履歴のスナップショット地点（§7）
 
   lib/
     app-info.ts                  # アプリ名・収束の最大反復回数など UI とエンジンの共有定数
     component-display.ts         # 表示ラベル表（カテゴリ・端子役割・極性・電位）と
                                  # 実端子番号の有無
+    warning-display.ts           # 警告の並べ替えと束ね（§5.7・§8.4）
 
   __tests__/
     setup.test.ts                # ツールチェーン疎通のスモークテスト
@@ -136,6 +146,11 @@ src/
 **adapter のテストが `check-docs-fresh.mjs` の監視外にある理由。** 監視対象は
 `types/` `definitions/` `engine/`（＝回路モデルそのもの）で、`adapter/` は表示との変換層。
 ここは design.md §8.1・§8.2 と対応するので、変換規則を変えたときはそちらを直す。
+
+**`persistence/` を store から分けた理由。** 「保存データを読めるか」の判定は
+LocalStorage とも React とも無関係な純粋関数で、実体に触るのは薄い 3 関数だけに
+閉じている。壊れた JSON・未知の `definitionId`・実在しない端子を指す配線を
+弾けるかどうかを、ブラウザを起動せずに Vitest で確かめられる（§7）。
 
 **`inspection.ts` を `simulation-view.ts` と分けた理由。** 前者はプロパティパネル
 1 箇所のための読み取りで、後者はキャンバス全体の配線色。同じ `SimulationResult` を
@@ -591,6 +606,37 @@ type WireState = "inactive" | "plus" | "zero" | "energized" | "short"
 
 React Flow のノード移動は毎フレーム `onNodesChange` を発火するため、変更を素直に履歴へ積むと 1 回のドラッグで数百件の履歴が生まれる。`onNodeDragStop` / 配線確定 / 部品追加 / 削除 のタイミングでのみスナップショットを取る。
 
+#### Undo / Redo の実装（Step 6 で確定）
+
+**ドラッグはスナップショットを「開始時」に控え、「完了時」に積む。** `onNodeDragStop` の時点で現在のドキュメントを past へ積むと、戻る先が移動後の位置になり Undo が効かない。`beginComponentDrag()` がドラッグ開始時のドキュメントを控え、`endComponentDrag()` が **位置が実際に変わっていた場合だけ** それを past へ積む。掴んだだけの操作で履歴を汚さない。
+
+控えたドキュメントは **ストアの state ではなくモジュール変数**に置く。履歴でも保存対象でもない一時値であり、`document` の購読者をドラッグのたびに起こす理由が無い。
+
+**削除は 1 手にまとめる。** `removeSelected()` が `removeConnections()` → `removeComponents()` と順に呼ぶと履歴が 2 手ぶん積まれ、1 回の削除を戻すのに Undo を 2 回押すことになる。部品と配線を 1 回の `set` で落とす。
+
+**ビューポートは履歴に含めない。** `viewport` は `CircuitDocument` の一部（＝保存対象）だが、パン・ズームは「取り消したい操作」ではない。Undo / Redo は復元したドキュメントに **現在の** `viewport` を載せ替えるので、戻した瞬間にキャンバスが飛ぶことがない。ラベル編集（`setComponentLabel`）も 1 文字ごとに発火するため積まない（§8.3）。
+
+**`replaceDocument()` は履歴と選択をリセットする。** 保存データの読み込み前へ Undo で戻れると、「復元した」のか「壊した」のか区別できなくなる。
+
+履歴の上限は 50 手。1 手あたりドキュメントを丸ごと持つため、部品数 × 手数だけメモリを使う。
+
+#### 永続化（`circuit/persistence/document-storage.ts`・Step 6 で確定）
+
+保存対象は `CircuitDocument` だけで、実行時状態（`running` / `pressedSwitches` / `SimulationResult`）は保存しない。キーは `relay-lab:circuit:v1` で、末尾は `CircuitDocument.version` と対応させる（書式を変えたら上げる＝旧データを読まない）。
+
+**読み込みは常に「壊れているかもしれないデータ」として扱う。** 保存後に定義 ID が変わった／端子が減ったといった事情で、実在しない部品や端子を指す JSON はいくらでも生まれる。素通しするとエンジンが存在しない端子のネットを引いて静かに壊れるため、`parseDocument()` が次を弾く。
+
+| 対象 | 判定 | 結果 |
+|---|---|---|
+| 全体 | JSON として読めない / `version` が 1 でない / `components`・`connections` が配列でない | ドキュメントごと不採用（`invalid`） |
+| 部品 | ID が無い・重複・レジストリに無い `definitionId`・座標が数値でない | その部品を落とす |
+| 配線 | 端子参照が不正・両端の部品または端子が実在しない・ID 重複・同一端子ペアの重複 | その配線を落とす |
+| ビューポート | 数値でない / `zoom <= 0` | 既定値へ戻す |
+
+**落としたものは理由付きで返す。** 黙って捨てると、回路が欠けた理由をユーザーが知る手段が無くなる。`{ status: "loaded", document, dropped: string[] }` の `dropped` をそのまま画面に出す（§8.4）。
+
+**「保存が無い」と「壊れている」を同じ扱いにしない。** 前者は初回起動そのものであり、通知を出す場面ではない。
+
 ### simulationStore（実行時のみ）
 
 `running` / `pressedSwitches` / 最新の `SimulationResult` を保持。保存対象に含めない。押しボタンの `onPointerDown` / `onPointerUp` で `pressedSwitches` を更新し、変更のたびに `simulate()` を呼ぶ。
@@ -749,6 +795,50 @@ Handle は子要素なので Handle にホバーすれば `.terminal:hover` が�
 ネイティブの `title` は**使わない。** 独自ツールチップと二重に出るうえ、
 表示まで 1 秒近く待たされて「端子の意味をすぐ読める」体験にならない。
 読み上げ用には Handle の `aria-label` に同じ本文を載せる。
+
+### 8.4 保存・Undo・診断の UI（Step 6 で確定）
+
+**`ReactFlowProvider` を張る層とフックを使う層を分ける。** 保存の復元は
+`setViewport()` を呼ぶ必要があり（後述）、プロバイダーを張ったコンポーネント自身は
+`useReactFlow()` を呼べない。`CircuitWorkspace` はプロバイダーだけを張り、
+中身を `Workspace` に落として `useSimulationSync` / `useDocumentPersistence` /
+`useHistoryShortcuts` をそこで呼ぶ。
+
+**保存の駆動も 1 箇所（`useDocumentPersistence`）。** §8.2 の再計算と同じ理由で、
+各コンポーネントが思い思いに書き込むと同じ回路を何度も直列化する。
+
+- **書き込みは 500ms 間引く。** 引き金は `document` の変化なので、パンやドラッグ中は
+  毎フレーム来る。操作が止まってからまとめて 1 回書く
+- **初回読み込みが済むまで書き込まない。** 空の回路で既存の保存を潰さないため
+- **読み込み後に `setViewport()` を呼ぶ。** `defaultViewport` は初回マウントでしか
+  効かず、読み込みはその後に起きる。呼ばないと保存した表示位置に戻らない
+- **保存できない環境を必ず知らせる。** 自動保存は目に見えないので、
+  プライベートモードや容量超過を黙っていると、リロードで消えて初めて気付く。
+  操作バーに `保存済み` / `保存中…` / `保存できません` を出す
+
+**読み込みで落とした要素は操作バー直下に一度だけ通知する**（§7 の `dropped`）。
+閉じられるようにし、3 件までを出して残りは「他 N 件」に畳む。
+
+**Undo / Redo のキー操作は入力欄で無効にする。** プロパティパネルの名前欄で
+`Ctrl+Z` を押したときに文字ではなく回路が巻き戻ると、何が起きたのか分からない。
+`Ctrl/⌘ + Z` で戻し、`Ctrl/⌘ + Shift + Z` と `Ctrl + Y` でやり直す。
+
+**診断（`WarningList`）は種別＋深刻度で束ねる。** MY4N を 1 個置いただけで
+未接続端子が 14 件出るので、素直に縦へ並べると最も危険な電源短絡が画面外へ
+押し出される。束ねの軸に深刻度も入れているのは、同じ `coil-polarity-reversed` でも
+`strict`（error）と `indicator`（warning）で意味がまるで違うから（§5.7）。
+1 グループ 4 件までを出し、残りは「他 N 件を表示」で開く。
+
+**発振を赤で出さない。** B 接点による自励発振は配線として正しくても必ず起きる
+挙動なので、ブザー回路を組んだ人に「エラー」を出してはいけない（§5.5）。
+深刻度バッジに色を付けるのは `error`（短絡の赤）と `warning`（黄）だけ。
+
+**停止中は「指摘なし」ではなく「未実行」と出す。** 診断していないことと、
+診断して何も出なかったことは別物（§8.2 の `undefined` と同じ約束）。
+
+**警告からは該当部品を選べる。** `componentId` を持つ警告はボタンにして
+`selectOnlyComponent()` を呼び、プロパティパネルに送る。部品を特定できない
+警告（発振・収束せず）は押せない行のまま出す。
 
 ---
 

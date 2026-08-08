@@ -1,0 +1,146 @@
+/*
+ * 診断（右カラム下段・design.md §8.4）。
+ * 深刻度の色はキャンバスの配線色と揃える。短絡の赤・警告の黄・情報の無彩色。
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.total {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.groups,
+.items {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.groups {
+  gap: 10px;
+}
+
+.items {
+  gap: 2px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 深刻度バッジ。発振は info なので赤くしない（design.md §5.5） */
+.severity {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.groupHead[data-severity="error"] .severity {
+  border-color: var(--wire-short);
+  color: var(--panel);
+  background: var(--wire-short);
+}
+
+.groupHead[data-severity="warning"] .severity {
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+.count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.item,
+.itemStatic {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--text);
+  background: none;
+}
+
+.item {
+  cursor: pointer;
+}
+
+.item:hover {
+  border-color: var(--accent-soft);
+  background: var(--bg);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.more {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: none;
+  font: inherit;
+  font-size: 10px;
+  color: var(--accent);
+  background: none;
+  cursor: pointer;
+}
+
+.more:hover {
+  text-decoration: underline;
+}

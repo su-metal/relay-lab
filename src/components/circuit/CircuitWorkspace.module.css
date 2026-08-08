@@ -2,7 +2,7 @@
 
 .workspace {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   height: 100vh;
   height: 100dvh;
 }
@@ -11,4 +11,52 @@
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 280px;
   min-height: 0;
+}
+
+/*
+ * 右カラム。プロパティが主で診断が従なので、診断は内容の高さに従わせ、
+ * 増えすぎたときだけ上限（画面の 40%）で止めて自身をスクロールさせる。
+ */
+.inspector {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.inspector > :last-child {
+  max-height: 40vh;
+}
+
+/* 読み込み時の通知（design.md §8.4）。一度読めば消せる */
+.notices {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.noticeList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.noticeClose {
+  margin-left: auto;
+  padding: 0 6px;
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  color: inherit;
+  background: none;
+  cursor: pointer;
 }
