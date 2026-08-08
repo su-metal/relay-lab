@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+
+# testing
+/coverage
+
+# misc
+.DS_Store
+*.pem
+.vercel
+*.tsbuildinfo
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env
+.env
+.env*.local
+
+# claude code (個人設定。プロジェクト共有設定は .claude/settings.json)
+.claude/settings.local.json

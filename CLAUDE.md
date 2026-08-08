@@ -1,0 +1,47 @@
+# relay-lab — リレー回路シミュレーター
+
+実メーカー・実型番・**実端子番号**でリレー回路を配線し、動作をシミュレーションする Web アプリ。抽象化された「リレー」ではなく `OMRON MY4N-D2 の端子 14` を扱えることが本プロダクトの価値。
+
+詳細は `requirements_definition.md`（プロダクト要件）、`design.md`（技術設計）、`requirements.md`（今回の作業スコープ）。
+
+## 技術構成のうち、コードから読み取れないもの
+
+- CSS は **CSS Modules**。Tailwind 等の CSS フレームワークは使わない
+- バックエンド・ログイン・DB は持たない。永続化は LocalStorage
+- 部品データは TypeScript でローカル保持。将来 Supabase / Firebase へ移行できる構造を崩さない
+
+## 設計原則（必ず守ること）
+
+1. **エンジンは React / Zustand / React Flow を import しない。** 純粋関数として実装し Vitest で検証する。React コンポーネント内に回路判定ロジックを書かない。
+2. **エンジンに型番分岐を書かない。** `if (model === "MY4N")` は禁止。エンジンは `ComponentDefinition` を読んで動作する。新型番の追加が定義ファイル 1 枚で完結すること。
+3. **負荷（コイル・ランプ・ダイオード）はグラフ上で union しない。** union するのは電線・端子台・閉じている接点/スイッチのみ。負荷を union すると電源短絡判定が誤爆する（`design.md` §5.2）。
+4. **表示用の React Flow Edge と電気的接続を同一視しない。** 内部表現は端子グラフ (`CircuitConnection`)、間に adapter を置く。
+5. **端子番号には必ず `source`（出典）と `verified` を持たせる。** 未検証の型番を検証済みとして扱わない。MY2N / MY4N / MY4N-D2 の現在の端子データは Web 調査による仮置きで **未検証**。
+
+## ドキュメント更新トリガー
+
+該当する変更を入れたら、**同じ作業の中で**ドキュメントも更新する。
+
+| 変更内容 | 更新先 |
+|---|---|
+| `src/circuit/types/` の型定義 | `design.md` §3 |
+| `src/circuit/definitions/` の部品追加・変更 | `design.md` §4（端子データ表・確度表） |
+| `src/circuit/engine/` の判定ロジック | `design.md` §5 |
+| ディレクトリ構成 | `design.md` §2 |
+| 実装できない制約が判明 | `design.md` §6 |
+| 端子データを実機・データシートで検証した | `design.md` §4 の確度表＋定義ファイルの `verified` |
+| 作業単位が完了 | `requirements.md` を次スコープで上書き |
+| 対応部品・画面構成・スコープの変更 | `requirements_definition.md` と本ファイル |
+
+`.claude/hooks/check-docs-fresh.mjs`（Stop フック）が `src/circuit/{types,definitions,engine}/` の未コミット差分と `design.md` を突き合わせ、更新漏れがあれば終了をブロックする。整形やコメント修正など更新不要な場合は、理由を述べて終了してよい。**このフックは初回コミット以降のみ動作する。**
+
+## 開発フロー
+
+Step 単位（`requirements.md` 参照）で以下を回す。
+
+1. plan mode（`Shift+Tab`）で対象ファイルを読み、計画を立てて承認を得る
+2. 実装し、`npm test` で検証する。成功を主張せず、テスト出力を示す
+3. コミットする
+4. 次の Step の前に `/clear` する
+
+タスク分解と進捗は `TodoWrite` で管理する（`tasklist.md` は作らない）。記述はすべて日本語。
