@@ -87,6 +87,66 @@
   transform: translateY(-50%);
 }
 
+/*
+ * 端子ツールチップ（design.md §8.3）。
+ *
+ * `.terminal` は大きさ 0 だが、Handle は子要素なので
+ * Handle にホバーすれば `.terminal:hover` が立つ。ラベルは
+ * pointer-events: none なので、ラベル側では出ない。
+ *
+ * ノードは position: relative で overflow を切っていないため、
+ * 部品の外へはみ出しても切り取られない。
+ */
+.tooltip {
+  position: absolute;
+  z-index: 20;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 25%);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.1s ease-out,
+    visibility 0.1s ease-out;
+}
+
+.terminal:hover .tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 端子の出ている辺の外側へ逃がす。ラベル（辺の内側）と重ならない向き */
+.terminal[data-side="top"] .tooltip {
+  left: 0;
+  bottom: 12px;
+  transform: translateX(-50%);
+}
+
+.terminal[data-side="bottom"] .tooltip {
+  left: 0;
+  top: 12px;
+  transform: translateX(-50%);
+}
+
+.terminal[data-side="left"] .tooltip {
+  right: 12px;
+  top: 0;
+  transform: translateY(-50%);
+}
+
+.terminal[data-side="right"] .tooltip {
+  left: 12px;
+  top: 0;
+  transform: translateY(-50%);
+}
+
 /* 電源端子だけは役割が一目で分かるよう色を変える */
 .terminal[data-role="power_positive"] .handle {
   border-color: var(--wire-plus);

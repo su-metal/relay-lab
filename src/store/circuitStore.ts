@@ -78,6 +78,14 @@ export type CircuitStore = {
   removeComponents: (componentIds: readonly string[]) => void;
 
   /**
+   * インスタンスのラベル（"RY1"）を変更する。空文字は未設定（`undefined`）に戻す。
+   *
+   * 1 文字ごとに発火するので **Undo 履歴には積まない**（Step 6 のスナップショット
+   * 地点は 部品追加 / 削除 / 配線確定 / ドラッグ完了 の 4 点。design.md §7）。
+   */
+  setComponentLabel: (componentId: string, label: string) => void;
+
+  /**
    * React Flow の接続イベントから配線を足す。
    * 端子以外への接続と重複配線はここで捨てる（adapter が判定する）。
    */
@@ -135,6 +143,23 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => ({
         ),
       },
     })),
+
+  setComponentLabel: (componentId, label) => {
+    // 入力値をそのまま持つ。ここで trim すると「RY 1」の途中（"RY "）で
+    // 空白が消えてしまい、制御された input に文字が打てなくなる。
+    // 前後の空白落としは入力欄を離れたときに UI 側が行う
+    const next = label.trim() === "" ? undefined : label;
+    set((state) => ({
+      document: {
+        ...state.document,
+        components: state.document.components.map((component) =>
+          component.id === componentId
+            ? { ...component, label: next }
+            : component,
+        ),
+      },
+    }));
+  },
 
   removeComponents: (componentIds) => {
     if (componentIds.length === 0) return;

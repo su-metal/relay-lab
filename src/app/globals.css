@@ -31,6 +31,13 @@
   --lamp-on: #fbbf24;
   --lamp-on-border: #b45309;
 
+  /* プロパティパネルの「通電・導通している」表示の下地（design.md §8.3） */
+  --state-on-bg: #ecfdf5;
+
+  /* 端子ツールチップ（design.md §8.3）。キャンバス上で読むので背景と明確に分ける */
+  --tooltip-bg: #1f2937;
+  --tooltip-text: #f8fafc;
+
   /* 未検証バッジ（design.md §4.4） */
   --warn-bg: #fef3c7;
   --warn-border: #fcd34d;

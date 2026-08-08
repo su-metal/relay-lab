@@ -33,6 +33,10 @@ type Props = {
 };
 
 export function DeviceTerminal({ terminal, state }: Props) {
+  // description は「端子 14 / コイル + / DC24V」の形で定義側が持っている。
+  // 持たない端子でも最低限「端子 <ラベル>」は読めるようにする
+  const tooltip = terminal.description ?? `端子 ${terminal.label}`;
+
   return (
     <div
       className={styles.terminal}
@@ -51,10 +55,20 @@ export function DeviceTerminal({ terminal, state }: Props) {
         position={HANDLE_POSITION[terminal.side]}
         id={handleIdOf(terminal.id)}
         className={styles.handle}
-        title={terminal.description ?? terminal.label}
+        // title（ネイティブのツールチップ）は使わない。下の .tooltip と二重に出るうえ、
+        // 表示まで 1 秒近く待たされて「端子の意味をすぐ読める」体験にならない
+        aria-label={tooltip}
       />
       <span className={styles.label} aria-hidden>
         {terminal.label}
+      </span>
+      {/*
+        ホバーで出す端子ツールチップ（design.md §8.3）。
+        CSS の :hover だけで出し入れするので、端子 1 個ごとに React の状態を持たない。
+        MY4N 1 個で 14 個並ぶため、ここに再レンダリングを増やしたくない
+      */}
+      <span className={styles.tooltip} role="tooltip" aria-hidden>
+        {tooltip}
       </span>
     </div>
   );

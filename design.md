@@ -109,9 +109,11 @@ src/
     adapter/
       reactflow.ts               # Node/Edge ⇄ CircuitDocument
       simulation-view.ts         # SimulationResult → 配線色・部品状態（§5.6・§8.2）
+      inspection.ts              # 選択部品 1 個の読み取り（§8.3）
       __tests__/
         reactflow.test.ts        # 往復変換と重複配線の判定（§8.1）
         simulation-view.test.ts  # 配線色の導出（§5.6）
+        inspection.test.ts       # 接点の開閉と停止中の区別（§8.3）
 
   store/
     circuitStore.ts
@@ -119,7 +121,8 @@ src/
 
   lib/
     app-info.ts                  # アプリ名・収束の最大反復回数など UI とエンジンの共有定数
-    component-display.ts         # カテゴリの日本語名・並び順・実端子番号の有無
+    component-display.ts         # 表示ラベル表（カテゴリ・端子役割・極性・電位）と
+                                 # 実端子番号の有無
 
   __tests__/
     setup.test.ts                # ツールチェーン疎通のスモークテスト
@@ -133,6 +136,10 @@ src/
 **adapter のテストが `check-docs-fresh.mjs` の監視外にある理由。** 監視対象は
 `types/` `definitions/` `engine/`（＝回路モデルそのもの）で、`adapter/` は表示との変換層。
 ここは design.md §8.1・§8.2 と対応するので、変換規則を変えたときはそちらを直す。
+
+**`inspection.ts` を `simulation-view.ts` と分けた理由。** 前者はプロパティパネル
+1 箇所のための読み取りで、後者はキャンバス全体の配線色。同じ `SimulationResult` を
+入力に取るが、消費者も出力の形も別物なので混ぜない。詳細は §8.3。
 
 **`simulation-view.ts` を adapter に置いた理由。** 「どのネットを緑にするか」は
 エンジンの 2 ビットだけでは決まらず、負荷側の結果と突き合わせる必要がある（§5.6）。
@@ -692,6 +699,56 @@ Step 3 で 押しボタン 160×125 / 電源 150×110 / ランプ 140×130 / MY4
 **警告は Step 4 では一覧表示しない。** 操作バーに出すのは収束結果
 （`実行中` / `発振中（ブザー動作）` / `収束しません`）だけで、`Warning[]` の
 提示は Step 6。発振はエラーではないので、赤ではなく警告色で出す（§5.5）。
+
+### 8.3 プロパティパネルと端子ツールチップ（Step 5 で確定）
+
+**パネルは判定を持たない。** 表示に必要な読み取りは
+`adapter/inspection.ts` の `inspectComponent()` に閉じ、
+`PropertiesPanel` は返ってきた `ComponentInspection` を並べるだけにした。
+React を import しない純粋関数なので、「押しボタンを押すと接点が COM–NO へ倒れる」
+ところまでブラウザを起動せずに Vitest で検証できる（`inspection.test.ts`）。
+
+```ts
+inspectComponent(document, definitions, result, pressedSwitches, componentId)
+  → { instance, definition, device?, contacts[], terminals[], conducting? } | null
+```
+
+引数は `buildSimulationView()` と同じ並びに `componentId` を足しただけで、
+ビューは内部で組み直す。パネルは 1 部品しか見ないが、端子の電位は
+「通電中の負荷に隣接するか」を回路全体から決める（§5.6）ので部分計算では求まらない。
+
+**`device` が `undefined` であることが「停止中」を表す。** §8.2 のノードと同じ約束。
+パネルでは停止中を「オフ」ではなく `—（停止中）` と出す。
+非励磁と「そもそも動いていない」を同じ灰色で描くと、実行し忘れに気付けない。
+
+**接点の開閉はエンジンに引き直す。** 「非励磁なら COM–NC、励磁なら COM–NO」の規則は
+`engine/relay.ts` の `closedContactPairs()` に 1 箇所だけ置いてある。adapter 側で
+`energized ? "no" : "nc"` と書き直すと同じ規則が 2 箇所になるので、エンジンの答えの
+COM の相手が NO かどうかで判定する。
+
+**スイッチの導通は「同じネットに居るか」で読む。** 開閉の規則（A 接点は押下中だけ閉じる）
+は `engine/graph.ts` の持ち物なので再実装しない。表示したいのは規則ではなく結果であり、
+外部配線で短絡していれば「導通している」と出るのがむしろ正しい。
+
+**カテゴリごとの表示は `ElectricalDefinition.kind` の 6 通りだけで分岐する。**
+型番では分岐しない（CLAUDE.md 設計原則 2）。新型番を足してもパネルは変わらない。
+
+**ラベル編集は Undo 履歴に積まない。** `setComponentLabel()` は 1 文字ごとに発火する。
+§7 のスナップショット地点（部品追加 / 削除 / 配線確定 / ドラッグ完了）に加えないので、
+Step 6 の Undo でラベル変更は戻らない。ドラッグと同じ理由で、1 回の入力で履歴が
+数十件積まれるほうが害が大きい。前後の空白落としは `onBlur` で行う —
+`onChange` で `trim()` すると「RY 1」の途中（`"RY "`）で空白が消えて打てなくなる。
+
+**端子ツールチップは CSS の `:hover` だけで出す。** 本文は
+`TerminalDefinition.description`（「端子 14 / コイル + / DC24V」）をそのまま出し、
+持たない端子は「端子 &lt;ラベル&gt;」にフォールバックする。
+MY4N 1 個で端子が 14 個並ぶので、端子ごとに React の状態を持たせて
+再レンダリングを増やしたくない。`.terminal` は大きさ 0 のアンカーだが、
+Handle は子要素なので Handle にホバーすれば `.terminal:hover` が立つ。
+
+ネイティブの `title` は**使わない。** 独自ツールチップと二重に出るうえ、
+表示まで 1 秒近く待たされて「端子の意味をすぐ読める」体験にならない。
+読み上げ用には Handle の `aria-label` に同じ本文を載せる。
 
 ---
 
