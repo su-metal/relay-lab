@@ -53,20 +53,28 @@ src/
 
   components/
     circuit/
+      CircuitWorkspace.tsx       # ReactFlowProvider + 3カラム
       CircuitCanvas.tsx
       ComponentPalette.tsx
       PropertiesPanel.tsx
       Toolbar.tsx
+      palette-dnd.ts             # D&D の MIME と読み取り
+      *.module.css
     nodes/
       DeviceNode.tsx             # 汎用ノード（定義駆動で描画）
-      DeviceTerminal.tsx         # Handle + ツールチップ
+      DeviceTerminal.tsx         # Handle + 端子番号ラベル
+      *.module.css
       bodies/                    # カテゴリ固有の見た目差分のみ
+        index.ts                 # カテゴリ → ボディ の対応表
+        types.ts                 # BodyProps
+        bodies.module.css
         RelayBody.tsx
         SwitchBody.tsx
         PowerSupplyBody.tsx
         LampBody.tsx
-        DiodeBody.tsx
-        TerminalBlockBody.tsx
+        GenericBody.tsx          # 専用ボディが無いカテゴリのフォールバック
+        DiodeBody.tsx            # Step 7
+        TerminalBlockBody.tsx    # Step 7
 
   circuit/
     engine/
@@ -99,13 +107,16 @@ src/
         registry.test.ts         # レジストリ取得と §4.1 端子表の突き合わせ
     adapter/
       reactflow.ts               # Node/Edge ⇄ CircuitDocument
+      __tests__/
+        reactflow.test.ts        # 往復変換と重複配線の判定（§8.1）
 
   store/
     circuitStore.ts
-    simulationStore.ts
+    simulationStore.ts           # Step 4
 
   lib/
     app-info.ts                  # アプリ名・収束の最大反復回数など UI とエンジンの共有定数
+    component-display.ts         # カテゴリの日本語名・並び順・実端子番号の有無
 
   __tests__/
     setup.test.ts                # ツールチェーン疎通のスモークテスト
@@ -115,6 +126,10 @@ src/
 ```
 
 **`potential.ts` を分けた理由。** 「+ 側にいる / 0V 側にいる」の解釈はコイル（`relay.ts`）とランプ（`simulate.ts`）の双方が必要とする。`graph.ts` に置くと `graph.ts → relay.ts → graph.ts` の循環参照になるため、依存の末端として独立させた。依存の向きは `potential.ts ← relay.ts ← graph.ts ← simulate.ts` の一本道。
+
+**adapter のテストが `check-docs-fresh.mjs` の監視外にある理由。** 監視対象は
+`types/` `definitions/` `engine/`（＝回路モデルそのもの）で、`adapter/` は表示との変換層。
+ここは design.md §8.1 と対応するので、変換規則を変えたときは §8.1 を直す。
 
 **テストの配置。** エンジンのテストは `src/circuit/engine/__tests__/`、部品定義のテストは
 `src/circuit/definitions/__tests__/` に置く。どちらも `check-docs-fresh.mjs` の監視対象配下なので、
@@ -557,6 +572,52 @@ React Flow のノード移動は毎フレーム `onNodesChange` を発火する�
 - 端子ツールチップ: 「端子 14 / コイル + / DC24V」「端子 9 / 第1接点 COM」のように、初心者が端子の意味を理解できる文言を `TerminalDefinition.description` から表示する
 - 部品の見た目: 写真の完全再現はしない。**実端子番号が視覚的に読み取れることを最優先**とし、メーカー名・型番・端子番号を明示する
 - プロパティパネル: 型番・種別・コイル仕様・励磁状態・接点ごとの COM/NO/NC 導通状態をシミュレーション中はリアルタイム更新する
+
+### 8.1 React Flow との対応付け（`adapter/reactflow.ts`・Step 3 で確定）
+
+**真実は `CircuitDocument` 側にある。** React Flow へ渡す nodes / edges は
+`circuitStore` のドキュメントから毎回組み立てた派生データで、React Flow が返す変更
+（移動・削除・選択・接続）は adapter を通してドキュメントへ書き戻す。
+React Flow 側に状態を持たせない（CLAUDE.md 設計原則 4）。
+
+| React Flow | 回路モデル | 備考 |
+|---|---|---|
+| Node ID | `CircuitDocument.components[].id` | インスタンス ID |
+| Node type | `"device"` の 1 種のみ | 型番別ノードは作らない |
+| Handle ID | `TerminalDefinition.id` | **恒等写像。**加工すると Edge から端子を復元する経路が増えて壊れやすい |
+| Edge ID | `CircuitConnection.id` | |
+| Edge source/target + Handle | `CircuitConnection.from` / `to` | Handle ID が無い接続は `null` を返して捨てる |
+
+**端子はすべて `type="source"` の Handle 1 個、`ConnectionMode.Loose`。**
+端子に「入力 / 出力」の区別は無いので、1 端子に source / target の Handle を 2 枚重ねる
+代わりに Loose モードで source → source を許可する。Edge の描画も Loose なら target 側の
+探索が source handle にフォールバックするため、この構成で成立する。
+
+**ノードには必ず `measured` を載せる（`visual` の値をそのまま渡す）。** ノードは毎回
+ドキュメントから組み直す派生データなので、React Flow から見ると毎回「新しいノード」に
+見える。`measured` が無いノードを渡すと React Flow は初期化前とみなして端子の実測値
+（handleBounds）を破棄し、ノードを `visibility: hidden` に戻す。**この状態では配線が
+画面から消え、以後つなげなくなる。** 部品の寸法は `visual` で確定しているので実測を
+待つ必要がない。adapter のテストでこの値を固定している。
+
+**弾く接続。** ①Handle ID が無い（部品本体へのドロップ）②同一端子どうしの自己接続
+③既存と同じ端子ペア（配線に向きは無いので順序を無視して比較）。判定は
+`canConnectTerminals()` に集約し、ドラッグ中の `isValidConnection` と確定時の
+`addConnection` の両方から呼ぶ。
+
+**キャンバス操作。** 左ドラッグ＝パン、Shift+ドラッグ＝範囲選択、Ctrl/Cmd+クリック＝複数選択、
+Delete / Backspace ＝削除。左ドラッグを範囲選択にすると、配線しようとして端子を掴み損ねる
+たびに選択枠が出てパンできなくなるため採らない。
+
+**「未検証」バッジは実端子番号を持つ型番にだけ出す。** 汎用部品（電源 / 押しボタン / ランプ）は
+`verified: false` だが実端子番号そのものが無く、検証対象が存在しない（§4.4 / §4.5）。
+そこへ同じバッジを出すと全部品に付いて意味を失うので、パレットとプロパティパネルでは
+「実端子番号なし」と無彩色で表示し、バッジは MY4N 等に限る。判定は
+`lib/component-display.ts` の `hasRealTerminalNumbers()`。
+
+**`visual` は端子番号の可読性で決める。** 型番表示が図記号を押し出さない大きさが必要で、
+汎用部品の「型番」は長い日本語（"押しボタン A接点（モーメンタリ）"）になる。
+Step 3 で 押しボタン 160×125 / 電源 150×110 / ランプ 140×130 / MY4N 260×220 に調整した。
 
 ---
 

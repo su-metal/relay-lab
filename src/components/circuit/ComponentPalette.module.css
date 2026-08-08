@@ -1,0 +1,100 @@
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 16px 14px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.group {
+  margin-bottom: 12px;
+}
+
+.groupTitle {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: grab;
+  transition:
+    border-color 0.12s ease-out,
+    background 0.12s ease-out;
+}
+
+.item:hover {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+
+.item:active {
+  cursor: grabbing;
+}
+
+.itemName {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.manufacturer {
+  font-weight: 700;
+}
+
+.itemMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.unverified {
+  padding: 0 5px;
+  border: 1px solid var(--warn-border);
+  border-radius: 999px;
+  font-size: 9px;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+/* 実型番を持たない汎用部品。未検証バッジと取り違えないよう無彩色にする */
+.generic {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 9px;
+  color: var(--text-muted);
+}

@@ -38,7 +38,8 @@ export const dc24vPowerSupply: ComponentDefinition = {
     positiveTerminal: "plus",
     zeroTerminal: "zero",
   },
-  visual: { width: 140, height: 90 },
+  // 右辺の端子ラベル（"+24V" / "0V"）と本体表示がぶつからない幅
+  visual: { width: 150, height: 110 },
   source: GENERIC_TERMINAL_SOURCE,
   verified: false,
 };

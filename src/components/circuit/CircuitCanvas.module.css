@@ -1,0 +1,42 @@
+.canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  background: var(--canvas-bg);
+}
+
+.emptyHint {
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+/* 配線の既定色。通電状態による色分けは Step 4 で state 由来に差し替える */
+.canvas :global(.react-flow__edge-path) {
+  stroke: var(--wire-inactive);
+  stroke-width: 2;
+}
+
+.canvas :global(.react-flow__edge.selected .react-flow__edge-path) {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.canvas :global(.react-flow__connection-path) {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+/* ノードの既定枠は DeviceNode 側で描くので消す */
+.canvas :global(.react-flow__node) {
+  border: none;
+  padding: 0;
+  background: transparent;
+  font-size: inherit;
+}

@@ -7,9 +7,29 @@
 
   --bg: #f8fafc;
   --panel: #ffffff;
+  --canvas-bg: #f1f5f9;
   --border: #d4d8e0;
   --text: #1f2937;
   --text-muted: #6b7280;
+
+  /* 操作系 */
+  --accent: #2563eb;
+  --accent-soft: #bfdbfe;
+  --run: #16a34a;
+
+  /* 部品ノード */
+  --node-border: #cbd5e1;
+  --node-border-power: #f0a5a5;
+  --node-border-relay: #a5b4fc;
+  --terminal-border: #64748b;
+  --terminal-hover: #2563eb;
+  --coil-fill: #eef2ff;
+  --lamp-off: #f1f5f9;
+
+  /* 未検証バッジ（design.md §4.4） */
+  --warn-bg: #fef3c7;
+  --warn-border: #fcd34d;
+  --warn-text: #92400e;
 }
 
 * {
@@ -29,4 +49,6 @@ body {
   font-family:
     "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", sans-serif;
   line-height: 1.6;
+  /* キャンバス操作中にページ全体がスクロールしないようにする */
+  overflow: hidden;
 }

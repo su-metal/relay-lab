@@ -10,8 +10,11 @@ import type { ComponentDefinition } from "@/circuit/types";
 
 import { GENERIC_TERMINAL_SOURCE } from "./source-notes";
 
-/** 押しボタン共通の見た目サイズ */
-const PUSHBUTTON_VISUAL = { width: 120, height: 90 };
+/**
+ * 押しボタン共通の見た目サイズ。
+ * 型番表示（"押しボタン A接点（モーメンタリ）"）が 2 行で収まる幅を確保する。
+ */
+const PUSHBUTTON_VISUAL = { width: 160, height: 125 };
 
 /**
  * モーメンタリ押しボタン A 接点（NO）。

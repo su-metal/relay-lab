@@ -1,0 +1,97 @@
+/*
+ * 端子の見た目。
+ *
+ * `.terminal` は大きさ 0 のアンカーで、部品内の相対座標（0..1）にだけ置かれる。
+ * Handle とラベルはそこからの相対配置なので、部品のサイズが変わっても崩れない。
+ *
+ * React Flow の `.react-flow__handle-*` が top/left/transform を持つため、
+ * 打ち消しには 2 クラス（`.terminal .handle`）の詳細度が要る。
+ */
+
+.terminal {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.terminal .handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  min-width: 0;
+  min-height: 0;
+  border: 2px solid var(--terminal-border);
+  border-radius: 50%;
+  background: var(--panel);
+  transform: translate(-50%, -50%);
+  transition:
+    transform 0.1s ease-out,
+    border-color 0.1s ease-out,
+    background 0.1s ease-out;
+}
+
+/* 半径を稼ぎつつ見た目は小さいまま保つための当たり判定の拡張（design.md §8） */
+.terminal .handle::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
+
+.terminal .handle:hover {
+  transform: translate(-50%, -50%) scale(1.3);
+  border-color: var(--terminal-hover);
+  background: var(--terminal-hover);
+}
+
+/* 配線ドラッグ中に接続可能な端子を強調する（React Flow が付けるクラス） */
+.terminal .handle:global(.connectingfrom),
+.terminal .handle:global(.connectionindicator):hover {
+  border-color: var(--terminal-hover);
+}
+
+.label {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.terminal[data-side="top"] .label {
+  left: 0;
+  top: 10px;
+  transform: translateX(-50%);
+}
+
+.terminal[data-side="bottom"] .label {
+  left: 0;
+  bottom: 10px;
+  transform: translateX(-50%);
+}
+
+.terminal[data-side="left"] .label {
+  left: 11px;
+  top: 0;
+  transform: translateY(-50%);
+}
+
+.terminal[data-side="right"] .label {
+  right: 11px;
+  top: 0;
+  transform: translateY(-50%);
+}
+
+/* 電源端子だけは役割が一目で分かるよう色を変える */
+.terminal[data-role="power_positive"] .handle {
+  border-color: var(--wire-plus);
+}
+
+.terminal[data-role="power_zero"] .handle {
+  border-color: var(--wire-minus);
+}

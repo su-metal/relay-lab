@@ -1,0 +1,14 @@
+/* 上部に操作バー、その下を 3 カラム。中心はあくまでキャンバス（design.md §8） */
+
+.workspace {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  min-height: 0;
+}
