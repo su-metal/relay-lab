@@ -16,6 +16,8 @@ import type {
 } from "@/circuit/types";
 import { terminalKey } from "@/circuit/types";
 
+import { EMPTY_SELF_HOLD, type SelfHoldView } from "./self-hold";
+
 /**
  * 端子・配線の表示状態（design.md §5.6 の表に対応）。
  *
@@ -32,6 +34,12 @@ export type WireState =
   | "zero"
   /** 通電中の負荷（励磁コイル・点灯ランプ）に隣接する */
   | "energized"
+  /**
+   * 自己保持しているリレーのコイルを、そのリレー自身の接点が支えている枝
+   * （design.md §5.9）。通電中（`energized`）の一部を切り出したもので、
+   * **この線を切ればリレーが落ちる**という意味を持つ。
+   */
+  | "self-hold"
   /** + と 0V が同一ネット＝電源短絡 */
   | "short";
 
@@ -45,6 +53,12 @@ export type WireState =
 export type DeviceSimulationState = {
   /** リレーのコイルが励磁しているか */
   energized: boolean;
+  /**
+   * そのリレーが**自分の接点で自分を保持している**か（design.md §5.9）。
+   * `energized` が true のときだけ true になりうる。ボタンを押している間は
+   * 外部が保持しているので false —— 離した瞬間に true へ変わる。
+   */
+  selfHeld: boolean;
   /** ランプが点灯しているか */
   lit: boolean;
   /** 押しボタンが押下中か */
@@ -130,12 +144,17 @@ const wireStateOfNet = (
  *
  * @param result シミュレーション結果。停止中は `null`
  * @param pressedSwitches 押下中の押しボタンの componentId
+ * @param selfHold 自己保持の検出結果（`self-hold.ts`）。省略時は色を足さない。
+ *   ここで受け取るだけにして**計算しない**のは、検出に `simulate()` の再実行が
+ *   要るため —— 表示状態の組み立てと同じ関数に混ぜると、色を引くたびに
+ *   回路を解き直すことになる
  */
 export const buildSimulationView = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   result: SimulationResult | null,
   pressedSwitches: ReadonlySet<string>,
+  selfHold: SelfHoldView = EMPTY_SELF_HOLD,
 ): SimulationView => {
   if (!result) return IDLE_SIMULATION_VIEW;
 
@@ -150,9 +169,21 @@ export const buildSimulationView = (
 
     for (const terminal of definition.terminals) {
       const key = terminalKey(instance.id, terminal.id);
+      const state = wireStateOfNet(
+        result.netOf.get(key),
+        result,
+        energizedNets,
+      );
+      /*
+       * 自己保持の紫は緑（通電中）の中からだけ切り出す。`short` を上書きしない
+       * ためで、判定順の理由は §5.6 と同じ —— 最も危険な配線ミスを、
+       * より穏やかな色で塗り潰してはいけない。
+       */
       terminalOf.set(
         key,
-        wireStateOfNet(result.netOf.get(key), result, energizedNets),
+        state === "energized" && selfHold.terminals.has(key)
+          ? "self-hold"
+          : state,
       );
     }
 
@@ -160,12 +191,15 @@ export const buildSimulationView = (
     // 「シミュレーション中」の合図になり、ノード側は追加の判定を持たずに済む
     deviceOf.set(instance.id, {
       energized: result.energizedRelays.has(instance.id),
+      selfHeld: selfHold.relays.has(instance.id),
       lit: result.litLamps.has(instance.id),
       pressed: pressedSwitches.has(instance.id),
     });
   }
 
-  // 配線の色は端子と同じネットの色。両端は同一ネットなので from 側だけ見ればよい
+  // 配線の色は端子と同じネットの色。両端は同一ネットなので from 側だけ見ればよい。
+  // 自己保持（§5.9）も同じ —— 電線は必ず union されるので、what-if で電源を失うか
+  // どうかは配線の両端で必ず一致する
   const wireOf = new Map<string, WireState>();
   for (const connection of document.connections) {
     const key = terminalKey(

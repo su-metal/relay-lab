@@ -120,18 +120,23 @@ describe("buildSimulationView", () => {
   it("部品の状態（励磁・点灯・押下）を componentId で引ける", () => {
     const { view } = viewFor(["s1"]);
 
+    // selfHeld は自己保持の検出（§5.9）を渡していないので常に false。
+    // この回路は押している間だけ励磁する（保持しているのはボタン）
     expect(view.deviceOf.get("ry1")).toEqual({
       energized: true,
+      selfHeld: false,
       lit: false,
       pressed: false,
     });
     expect(view.deviceOf.get("l1")).toEqual({
       energized: false,
+      selfHeld: false,
       lit: true,
       pressed: false,
     });
     expect(view.deviceOf.get("s1")).toEqual({
       energized: false,
+      selfHeld: false,
       lit: false,
       pressed: true,
     });

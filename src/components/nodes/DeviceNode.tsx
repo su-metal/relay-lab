@@ -77,6 +77,9 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
       // `simulation` の有無がそのまま「シミュレーション中か」を表す
       data-running={simulation ? "true" : undefined}
       data-energized={simulation?.energized ? "true" : undefined}
+      // 自分の接点で自分を保持しているリレー（design.md §5.9）。
+      // 配線の紫を追わなくても、どのリレーが保持側かノード単体で分かる
+      data-self-hold={simulation?.selfHeld ? "true" : undefined}
       data-lit={simulation?.lit ? "true" : undefined}
       style={{
         width: definition.visual.width,
@@ -122,6 +125,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
             <span
               className={styles.statusTooltip}
               data-active={status.active ? "true" : undefined}
+              data-self-hold={status.selfHeld ? "true" : undefined}
               role="tooltip"
               aria-hidden
             >

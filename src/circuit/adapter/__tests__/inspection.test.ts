@@ -111,6 +111,7 @@ describe("inspectComponent", () => {
 
     expect(inspection?.device).toEqual({
       energized: false,
+      selfHeld: false,
       lit: false,
       pressed: false,
     });

@@ -131,6 +131,19 @@
   border-top-color: var(--wire-energized-text);
 }
 
+/*
+ * 自己保持中（design.md §5.9）。配線・端子と同じ紫にして、
+ * 「励磁中」と「自己保持中」を色でも読み分けられるようにする。
+ * **必ず data-active の後ろに置くこと**（詳細度が同じため）。
+ */
+.statusTooltip[data-self-hold="true"] {
+  background: var(--wire-self-hold-text);
+}
+
+.statusTooltip[data-self-hold="true"]::after {
+  border-top-color: var(--wire-self-hold-text);
+}
+
 .bodyArea:hover .statusTooltip {
   opacity: 1;
   visibility: visible;
@@ -201,4 +214,19 @@
 
 .node[data-category="relay"] {
   border-color: var(--node-border-relay);
+}
+
+/*
+ * 自己保持中のリレー（design.md §5.9）。
+ *
+ * **カテゴリ色より後ろに置くこと**（詳細度が同じなので順序で勝敗が決まる）。
+ * 配線の紫を目で追わなくても「今どれが自分で保持しているか」が分かるように、
+ * ノードそのものを縁取る。
+ *
+ * 選択中は譲る。選択の枠（`--accent`）は今まさに操作している対象を指すもので、
+ * 回路の状態表示に奪われると、何を掴んでいるのか分からなくなる。
+ */
+.node[data-self-hold="true"]:not([data-selected="true"]) {
+  border-color: var(--wire-self-hold);
+  box-shadow: 0 0 0 2px var(--wire-self-hold-soft);
 }

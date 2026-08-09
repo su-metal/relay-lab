@@ -8,6 +8,16 @@
   --wire-energized-text: #15803d;
   --wire-short: #dc2626;
   /*
+   * 自己保持の経路（design.md §5.9）。緑（通電中）の中から
+   * 「この線を切ればリレーが落ちる」枝だけを抜き出す色なので、
+   * 赤・青・緑・黄のどれとも混ざらない紫を当てる
+   */
+  --wire-self-hold: #9333ea;
+  /* 紫の細線・文字用に一段暗く。緑の `--wire-energized-text` と同じ役割 */
+  --wire-self-hold-text: #7e22ce;
+  /* リレーノードの縁取りに敷く薄い紫（`--accent-soft` と同じ使い方） */
+  --wire-self-hold-soft: #e9d5ff;
+  /*
    * 停止中の制御線（design.md §5.8）。実務の盤配線の黄に寄せる。
    * 純黄（#eab308）は 2px の線にすると薄い背景に埋もれるので一段暗く取る
    */
