@@ -11,6 +11,11 @@
  * - 実行中: 紫の流れる破線＝自己保持（この線を切ればリレーが落ちる）
  *
  * 凡例が無いと、その 1 色が「なんとなく色が付いている」で終わる。
+ *
+ * **見本線は実際の描かれ方を写す。** 実行中の待機線（赤・青・灰）は
+ * キャンバス上で濃さを落としてあるので、凡例の見本も同じだけ薄くする。
+ * 「薄い＝電流が流れていない」という軸そのものが読み取らせたい情報であり、
+ * 見本だけ濃く描くとその軸が凡例から抜け落ちる。
  */
 
 import styles from "./WireLegend.module.css";
@@ -38,10 +43,13 @@ const ROLE_LEGEND: readonly LegendItem[] = [
   },
 ];
 
-/** 実行中＝状態色（§5.6・§5.9）。自己保持を最後に置く（同じく「気付き」の位置） */
+/**
+ * 実行中＝状態色（§5.6・§5.9）。
+ *
+ * **通電している 2 つを先に置く。** 実行中に最初に読ませたいのは
+ * 「今どこに電流が流れているか」で、待機している線はその後でよい。
+ */
 const STATE_LEGEND: readonly LegendItem[] = [
-  { swatch: styles.plus, label: "+ 側", hint: "+ 側だけに届いている線" },
-  { swatch: styles.zero, label: "0V", hint: "0V 側だけに届いている線" },
   {
     swatch: styles.energized,
     label: "通電中",
@@ -51,6 +59,23 @@ const STATE_LEGEND: readonly LegendItem[] = [
     swatch: styles.selfHold,
     label: "自己保持",
     hint: "リレーが自分の接点で自分を保持している線。ここを切ると落ちます",
+  },
+  {
+    swatch: `${styles.plus} ${styles.idle}`,
+    label: "+ 側",
+    hint: "+ 側だけに届いている線。電圧は来ていますが電流は流れていません",
+  },
+  {
+    swatch: `${styles.zero} ${styles.idle}`,
+    label: "0V",
+    hint: "0V 側だけに届いている線。電圧は来ていますが電流は流れていません",
+  },
+  {
+    // 実行中も停止中と同じ濃さで描く（キャンバス側も打ち消してある）。
+    // 非通電の中で唯一「直すべき線」なので、ここだけは薄くしない
+    swatch: styles.isolated,
+    label: "未接続",
+    hint: "どう動作させても電源に届かない線（配線漏れの可能性）",
   },
 ];
 

@@ -128,6 +128,66 @@ describe("buildWireRoles", () => {
     expect(roles.get("w-lamp-coil")).toBe("isolated");
   });
 
+  /**
+   * b 接点の直列チェーン（インターロック・先行優先）の起動経路。
+   *
+   * 全リレーを励磁させた状態では b 接点が開いてチェーンが丸ごと死ぬので、
+   * 「静止」と「全動作」の 2 点だけでは**正しく描かれた起動経路が
+   * まるごと配線漏れに見える。** その間の「スイッチは入っているが
+   * リレーはまだ動いていない」状態を見れば救える。
+   */
+  it("b 接点チェーンの起動経路を配線漏れにしない", () => {
+    const chain: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", label: "PS1", position: at(0, 0) },
+        {
+          id: "sr",
+          definitionId: "switch-selector-no",
+          label: "SR",
+          position: at(200, 0),
+        },
+        {
+          id: "s1",
+          definitionId: "switch-selector-no",
+          label: "S1",
+          position: at(400, 0),
+        },
+        {
+          id: "ry1",
+          definitionId: "omron-my4n-dc24",
+          label: "RY1",
+          position: at(600, 0),
+        },
+        {
+          id: "ry2",
+          definitionId: "omron-my2n-dc24",
+          label: "RY2",
+          position: at(600, 300),
+        },
+      ],
+      connections: [
+        wire("w-ps-sr", ["ps", "plus"], ["sr", "1"]),
+        wire("w-sr-com", ["sr", "2"], ["ry1", "9"]),
+        // RY1 の NC(1) → RY2 の COM(9) → RY2 の NC(1) → S1 という直列チェーン
+        wire("w-chain-1", ["ry1", "1"], ["ry2", "9"]),
+        wire("w-chain-2", ["ry2", "1"], ["s1", "1"]),
+        // S1 で RY1 の第2接点 COM(10) を叩き、その NC(2) からコイルへ
+        wire("w-s1-com2", ["s1", "2"], ["ry1", "10"]),
+        wire("w-nc2-coil", ["ry1", "2"], ["ry1", "14"]),
+        wire("w-coil-zero", ["ry1", "13"], ["ps", "zero"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    const roles = buildWireRoles(chain, componentRegistry);
+
+    // RY1 が励磁すると 9–1 が開いてこの先は死ぬが、それは配線漏れではない
+    expect(roles.get("w-chain-1")).toBe("control");
+    expect(roles.get("w-chain-2")).toBe("control");
+    expect(roles.get("w-s1-com2")).toBe("control");
+    expect(roles.get("w-nc2-coil")).toBe("control");
+  });
+
   it("配線が無ければ空を返す（ネットを組み立てない）", () => {
     const empty: CircuitDocument = { ...document, connections: [] };
     expect(buildWireRoles(empty, componentRegistry).size).toBe(0);

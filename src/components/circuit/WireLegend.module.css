@@ -46,6 +46,15 @@
   border-top-style: dashed;
 }
 
+/*
+ * 実行中の待機線（design.md §5.6）。キャンバス上と同じだけ濃さを落とす。
+ * 「薄い＝電流が流れていない」が読み取らせたい軸そのものなので、
+ * 見本だけ濃く描くとその軸が凡例から抜ける。
+ */
+.idle {
+  opacity: 0.55;
+}
+
 /* 実行中の状態色（design.md §5.6・§5.9）。キャンバス上の線と同じ太さ・破線で描く */
 .energized {
   border-top-color: var(--wire-energized);
