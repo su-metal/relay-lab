@@ -408,7 +408,7 @@ type Warning = {
 
 コイル: **13 = (−) / 14 = (+)**
 
-`polarity` は `"indicator"`（逆接でも励磁するが表示 LED が点灯しない）。§4.4 の通りこの理解自体が要検証。
+`polarity` は `"none"`（極性なし）。公式データシートの結線図では DC モデルの表示灯が**逆並列 LED 2 個**で、コイルも素の電磁石なので、逆接でも励磁し表示灯も点灯する（§4.4）。
 
 **画面上の端子配置。** 実ソケット（PYF14A）の物理ピン配置は模さない。§8 の「実端子番号が視覚的に読み取れることを最優先」に従い、規則性のある配置にする。
 
@@ -440,6 +440,8 @@ MY4N の 1 回路目と 4 回路目だけを使った配置になっており、
 
 端子配置は MY4N と同一。コイルに逆起電力吸収ダイオードを内蔵し、**極性を逆にすると内蔵ダイオードが順方向になるため励磁せず、電源短絡状態になる。** `polarity: "strict"` として扱う。
 
+公式データシート（J199 p.5）の MY4(Z)IN-D2(S) 結線図では、13 に `−`、14 に `+` が明記され、内蔵ダイオードは**アノードが 13 側・カソードが 14 側**に入る。標準の MY4N（同 p.5 の DC モデル）には 13/14 の極性印字が無く、この描き分けが -D2 だけ極性を厳守すべき根拠になっている（§4.4）。
+
 **MY4N との定義の差は `polarity` の 1 値だけ。** 端子・接点・コイル電圧はすべて一致する（`registry.test.ts` が両者を突き合わせて保証している）。エンジンはこの 3 値しか見ておらず型番を知らないので、逆接時の挙動の差はデータだけで再現される（§5.3）。
 
 ### 4.3.1 MY シリーズ定義の共有（`omron/my-series.ts`）
@@ -448,31 +450,34 @@ MY2N / MY4N / MY4N-D2 は端子番号の振り方が同じ系列で、差は **�
 
 | 型番 | 接点行 | `polarity` | `visual` |
 |---|---|---|---|
-| MY2N | §4.2（2 行） | `indicator` | 210×220 |
-| MY4N | §4.1（4 行） | `indicator` | 260×240 |
+| MY2N | §4.2（2 行） | `none` | 210×220 |
+| MY4N | §4.1（4 行） | `none` | 260×240 |
 | MY4N-D2 | §4.1（4 行） | `strict` | 260×240 |
 
 **`my-series.ts` にも型番分岐は書かない**（CLAUDE.md 設計原則 2）。型番ごとの差は呼び出し側が渡す引数だけで表現する。系列の違う型番（LY・G2R など）を足すときは、この表を共有せず別のファイルを立てる。
 
 ### 4.4 データの確度と検証状態
 
+MY シリーズの端子データは **OMRON 公式データシート（資料番号 J199）と照合済み**。以下が根拠の対応表で、`source` はこの PDF を指す。
+
 | 項目 | 確度 | 根拠 |
 |---|---|---|
-| MY4N 接点 NC=1-4 / NO=5-8 / COM=9-12 | 高 | 英語圏資料と日本語資料が独立に一致 |
-| MY4N コイル 13=(−) / 14=(+) | 高 | オムロン MY データシートに MY3N のコイル「10=(−), 11=(+)」の明記あり、MY4N も同順。日本語解説記事とも一致 |
-| MY2N 接点 1-5-9 / 4-8-12 | 高 | 複数資料が一致 |
-| MY4N-D2 の逆接時挙動 | 中 | データシートに「DC タイプの極性を逆にしないこと」の注記はあるが、逆接時の具体的挙動の明記は未確認 |
-| MY2N / MY4N（-D2 なし）DC タイプの極性 | **要検証** | 「N」は表示 LED 付きを意味し、データシートに「DC タイプは極性に注意」の注記がある。コイル自体は無極性で逆接でも励磁するが表示 LED が点灯しない、という理解で `polarity: "indicator"` としている。実機での確認が必要 |
+| MY4N 接点 NC=1-4 / NO=5-8 / COM=9-12 | **検証済み** | J199 p.5 の Terminal Arrangement/Internal Connections (Bottom View)。非励磁状態で可動接点が 1-4 側に接触している図 |
+| MY2N 接点 1-5-9 / 4-8-12 | **検証済み** | J199 p.4 の同図。8 ピンでも番号は 1・4・5・8・9・12・13・14 の飛び番 |
+| コイル 13=(−) / 14=(+) | **検証済み** | J199 p.1 Model Number Structure の「Coil Polarity (DC case)」**Type 1**（13 = A1 = (−) / 14 = A2 = (+)）。MY2N(S) / MY4N(S) / MY4N-D2(S) がいずれも Type 1 の行に載る |
+| MY4N-D2 の内蔵ダイオードの向き | **検証済み** | J199 p.5 の MY4(Z)IN-D2(S) 結線図。13 に `−`、14 に `+` が明記され、ダイオードはアノードが 13 側・カソードが 14 側 |
+| MY4N-D2 の逆接時挙動（励磁せず短絡） | 高（推論） | 上記のダイオード向きからの帰結。「逆接すると電源短絡になる」という文言自体はデータシートにない |
+| MY2N / MY4N の極性 | **検証済み** | J199 p.4〜5 の DC モデル結線図で、表示灯が**逆並列 LED 2 個**。逆接でも励磁し点灯する → `polarity: "none"`。標準 DC モデルの 13/14 には `−`/`+` の印字が無く、-D2 にだけ付くという描き分けとも整合する |
 | 汎用部品（電源 / 押しボタン / 切替スイッチ / ランプ / ダイオード / 端子台）の端子呼称 | 実端子番号ではない | §4.5。実型番を持たないため検証対象そのものが存在しない |
 
-**すべての定義ファイルに `verified: false` と `source` を記載して実装する。** ユーザーによる実機／公式データシート検証後に `verified: true` へ更新する。パレット上では未検証の型番にバッジを表示する。
+**末尾に「1」が付く型番は極性が逆。** MY2N1 / MY4N1 / MY4N1-D2 は J199 p.1 の **Type 2**（13 = A1 = **(+)** / 14 = A2 = **(−)**）で、Type 1 とコイルの極性が反転している。§4.1 の端子表を流用して「1」付き型番を足すと、検証済みの顔をした誤ったデータになる。系列を追加するときは Type 1 / Type 2 のどちらかを必ず確認すること（CLAUDE.md 設計原則 5）。
+
+**`verified: true` にできるのは実端子番号を公式データシートまたは実機で確認した型番だけ。** MY2N / MY4N / MY4N-D2 は上表の通り確認済み。汎用部品は実端子番号を持たず検証対象が存在しないため `verified: false` のまま据え置く（§4.5）。パレットの「未検証」バッジは `verified: false` **かつ実端子番号を持つ**定義にだけ出るので、この据え置きでバッジは出ない（§4.4 末尾の注記および `hasRealTerminalNumbers()`）。
 
 参考にした資料:
-- [OMRON MY シリーズ データシート (relayspec)](https://www.relayspec.com/specs/099/MY.pdf)
-- [OMRON MY シリーズ データシート (Farnell)](https://www.farnell.com/datasheets/37045.pdf)
-- [ミニパワーリレー MY 日本語データシート](https://s-tekt.com/manual/omron/my.pdf)
-- [パワーリレーとソケットの端子番号 — でんきメモ](https://memo-labo.com/socket.php)
+- **[OMRON MY(S) Miniature Power Relays Datasheet (J199) — 公式](https://assets.omron.eu/downloads/latest/datasheet/en/j199_my(s)_miniature_power_relays_datasheet_en.pdf)（端子データの出典）**
 - [MY4N DC24 製品ページ — オムロン制御機器](https://www.ia.omron.com/product/item/7507/)
+- [MY4N-D2 DC24 製品ページ — オムロン制御機器](https://www.ia.omron.com/product/item/7518/)
 
 ### 4.5 汎用部品の端子呼称（電源 / スイッチ / ランプ / ダイオード / 端子台）
 
@@ -585,18 +590,22 @@ const forward = plus(p) && zero(n)
 const reverse = zero(p) && plus(n)
 
 switch (coil.polarity) {
-  case "none":      energized = forward || reverse; break
+  case "none":      energized = forward || reverse   // MY2N / MY4N
+                    indicatorOn = forward || reverse // 逆並列 LED なので逆接でも点灯
+                    break
   case "indicator": energized = forward || reverse
                     indicatorOn = forward
                     if (reverse) warn("極性が逆です（表示灯が点灯しません）")
                     break
-  case "strict":    energized = forward
+  case "strict":    energized = forward             // MY4N-D2
                     if (reverse) warn("コイルの極性が逆です") // 内蔵ダイオード順方向
                     break
 }
 ```
 
-`polarity` を 3 値にしたのは、実機の挙動が「励磁するか / しないか」の 2 値ではないため。MY4N-D2 は逆接で励磁しないが、MY2N / MY4N は逆接でも励磁して表示灯だけ点かない。この差を再現できることが「実機を配線する前の確認」というプロダクト価値に直結する。**エンジンには型番分岐を書かず、この 3 値だけで分岐する。**
+`polarity` を 3 値にしたのは、実機の挙動が「励磁するか / しないか」の 2 値ではないため。MY4N-D2 は逆接で励磁しないが、MY2N / MY4N は逆接でも励磁し表示灯も点く。この差を再現できることが「実機を配線する前の確認」というプロダクト価値に直結する。**エンジンには型番分岐を書かず、この 3 値だけで分岐する。**
+
+**`indicator` は現時点でどの定義も使っていない。** 単方向 LED を持つコイル（逆接で励磁はするが表示灯が点かない）のための値で、MY シリーズは §4.4 の照合の結果すべて `none` か `strict` に落ち着いた。値を残しているのは、この挙動が実在する部品の挙動であり、対応部品を足すときにエンジンを触らず定義 1 枚で済ませるため（CLAUDE.md 設計原則 2）。MY2N / MY4N の挙動と混同しないこと。
 
 ### 5.4 ダイオードの扱い（有向導通・`engine/diode.ts`）
 
@@ -710,7 +719,7 @@ type WireState = "inactive" | "plus" | "zero" | "energized" | "short"
 | 警告 | `WarningCode` | 既定の `severity` | 検出方法 |
 |---|---|---|---|
 | 電源短絡 | `power-short-circuit` | error | +24V 端子のネットが `reachesPlus && reachesZero`（ネット ID の一致では見ない —— ダイオード経由の短絡は別ネットのままなので） |
-| コイル極性逆 | `coil-polarity-reversed` | `strict` は error / `indicator` は warning | §5.3 の `reverse` 判定 |
+| コイル極性逆 | `coil-polarity-reversed` | `strict` は error / `indicator` は warning（`none` は出さない） | §5.3 の `reverse` 判定 |
 | ダイオード逆向き | `diode-reversed` | error | コイルと並列で A がコイル + 側、または負荷を挟まず順方向で + と 0V をまたぐ（§5.4） |
 | 未接続端子 | `unconnected-terminal` | info | どの `CircuitConnection` にも現れない端子 |
 | 発振 | `oscillating` | info | §5.5 の履歴一致 |
@@ -975,6 +984,11 @@ input / textarea / contenteditable を自分で除外する。Ctrl / Cmd / Alt �
 そこへ同じバッジを出すと全部品に付いて意味を失うので、パレットとプロパティパネルでは
 「実端子番号なし」と無彩色で表示し、バッジは MY4N 等に限る。判定は
 `lib/component-display.ts` の `hasRealTerminalNumbers()`。
+
+**MY シリーズを公式データシートと照合した結果（§4.4）、現在この条件を満たす定義は無く、
+バッジはどこにも出ない。** バッジ表示のコードは残す —— 未検証の型番を足したときに
+自動で出ることが設計原則 5 の担保そのものであり、「今は出ない」は
+「もう要らない」ではない。
 
 **`visual` は端子番号の可読性で決める。** 型番表示が図記号を押し出さない大きさが必要で、
 汎用部品の「型番」は長い日本語（"押しボタン A接点（モーメンタリ）"）になる。

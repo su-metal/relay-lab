@@ -305,19 +305,18 @@ describe("警告の検出（design.md §5.7）", () => {
     expect(short?.componentId).toBe("PS1");
   });
 
-  it("コイルを逆極性で繋ぐと警告する（MY4N は励磁はする）", () => {
+  it("MY4N は無極性なので、コイルを逆に繋いでも励磁し警告も出ない", () => {
     const document = circuit(
       { PS1: POWER, RY1: MY4N },
       [wire("PS1:plus", "RY1:13"), wire("RY1:14", "PS1:zero")],
     );
     const result = step(document, []);
-    const reversed = result.warnings.find(
-      (w) => w.code === "coil-polarity-reversed",
-    );
-    // polarity: "indicator" なので励磁はするが表示灯が点かない
+    // polarity: "none"。表示灯が逆並列 LED で逆接でも点くため、
+    // 逆接は「正常な使い方」であって警告に値しない（design.md §4.4 / §5.3）
     expect(energized(result)).toEqual(["RY1"]);
-    expect(reversed?.severity).toBe("warning");
-    expect(reversed?.componentId).toBe("RY1");
+    expect(
+      result.warnings.filter((w) => w.code === "coil-polarity-reversed"),
+    ).toEqual([]);
   });
 
   it("未接続の端子を info として報告する", () => {

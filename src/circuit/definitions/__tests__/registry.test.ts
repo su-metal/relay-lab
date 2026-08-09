@@ -57,10 +57,27 @@ describe("部品定義レジストリ", () => {
     expect(listComponentDefinitions()).toHaveLength(11);
   });
 
-  it("全定義が未検証であり、端子データの出典を持つ", () => {
+  it("全定義が端子データの出典を持つ", () => {
     for (const definition of componentDefinitions) {
-      expect(definition.verified, definition.id).toBe(false);
       expect(definition.source, definition.id).toBeTruthy();
+    }
+  });
+
+  /**
+   * 実端子番号を持たない汎用部品は検証対象そのものが存在しないので、
+   * 検証済みを名乗ってはいけない（design.md §4.4 / §4.5）。
+   *
+   * 逆向き（実端子番号を持つ ⇒ `verified: true`）は**主張しない**。
+   * 新しい型番は `verified: false` から始めるのが正しい手順で、
+   * そこを縛ると未検証の型番を足せなくなる（CLAUDE.md 設計原則 5）。
+   */
+  it("実端子番号を持たない定義は検証済みを名乗らない", () => {
+    for (const definition of componentDefinitions) {
+      const hasRealNumbers = definition.terminals.some(
+        (t) => t.number !== undefined,
+      );
+      if (hasRealNumbers) continue;
+      expect(definition.verified, definition.id).toBe(false);
     }
   });
 
@@ -111,14 +128,16 @@ describe("OMRON MY4N DC24V の端子データ（design.md §4.1）", () => {
     );
   });
 
-  it("コイルは 14 が (+)、13 が (−) で、極性は indicator", () => {
+  // 13 = (−) / 14 = (+) は公式データシート J199 p.1 の Coil Polarity「Type 1」。
+  // 表示灯が逆並列 LED なので極性は none（design.md §4.4）
+  it("コイルは 14 が (+)、13 が (−) で、極性は none", () => {
     if (my4n.electrical.kind !== "relay") throw new Error("relay ではない");
     expect(my4n.electrical.relay.coil).toMatchObject({
       voltage: 24,
       currentType: "DC",
       positiveTerminal: "14",
       negativeTerminal: "13",
-      polarity: "indicator",
+      polarity: "none",
     });
   });
 
@@ -153,9 +172,11 @@ describe("OMRON MY4N DC24V の端子データ（design.md §4.1）", () => {
     }
   });
 
-  it("実端子番号は未検証のまま扱う", () => {
-    expect(my4n.verified).toBe(false);
-    expect(my4n.source).toMatch(/^https?:\/\//);
+  it("実端子番号は公式データシートで検証済み", () => {
+    expect(my4n.verified).toBe(true);
+    // 出典は OMRON 公式ドメインでなければならない。
+    // 二次資料に差し替わったまま verified: true が残るのを防ぐ（design.md §4.4）
+    expect(my4n.source).toMatch(/^https:\/\/[\w.-]*omron\.(eu|com)\//);
   });
 });
 
@@ -196,12 +217,12 @@ describe("OMRON MY2N DC24V の端子データ（design.md §4.2）", () => {
     ]);
   });
 
-  it("コイルは MY4N と同じ 14 = (+) / 13 = (−) で極性は indicator", () => {
+  it("コイルは MY4N と同じ 14 = (+) / 13 = (−) で極性は none", () => {
     if (my2n.electrical.kind !== "relay") throw new Error("relay ではない");
     expect(my2n.electrical.relay.coil).toMatchObject({
       positiveTerminal: "14",
       negativeTerminal: "13",
-      polarity: "indicator",
+      polarity: "none",
     });
   });
 
@@ -239,7 +260,7 @@ describe("OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）", () => {
       throw new Error("relay ではない");
     }
     expect(d2.electrical.relay.coil.polarity).toBe("strict");
-    expect(my4n.electrical.relay.coil.polarity).toBe("indicator");
+    expect(my4n.electrical.relay.coil.polarity).toBe("none");
     expect({ ...d2.electrical.relay.coil, polarity: null }).toEqual({
       ...my4n.electrical.relay.coil,
       polarity: null,
