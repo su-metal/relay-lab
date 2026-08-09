@@ -125,8 +125,10 @@ src/
         switch-scenarios.test.ts # 切替スイッチ（オルタネート）の挙動（§4.7）
     persistence/
       document-storage.ts        # CircuitDocument ⇄ JSON と LocalStorage（§7）
+      document-file.ts           # ファイル書き出しの書式とファイル名（§7・§8.4）
       __tests__/
         document-storage.test.ts # 往復と壊れた保存データの検証
+        document-file.test.ts    # 書き出し → 読み戻しの往復とファイル名
     adapter/
       reactflow.ts               # Node/Edge ⇄ CircuitDocument
       simulation-view.ts         # SimulationResult → 配線色・部品状態（§5.6・§8.2）
@@ -818,6 +820,20 @@ A 接点 → B 接点のように端子 ID がそのまま一致する差し替�
 
 **「保存が無い」と「壊れている」を同じ扱いにしない。** 前者は初回起動そのものであり、通知を出す場面ではない。
 
+#### ファイルへの書き出し・読み込み（`circuit/persistence/document-file.ts`）
+
+LocalStorage の自動保存は**このブラウザの中だけ**の話で、別の PC へ回路を渡す手段が無かった。回路を 1 枚のファイルとして持ち出す経路を足す（UI は §8.4）。
+
+**読み込み側の関数は作らない。** ファイルの JSON は LocalStorage の JSON と同じ形式・同じ危険度（未知の部品定義・存在しない端子）なので、`parseDocument()` をそのまま通す。書式の判定規則が 2 箇所に分かれると、片方だけ厳しくなって「保存はできるのに読み込めないファイル」が生まれる。落とした要素の通知（`dropped`）もそのまま使える。
+
+| 項目 | 決めごと | 理由 |
+|---|---|---|
+| 書式 | `JSON.stringify(document, null, 2)` ＋ 末尾改行 | 書き出したファイルは人が開いて中身を確かめ、課題として提出し、差分を見る対象になる。LocalStorage 用の `serializeDocument()`（1 行）とは用途が違う |
+| ファイル名 | `relay-lab-YYYYMMDD-HHMM.json` | 同じ回路を何度も書き出すと `(1)` `(2)` が付いてどれが新しいか分からなくなる。**日本語を含めない** —— 提出や別 OS への受け渡しで化ける経路を作らない |
+| DOM 操作 | `document-file.ts` には置かず `useDocumentPersistence` 側 | このファイルを React も DOM も知らない純粋関数に保ち、Vitest で往復を検証する |
+
+**`useDocumentPersistence` 内で DOM を触るときは `window.document` と書く。** このフックのスコープでは `document` が `CircuitDocument` を指しており、素で書くと DOM ではなく回路の方を掴む。
+
 ### simulationStore（実行時のみ）
 
 `running` / `pressedSwitches` / 最新の `SimulationResult` を保持。保存対象に含めない。押しボタンの `onPointerDown` / `onPointerUp`、切替スイッチの `onClick` で `pressedSwitches` を更新し、変更のたびに `simulate()` を呼ぶ（モーメンタリとオルタネートの差はこのストアだけに閉じている・§4.7）。
@@ -1093,6 +1109,22 @@ Handle は子要素なので Handle にホバーすれば `.terminal:hover` が�
 
 **読み込みで落とした要素は操作バー直下に一度だけ通知する**（§7 の `dropped`）。
 閉じられるようにし、3 件までを出して残りは「他 N 件」に畳む。
+
+#### ファイルの書き出し・読み込みボタン
+
+操作バーに `⬇ 書き出し` / `⬆ 読み込み` を置く（実装は §7 の `document-file.ts`）。
+
+- **`<input type="file">` は `display: none` で隠し、ボタンから `click()` する。**
+  `opacity: 0` で重ねる手もあるが、見えない入力欄が Tab 順に残ると、
+  キーボード操作で「押しても何も起きない場所」を通ることになる
+- **`change` のたびに `event.target.value = ""` へ戻す。** 同じファイルを選び直すと
+  値が変わらず `change` が発火しない。書き出し → 直して → 同じ名前で読み直す、が効かなくなる
+- **読み込み前に確認を取る。** 読み込みは `replaceDocument()` を通り、履歴ごと
+  差し替わる（§7）ので **Undo で戻せない。** 回路が空でないときだけ
+  `window.confirm` で部品数とファイル名を示して確認する
+- **成功も通知する。** 落とした要素が無いと通知が一切出ず、「押したのに何も
+  起きていない」のか「読み込めた」のか区別が付かない
+- **書き出しは空の回路では押せない。** 中身のないファイルを作っても使い道がない
 
 **Undo / Redo のキー操作は入力欄で無効にする。** プロパティパネルの名前欄で
 `Ctrl+Z` を押したときに文字ではなく回路が巻き戻ると、何が起きたのか分からない。
