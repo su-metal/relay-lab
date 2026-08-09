@@ -41,6 +41,7 @@ import {
   toWireEdges,
 } from "@/circuit/adapter/reactflow";
 import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
+import { buildSelfHold } from "@/circuit/adapter/self-hold";
 import { buildSimulationView } from "@/circuit/adapter/simulation-view";
 import type { WireState } from "@/circuit/adapter/simulation-view";
 import { buildTerminalConnections } from "@/circuit/adapter/terminal-connections";
@@ -124,6 +125,7 @@ const WIRE_CLASS: Record<WireState, string | undefined> = {
   plus: styles.wirePlus,
   zero: styles.wireZero,
   energized: styles.wireEnergized,
+  "self-hold": styles.wireSelfHold,
   short: styles.wireShort,
 };
 
@@ -185,11 +187,27 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
 
+  /**
+   * 自己保持の検出（design.md §5.9）。励磁中のリレー 1 個につき `simulate()` を
+   * 1 回追加で回すので、`view` とは別の useMemo に分けて **結果が変わったときだけ**
+   * 走らせる。部品をドラッグしただけの再描画では走らない。
+   */
+  const selfHold = useMemo(
+    () => buildSelfHold(document, componentRegistry, result, pressedSwitches),
+    [document, result, pressedSwitches],
+  );
+
   // 停止中は result が null で、ビューは空＝すべて非通電として描かれる
   const view = useMemo(
     () =>
-      buildSimulationView(document, componentRegistry, result, pressedSwitches),
-    [document, result, pressedSwitches],
+      buildSimulationView(
+        document,
+        componentRegistry,
+        result,
+        pressedSwitches,
+        selfHold,
+      ),
+    [document, result, pressedSwitches, selfHold],
   );
 
   // 端子ツールチップの接続先（design.md §8.3）。実行中かどうかに関わらず
@@ -448,10 +466,10 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls showInteractive={false} />
-        {/* 色の意味が役割色のときだけ凡例を出す（実行中は §5.6 の状態色） */}
-        {wireRoles !== null && document.connections.length > 0 && (
+        {/* 凡例は停止中・実行中の両方で出す。中身は色の意味に合わせて入れ替わる */}
+        {document.connections.length > 0 && (
           <Panel position="bottom-right">
-            <WireLegend />
+            <WireLegend running={result !== null} />
           </Panel>
         )}
         {document.components.length === 0 && (

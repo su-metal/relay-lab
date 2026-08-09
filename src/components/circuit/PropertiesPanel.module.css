@@ -282,6 +282,13 @@
   background: var(--state-on-bg);
 }
 
+/* 自己保持の経路（design.md §5.9）。キャンバスの紫と揃える */
+.terminalLabel[data-state="self-hold"] {
+  border-color: var(--wire-self-hold-text);
+  color: var(--wire-self-hold-text);
+  background: var(--wire-self-hold-soft);
+}
+
 .terminalLabel[data-state="short"] {
   border-color: var(--wire-short);
   color: var(--panel);

@@ -30,6 +30,7 @@ import type {
 } from "@/circuit/types";
 import { terminalKey } from "@/circuit/types";
 
+import { EMPTY_SELF_HOLD, type SelfHoldView } from "./self-hold";
 import { buildSimulationView } from "./simulation-view";
 import type { DeviceSimulationState, WireState } from "./simulation-view";
 
@@ -101,6 +102,10 @@ export type ComponentInspection = {
  * 端子の電位は「通電中の負荷に隣接するか」を回路全体から決めるため
  * （design.md §5.6）、部分計算では求められない。
  *
+ * `selfHold` だけは**受け取るだけで組み直さない**（design.md §5.9）。
+ * 検出に `simulate()` の再実行が要るので、呼び出し側の `useMemo` に任せる。
+ * 省略するとパネルに紫（自己保持）が出ず、キャンバスと食い違うので注意。
+ *
  * @returns 部品または定義が見つからなければ `null`
  */
 export const inspectComponent = (
@@ -109,6 +114,7 @@ export const inspectComponent = (
   result: SimulationResult | null,
   pressedSwitches: ReadonlySet<string>,
   componentId: string | undefined,
+  selfHold: SelfHoldView = EMPTY_SELF_HOLD,
 ): ComponentInspection | null => {
   if (!componentId) return null;
 
@@ -125,6 +131,7 @@ export const inspectComponent = (
     definitions,
     result,
     pressedSwitches,
+    selfHold,
   );
   const device = view.deviceOf.get(instance.id);
 

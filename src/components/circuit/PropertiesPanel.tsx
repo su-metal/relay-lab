@@ -15,6 +15,7 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import { inspectComponent } from "@/circuit/adapter/inspection";
+import { buildSelfHold } from "@/circuit/adapter/self-hold";
 import type {
   ComponentInspection,
   ContactInspection,
@@ -52,6 +53,16 @@ export function PropertiesPanel() {
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
 
+  /**
+   * 自己保持の検出（design.md §5.9）。**選択部品とは無関係**なので、
+   * 選択が変わるたびに解き直さないよう `inspection` とは別の useMemo に置く。
+   * ここで組まないとキャンバスは紫、パネルは「通電中」と食い違う。
+   */
+  const selfHold = useMemo(
+    () => buildSelfHold(document, componentRegistry, result, pressedSwitches),
+    [document, result, pressedSwitches],
+  );
+
   const selectedId = selectedComponentIds[0];
   const inspection = useMemo(
     () =>
@@ -61,8 +72,9 @@ export function PropertiesPanel() {
         result,
         pressedSwitches,
         selectedId,
+        selfHold,
       ),
-    [document, result, pressedSwitches, selectedId],
+    [document, result, pressedSwitches, selectedId, selfHold],
   );
 
   return (
@@ -337,9 +349,14 @@ function ElectricalSection({
             </Row>
             <Row name="極性">{COIL_POLARITY_LABELS[coil.polarity]}</Row>
             <Row name="状態">
+              {/*
+                自分の接点で保持している間はそう名乗らせる（design.md §5.9）。
+                「励磁中」のままだと、ボタンが保持しているのか接点が保持して
+                いるのかがパネルからは読めない
+              */}
               <StateBadge
                 on={device?.energized}
-                onLabel="励磁中"
+                onLabel={device?.selfHeld ? "自己保持中" : "励磁中"}
                 offLabel="非励磁"
               />
             </Row>

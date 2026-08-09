@@ -101,6 +101,7 @@ export const WIRE_STATE_LABELS: Record<WireState, string> = {
   plus: "+ 側",
   zero: "0V 側",
   energized: "通電中",
+  "self-hold": "自己保持",
   short: "短絡",
 };
 
@@ -157,6 +158,8 @@ export type DeviceStatus = {
   label: string;
   /** 励磁・点灯・押下など「オン」寄りの状態か。ツールチップの強調表示に使う */
   active: boolean;
+  /** 自己保持中か（design.md §5.9）。強調の色を緑から紫へ振り分けるのに使う */
+  selfHeld?: boolean;
 };
 
 /**
@@ -175,6 +178,11 @@ export const deviceStatusOf = (
   if (!simulation) return undefined;
   switch (definition.electrical.kind) {
     case "relay":
+      // 「励磁中」だけでは何が保持しているか読めない。自分の接点で保持している間は
+      // そう名乗らせる（design.md §5.9）。ボタンを離した瞬間にここが切り替わる
+      if (simulation.selfHeld) {
+        return { label: "自己保持中", active: true, selfHeld: true };
+      }
       return simulation.energized
         ? { label: "励磁中", active: true }
         : { label: "非励磁", active: false };

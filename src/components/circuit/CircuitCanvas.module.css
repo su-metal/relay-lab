@@ -50,6 +50,38 @@
 }
 
 /*
+ * 自己保持の経路（design.md §5.9）。緑の通電経路のうち、**そのリレー自身の
+ * 接点が支えている枝**だけがこの色になる。「切ればリレーが落ちる線」なので、
+ * 通電中の緑と同じ扱いにはできない。
+ *
+ * 色（紫）だけに頼らず、破線を電流の向きに流して区別できるようにする
+ * （要件書 §8 の「色覚に依存しない」）。
+ */
+.canvas .wireSelfHold :global(.react-flow__edge-path) {
+  stroke: var(--wire-self-hold);
+  stroke-width: 3.5;
+  stroke-dasharray: 7 5;
+  filter: drop-shadow(0 0 4px var(--wire-self-hold));
+  animation: selfHoldFlow 0.6s linear infinite;
+}
+
+@keyframes selfHoldFlow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+/*
+ * 動きを抑える設定では流れを止める。破線そのものは残るので、
+ * 緑の実線との区別は失われない
+ */
+@media (prefers-reduced-motion: reduce) {
+  .canvas .wireSelfHold :global(.react-flow__edge-path) {
+    animation: none;
+  }
+}
+
+/*
  * 電源短絡。§5.6 の通り「通電」とは別扱いにする。
  * 緑と紛れないよう点滅させ、配線ミスとして目立たせる。
  */

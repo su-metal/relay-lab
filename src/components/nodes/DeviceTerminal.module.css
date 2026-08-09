@@ -195,6 +195,17 @@
   box-shadow: 0 0 6px var(--wire-energized);
 }
 
+/*
+ * 自己保持の経路にある端子（design.md §5.9）。
+ * 配線と同じ紫にしないと、接点の先で色が途切れて「どこまでが保持経路か」が
+ * 端子の手前で切れてしまう
+ */
+.terminal[data-state="self-hold"] .handle {
+  border-color: var(--wire-self-hold-text);
+  background: var(--wire-self-hold);
+  box-shadow: 0 0 6px var(--wire-self-hold);
+}
+
 .terminal[data-state="short"] .handle {
   border-color: var(--wire-short);
   background: var(--wire-short);
