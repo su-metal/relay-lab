@@ -5,7 +5,9 @@ import type { BodyProps } from "./types";
  * リレー。コイル記号と、接点数・コイル仕様のキャプション。
  *
  * 接点数は `RelayDefinition.contacts.length` から取る。MY2N（2c）を足しても
- * このファイルは変わらない。
+ * このファイルは変わらない。接点種別の呼称（c接点／a接点）は `contact.type` から
+ * 決める。G7L（a接点のみ・SPST-NO）に「2c」と表示すると、実機に無い b 側が
+ * あるかのように読めてしまうため、SPDT なら "c"、SPST-NO なら "a" を出し分ける。
  *
  * 励磁中はコイル枠を強調し、キャプションを「励磁中」に差し替える。
  * どの接点が切り替わったかは端子と配線の色で読み取れるので、
@@ -15,6 +17,8 @@ export function RelayBody({ definition, simulation }: BodyProps) {
   const relay =
     definition.electrical.kind === "relay" ? definition.electrical.relay : null;
   const energized = simulation?.energized ?? false;
+  const contactKind =
+    relay && relay.contacts.every((c) => c.type === "SPST-NO") ? "a" : "c";
 
   return (
     <div className={styles.stack}>
@@ -42,7 +46,8 @@ export function RelayBody({ definition, simulation }: BodyProps) {
       ) : (
         relay && (
           <span className={styles.caption}>
-            {relay.contacts.length}c ／ コイル {relay.coil.currentType}
+            {relay.contacts.length}
+            {contactKind} ／ コイル {relay.coil.currentType}
             {relay.coil.voltage}V
           </span>
         )

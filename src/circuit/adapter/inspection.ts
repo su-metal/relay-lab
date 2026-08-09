@@ -33,8 +33,11 @@ import { terminalKey } from "@/circuit/types";
 import { buildSimulationView } from "./simulation-view";
 import type { DeviceSimulationState, WireState } from "./simulation-view";
 
-/** SPDT の COM がどちら側に倒れているか */
-export type ClosedSide = "no" | "nc";
+/**
+ * SPDT の COM がどちら側に倒れているか。
+ * `"open"` は SPST-NO（a接点のみ）が非励磁で開いている状態（NC が無い）。
+ */
+export type ClosedSide = "no" | "nc" | "open";
 
 export type ContactInspection = {
   contact: RelayContact;
@@ -241,9 +244,14 @@ const inspectContacts = (
 
   const sideOf = (contact: RelayContact): ClosedSide | undefined => {
     if (!closedOf) return undefined;
-    return closedOf.get(contact.commonTerminal) === contact.noTerminal
-      ? "no"
-      : "nc";
+    const partner = closedOf.get(contact.commonTerminal);
+    if (partner === contact.noTerminal) return "no";
+    if (contact.ncTerminal !== undefined && partner === contact.ncTerminal) {
+      return "nc";
+    }
+    // SPST-NO（`ncTerminal` 無し）が非励磁のとき、`closedContactPairs()` は
+    // このペアを返さないので `partner` は undefined のまま → 開いている
+    return "open";
   };
 
   return relay.contacts.map((contact, index) => ({

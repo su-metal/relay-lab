@@ -114,6 +114,9 @@ src/
         my2n-dc24.ts
         my4n-dc24.ts
         my4n-d2-dc24.ts
+        g7l-series.ts             # G7L シリーズ共通の端子生成（a接点のみ・§4.8）
+        g7l-1a-t-dc24.ts
+        g7l-2a-t-dc24.ts
       power.ts
       switches.ts                # 押しボタン／切替スイッチ 4 種（§4.5・§4.7）
       lamps.ts
@@ -296,12 +299,14 @@ type RelayContact = {
   id: string            // "c1"
   commonTerminal: string
   noTerminal: string
-  ncTerminal: string
-  type: "SPDT"
+  ncTerminal?: string    // SPDT のみ持つ。SPST-NO（a接点のみ）は無い
+  type: "SPDT" | "SPST-NO"
 }
 ```
 
 **要件書からの変更点:** `polaritySensitive: boolean` を 3 値の `CoilPolarity` に変更した。理由は §5.3 を参照。
+
+**`ncTerminal` を optional にした理由（§4.8 で G7L を追加した際に判明）。** MY シリーズは全接点が SPDT（COM/NO/NC の 3 端子）だが、OMRON G7L は **a接点のみ（SPST-NO）** で、NC が物理的に存在しない。当初の型は `ncTerminal: string` 必須で SPDT しか表現できなかった。`ncTerminal` の有無を「NC を持つ接点かどうか」の唯一の判定材料にすることで、`engine/relay.ts` は型番分岐を書かずに 2 つの接点トポロジを扱える（§5.1・§5.3）。`type` フィールドは表示用の情報タグで、分岐には使わない。
 
 ### 3.3 回路ドキュメント（保存対象）
 
@@ -554,6 +559,25 @@ Step 7 の 4 部品はいずれも既存のエンジンの分岐（`ElectricalDe
 
 `action` に応じて「押下中 / 復帰」ではなく **「ON 位置 / OFF 位置」** と出す（`PropertiesPanel` の「操作」行と `lib/component-display.ts` の `deviceStatusOf()`）。同じ「押下中」と表示すると、手を離しても状態が残ることが文言から読めない。
 
+### 4.8 OMRON G7L パワーリレー（a接点のみ・SPST-NO）
+
+MY シリーズとは異なる系列として G7L（大電流開閉用パワーリレー）を追加した。ユーザー提供の **OMRON G7L 総合カタログ（資料番号 CDPA-041C、2025年4月現在）** の「端子配置/内部接続図」（p.5〜10）・コイル記号（p.12）・型式基準/形式一覧（p.1〜2）と照合済みで `verified: true`。公開 URL を張れる資料ではないため `source` は URL ではなくカタログ番号・ページを含む定型文にしている（`omron/g7l-series.ts` の `G7L_SERIES_SOURCE`）。
+
+**MY シリーズとの決定的な違い: G7L は a接点（常開・SPST-NO）のみ。** カタログの「形式基準」（p.1）で②接点構成が常に `A` で、b接点・c接点のバリエーションはカタログ全体に存在しない。1 極 `G7L-1A-T` と 2 極 `G7L-2A-T` の 2 型番を追加した（いずれもタブ端子・E金具取付・テストボタン無し・DC24V）。
+
+| 型番 | 極数 | コイル | 接点端子（COM／NO） |
+|---|---|---|---|
+| G7L-1A-T | 1 極 | `0`／`1`（極性なし） | 第1接点: COM=4／NO=6 |
+| G7L-2A-T | 2 極 | `0`／`1`（極性なし） | 第1接点: COM=2／NO=4、第2接点: COM=6／NO=8 |
+
+コイル端子 `0`／`1` はカタログに「コイル極性はありません」と明記されており（全パターン共通）、`polarity: "none"`。`coil_positive`／`coil_negative` の割り当ては MY シリーズの標準品（§4.4）と同じく表示上の便宜的な呼称で、実機の端子に +/− の印字は無い。
+
+**a接点のみ（NC が無い）は既存の `RelayContact` 型では表現できなかった。** MY シリーズは全接点が SPDT（COM/NO/NC）前提で、`ncTerminal: string` が必須だった。G7L 追加にあたり `ncTerminal` を optional にし、無ければ「その接点は非励磁時に union する相手が無い＝開いたまま」とする拡張を入れた（§3.2・§5.1・§5.3）。**これは型番分岐ではなく接点トポロジ（データ）の拡張であり、`engine/relay.ts` に `if (model === "G7L")` のような分岐は一切書いていない。** MY シリーズ（`ncTerminal` あり）の挙動は変わらない。
+
+**今回のスコープ外。** ねじ端子形（`-B`）・基板端子形（`-P`）・テストボタン付（`-J`）・上部ブラケット取付形（`-UB`）・AC コイル・DC24V 以外の電圧は追加していない。将来これらを足すときは `verified: false` から始めるのではなく、今回と同じカタログ CDPA-041C で端子番号を確認できているため `verified: true` を引き継げる（ただし極性表記や端子番号の割り当ては型式ごとに確認すること。CLAUDE.md 設計原則 5）。
+
+**副作用として見つかった表示バグ。** `nodes/bodies/RelayBody.tsx` のキャプションが接点数を常に `"○c"`（c接点＝change-over の意）と表示していた。G7L はここに「2c」と出ると、実機に無い b 側があるかのように誤読させる。`contact.type` が `"SPST-NO"` のときは `"a"`、`"SPDT"` のときは `"c"` を出し分けるよう修正した（design.md の監視対象パス外だが、G7L 追加に伴う直接の修正として記録する）。
+
 ---
 
 ## 5. シミュレーションエンジン
@@ -567,7 +591,7 @@ Step 7 の 4 部品はいずれも既存のエンジンの分岐（`ElectricalDe
 - 配線（`CircuitConnection`）
 - 端子台の全端子どうし
 - CLOSED 状態のスイッチの 2 端子
-- CLOSED 状態のリレー接点（非励磁なら COM–NC、励磁なら COM–NO）
+- CLOSED 状態のリレー接点（非励磁なら COM–NC、励磁なら COM–NO。**NC を持たない a接点のみ（SPST-NO・§4.8 の G7L）は非励磁時に union する相手が無く、開いたままになる**）
 
 **union しない（導通しないもの）:**
 
@@ -1068,6 +1092,13 @@ inspectComponent(document, definitions, result, pressedSwitches, componentId)
 `engine/relay.ts` の `closedContactPairs()` に 1 箇所だけ置いてある。adapter 側で
 `energized ? "no" : "nc"` と書き直すと同じ規則が 2 箇所になるので、エンジンの答えの
 COM の相手が NO かどうかで判定する。
+
+**`ClosedSide` は `"no" | "nc" | "open"` の 3 値（§4.8 で G7L を追加した際に拡張）。**
+`"open"` は NC を持たない a接点（SPST-NO）が非励磁で開いている状態を表す。
+`inspection.ts` の `sideOf()` は「COM の相手が NO なら `"no"`、`ncTerminal` があって
+それが相手なら `"nc"`、どちらでもなければ `"open"`」の順で判定する。`PropertiesPanel`
+の `ContactRow` は `contact.ncTerminal` が無ければ COM–NC 行そのものを出さない
+（存在しない端子を「開」と表示すると、実機に無い NC 端子があるように読めてしまう）。
 
 **スイッチの導通は「同じネットに居るか」で読む。** 開閉の規則（A 接点は押下中だけ閉じる）
 は `engine/graph.ts` の持ち物なので再実装しない。表示したいのは規則ではなく結果であり、

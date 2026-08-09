@@ -65,6 +65,7 @@ const PB_NO = "switch-pushbutton-no";
 const PB_NC = "switch-pushbutton-nc";
 const MY4N = "omron-my4n-dc24";
 const LAMP = "lamp-dc24v";
+const G7L_1A = "omron-g7l-1a-t-dc24";
 
 describe("検証回路テスト1: +24V → S1(A接点) → RY1コイル → 0V", () => {
   const document = circuit(
@@ -378,5 +379,39 @@ describe("ネット状態（design.md §5.6 の入力）", () => {
       reachesPlus: false,
       reachesZero: false,
     });
+  });
+});
+
+/**
+ * G7L は a接点のみ（SPST-NO・NC 無し）で、MY4N の SPDT とは接点トポロジが
+ * 異なる（design.md §4.8・§5.1）。`closedContactPairs()` が「NC が無い接点は
+ * 非励磁時に何も union しない（開いたまま）」を正しく処理できることを、
+ * `simulate()` を通して確認する。
+ */
+describe("G7L-1A-T（a接点のみ）: +24V → S1(A接点) → RY1コイル → 0V、L1 は RY1 の a接点で点灯", () => {
+  const document = circuit(
+    { PS1: POWER, S1: PB_NO, RY1: G7L_1A, L1: LAMP },
+    [
+      wire("PS1:plus", "S1:1"),
+      wire("S1:2", "RY1:1"),
+      wire("RY1:0", "PS1:zero"),
+      wire("PS1:plus", "RY1:4"),
+      wire("RY1:6", "L1:1"),
+      wire("L1:2", "PS1:zero"),
+    ],
+  );
+
+  it("非励磁では COM(4) と NO(6) が別ネット（開いたまま）で、L1 は点かない", () => {
+    const result = step(document, []);
+    expect(energized(result)).toEqual([]);
+    expect(lit(result)).toEqual([]);
+    expect(result.netOf.get("RY1:4")).not.toBe(result.netOf.get("RY1:6"));
+  });
+
+  it("励磁すると COM(4)–NO(6) が同一ネットになり L1 が点く", () => {
+    const result = step(document, ["S1"]);
+    expect(energized(result)).toEqual(["RY1"]);
+    expect(lit(result)).toEqual(["L1"]);
+    expect(result.netOf.get("RY1:4")).toBe(result.netOf.get("RY1:6"));
   });
 });

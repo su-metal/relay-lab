@@ -18,6 +18,8 @@ import type {
 
 import { genericDiode } from "./diodes";
 import { dc24vLamp } from "./lamps";
+import { omronG7l1aTDc24 } from "./omron/g7l-1a-t-dc24";
+import { omronG7l2aTDc24 } from "./omron/g7l-2a-t-dc24";
 import { omronMy2nDc24 } from "./omron/my2n-dc24";
 import { omronMy4nD2Dc24 } from "./omron/my4n-d2-dc24";
 import { omronMy4nDc24 } from "./omron/my4n-dc24";
@@ -40,6 +42,8 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   omronMy2nDc24,
   omronMy4nDc24,
   omronMy4nD2Dc24,
+  omronG7l1aTDc24,
+  omronG7l2aTDc24,
   dc24vLamp,
   genericDiode,
   genericTerminalBlock,
@@ -93,6 +97,8 @@ export {
   dc24vPowerSupply,
   genericDiode,
   genericTerminalBlock,
+  omronG7l1aTDc24,
+  omronG7l2aTDc24,
   omronMy2nDc24,
   omronMy4nD2Dc24,
   omronMy4nDc24,

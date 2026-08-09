@@ -177,6 +177,74 @@ describe("inspectComponent", () => {
 });
 
 /**
+ * G7L は a接点のみ（SPST-NO）で NC を持たない（design.md §4.8・§8.3）。
+ * `ClosedSide` に `"open"` が要ることと、`PropertiesPanel` が COM–NC 行を
+ * 出さないことの根拠になる読み取りを検証する。
+ */
+describe("inspectComponent（G7L：a接点のみで NC を持たないリレー）", () => {
+  const g7lDocument: CircuitDocument = {
+    version: 1,
+    components: [
+      { id: "ps", definitionId: "power-dc24v", label: "PS1", position: at(0, 0) },
+      {
+        id: "s1",
+        definitionId: "switch-pushbutton-no",
+        label: "S1",
+        position: at(200, 0),
+      },
+      {
+        id: "ry1",
+        definitionId: "omron-g7l-1a-t-dc24",
+        label: "RY1",
+        position: at(420, 0),
+      },
+    ],
+    connections: [
+      wire("w-ps-s1", ["ps", "plus"], ["s1", "1"]),
+      wire("w-s1-coil", ["s1", "2"], ["ry1", "1"]),
+      wire("w-coil-zero", ["ry1", "0"], ["ps", "zero"]),
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+
+  const inspectG7l = (pressed: readonly string[]) => {
+    const pressedSwitches = new Set(pressed);
+    const result = simulate(g7lDocument, componentRegistry, { pressedSwitches });
+    return inspectComponent(
+      g7lDocument,
+      componentRegistry,
+      result,
+      pressedSwitches,
+      "ry1",
+    );
+  };
+
+  it("停止中は undefined（非励磁の「開」と区別する）", () => {
+    const inspection = inspectComponent(
+      g7lDocument,
+      componentRegistry,
+      null,
+      new Set(),
+      "ry1",
+    );
+    expect(inspection?.contacts[0].closed).toBeUndefined();
+  });
+
+  it("非励磁では NC が無いので closed は open（COM–NC 行は存在しない）", () => {
+    const inspection = inspectG7l([]);
+    expect(inspection?.contacts).toEqual([
+      expect.objectContaining({ closed: "open" }),
+    ]);
+    expect(inspection?.contacts[0].contact.ncTerminal).toBeUndefined();
+  });
+
+  it("励磁すると COM–NO 側で閉じる", () => {
+    const inspection = inspectG7l(["s1"]);
+    expect(inspection?.contacts[0].closed).toBe("no");
+  });
+});
+
+/**
  * 逆起電力吸収ダイオードの読み取り（design.md §5.4）。
  *
  * 「どのコイルと並列か・向きは正しいか」は**配線そのものの性質**であって

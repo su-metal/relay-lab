@@ -37,8 +37,13 @@ export type RelayContact = {
   id: string;
   commonTerminal: string;
   noTerminal: string;
-  ncTerminal: string;
-  type: "SPDT";
+  /**
+   * SPDT（c接点）だけが持つ。SPST-NO（a接点のみ）には NC が物理的に存在しないため
+   * `undefined`。`engine/relay.ts` の `closedContactPairs()` はこれの有無だけで
+   * 「非励磁時に union する相手が無い（開いたまま）」を判定する。
+   */
+  ncTerminal?: string;
+  type: "SPDT" | "SPST-NO";
 };
 
 export type RelayDefinition = {
