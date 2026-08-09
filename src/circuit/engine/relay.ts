@@ -54,14 +54,17 @@ export const evaluateCoil = (
 
   switch (coil.polarity) {
     case "none":
-      // 無極性。逆接も正常な使い方なので警告しない
+      // MY2N / MY4N。表示灯が逆並列 LED なので逆接でも点灯する。
+      // 逆接も正常な使い方なので警告しない
       return {
         energized: forward || reverse,
         indicatorOn: forward || reverse,
         reversed: false,
       };
     case "indicator":
-      // MY2N / MY4N。逆接でも励磁するが表示 LED が点灯しない
+      // 単方向 LED を持つコイル。逆接でも励磁するが表示 LED が点灯しない。
+      // **現時点でこの値を持つ定義は無い**（MY シリーズは全て none か strict）。
+      // 対応部品を足すときまで、ここを MY2N / MY4N の挙動と混同しないこと
       return { energized: forward || reverse, indicatorOn: forward, reversed: reverse };
     case "strict":
       // MY4N-D2。逆接では内蔵ダイオードが順方向になり励磁しない

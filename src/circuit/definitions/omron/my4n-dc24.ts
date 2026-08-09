@@ -12,9 +12,9 @@ export const omronMy4nDc24 = defineMyRelay({
   id: "omron-my4n-dc24",
   model: "MY4N",
   contactRows: MY4N_CONTACT_ROWS,
-  // 「N」は表示 LED 付きの意。コイル自体は無極性で逆接でも励磁するが、
-  // 表示 LED が点灯しない、という理解（design.md §4.4「要検証」）。
-  // 内蔵ダイオード付きの MY4N-D2 は "strict"。
-  polarity: "indicator",
+  // 「N」は表示 LED 付きの意。公式データシートの結線図では DC モデルの表示灯が
+  // **逆並列 LED 2 個**で、コイルも素の電磁石なので、逆接でも励磁し表示灯も点く。
+  // 13/14 に (−)(+) が印字されるのは内蔵ダイオード付きの -D2 だけ（design.md §4.4）。
+  polarity: "none",
   visual: { width: 260, height: 240 },
 });

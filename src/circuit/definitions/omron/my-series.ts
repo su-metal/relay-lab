@@ -14,8 +14,15 @@
 import type { ComponentDefinition, TerminalDefinition } from "@/circuit/types";
 import type { CoilPolarity, RelayContact } from "@/circuit/types";
 
-/** MY シリーズのデータシート。全型番の端子データの出典（design.md §4.4） */
-export const MY_SERIES_SOURCE = "https://www.relayspec.com/specs/099/MY.pdf";
+/**
+ * MY シリーズの**公式**データシート。全型番の端子データの出典（design.md §4.4）。
+ *
+ * OMRON 発行の MY(S) Miniature Power Relays Datasheet（資料番号 J199）。
+ * p.1 の Model Number Structure に「Coil Polarity (DC case)」の Type 1 / Type 2、
+ * p.4〜5 に Terminal Arrangement/Internal Connections (Bottom View) がある。
+ */
+export const MY_SERIES_SOURCE =
+  "https://assets.omron.eu/downloads/latest/datasheet/en/j199_my(s)_miniature_power_relays_datasheet_en.pdf";
 
 /** 1 接点ぶんの実端子番号。NC = b 接点 / NO = a 接点 / COM = コモン */
 export type MyContactRow = {
@@ -156,9 +163,15 @@ const buildTerminals = (
 /**
  * MY シリーズの DC24V リレー定義を組み立てる。
  *
- * 端子データは Web 調査による仮置きで **未検証**（`verified: false`）。
- * 実機／公式データシートで確認できたら `verified: true` に更新し、
- * design.md §4.4 の確度表も同時に直すこと（CLAUDE.md 設計原則 5）。
+ * 端子データは公式データシート（`MY_SERIES_SOURCE`）の結線図と突き合わせ済みで
+ * **検証済み**（`verified: true`）。接点 NC/NO/COM の割り当ては p.4〜5 の
+ * Terminal Arrangement/Internal Connections、コイル 13 = (−) / 14 = (+) は
+ * p.1 の「Coil Polarity (DC case)」Type 1 が根拠。
+ *
+ * **系列を足すときは verified を無条件に引き継がない。** 末尾に「1」が付く
+ * MY2N1 / MY4N1 は Type 2 でコイルの極性が逆（13 = (+) / 14 = (−)）であり、
+ * 同じ表を使い回すと誤った端子データを検証済みとして出すことになる
+ * （CLAUDE.md 設計原則 5）。
  */
 export const defineMyRelay = ({
   id,
@@ -188,5 +201,5 @@ export const defineMyRelay = ({
   },
   visual,
   source: MY_SERIES_SOURCE,
-  verified: false,
+  verified: true,
 });

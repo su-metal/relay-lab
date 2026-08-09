@@ -146,14 +146,18 @@ describe("MY4N-D2 の極性厳守（design.md §4.3・§5.3）", () => {
     expect(warning?.componentId).toBe("RY1");
   });
 
-  it("同じ逆接でも MY4N は励磁し warning に留まる", () => {
+  /**
+   * **MY4N と MY4N-D2 の差がここに出る。** 同じ配線でも -D2 は error で
+   * 励磁せず、MY4N は無極性なので何事もなく動く。定義の `polarity` 1 値だけで
+   * この差が再現できていることが、データ駆動設計の証明（requirements.md US-F）。
+   */
+  it("同じ逆接でも MY4N は励磁し、警告も出ない", () => {
     const result = step(reversed(MY4N));
-    // "indicator" なので励磁はする。表示灯が点かないだけ
+    // "none" なので逆接も正常な使い方。表示灯（逆並列 LED）も点く
     expect(energized(result)).toEqual(["RY1"]);
     expect(
-      result.warnings.find((w) => w.code === "coil-polarity-reversed")
-        ?.severity,
-    ).toBe("warning");
+      result.warnings.filter((w) => w.code === "coil-polarity-reversed"),
+    ).toEqual([]);
   });
 
   it("MY2N も MY4N と同じく逆接で励磁する", () => {

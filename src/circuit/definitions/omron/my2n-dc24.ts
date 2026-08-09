@@ -12,8 +12,8 @@ export const omronMy2nDc24 = defineMyRelay({
   id: "omron-my2n-dc24",
   model: "MY2N",
   contactRows: MY2N_CONTACT_ROWS,
-  // MY4N と同じく表示 LED 付き。逆接でも励磁するが表示灯が点かない（design.md §4.4）
-  polarity: "indicator",
+  // MY4N と同じく表示灯は逆並列 LED。逆接でも励磁し点灯する（design.md §4.4）
+  polarity: "none",
   // 接点が 2 回路なので MY4N より小さくてよいが、
   // 上下に並ぶ端子番号が窮屈にならない幅は確保する
   visual: { width: 210, height: 220 },
