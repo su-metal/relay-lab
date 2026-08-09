@@ -20,6 +20,7 @@ import type {
   TerminalDefinition,
   TerminalSide,
 } from "@/circuit/types";
+import { terminalRefKey } from "@/circuit/types";
 
 import {
   IDLE_SIMULATION_VIEW,
@@ -28,6 +29,7 @@ import {
   type SimulationView,
   type WireState,
 } from "./simulation-view";
+import type { ConnectedTerminalInfo } from "./terminal-connections";
 
 /** 全部品が使う唯一のノード種別。型番ごとのノードは作らない（design.md §2） */
 export const DEVICE_NODE_TYPE = "device";
@@ -65,6 +67,12 @@ export type DeviceNodeData = {
   simulation?: DeviceSimulationState;
   /** `TerminalDefinition.id` → 端子の電位状態。停止中は `undefined` */
   terminalStates?: ReadonlyMap<string, WireState>;
+  /**
+   * `TerminalDefinition.id` → その端子につながる配線の相手側一覧。
+   * 端子ツールチップの「接続先」に出す（design.md §8.3）。配線が無い端子は
+   * キー自体が存在しない（空配列と未接続を区別する必要が無いため）。
+   */
+  terminalConnections?: ReadonlyMap<string, readonly ConnectedTerminalInfo[]>;
 };
 
 export type DeviceNode = Node<DeviceNodeData, typeof DEVICE_NODE_TYPE>;
@@ -118,6 +126,27 @@ export const layoutTerminals = (
   flipped ? definition.terminals.map(mirrorTerminal) : definition.terminals;
 
 /**
+ * `buildTerminalConnections()` の全体表を 1 部品ぶんに絞る
+ * （`TerminalDefinition.id` → 接続先一覧）。
+ *
+ * ノードは自分の端子しか描かないので、全体表をそのまま渡さずに絞る
+ * （`terminalStatesOf` と同じ理由）。
+ */
+const connectionsForComponent = (
+  table: ReadonlyMap<string, readonly ConnectedTerminalInfo[]>,
+  componentId: string,
+  terminalIds: readonly string[],
+): ReadonlyMap<string, readonly ConnectedTerminalInfo[]> | undefined => {
+  if (table.size === 0) return undefined;
+  const result = new Map<string, readonly ConnectedTerminalInfo[]>();
+  for (const terminalId of terminalIds) {
+    const info = table.get(terminalRefKey({ componentId, terminalId }));
+    if (info) result.set(terminalId, info);
+  }
+  return result;
+};
+
+/**
  * 1 インスタンスを React Flow のノードにする。
  *
  * **`measured` を必ず載せること。** ノードは毎回ドキュメントから組み直す派生
@@ -133,6 +162,10 @@ export const toDeviceNode = (
   definition: ComponentDefinition,
   selected = false,
   view: SimulationView = IDLE_SIMULATION_VIEW,
+  terminalConnections: ReadonlyMap<
+    string,
+    readonly ConnectedTerminalInfo[]
+  > = new Map(),
 ): DeviceNode => ({
   id: instance.id,
   type: DEVICE_NODE_TYPE,
@@ -145,6 +178,11 @@ export const toDeviceNode = (
     simulation: view.deviceOf.get(instance.id),
     terminalStates: terminalStatesOf(
       view,
+      instance.id,
+      definition.terminals.map((terminal) => terminal.id),
+    ),
+    terminalConnections: connectionsForComponent(
+      terminalConnections,
       instance.id,
       definition.terminals.map((terminal) => terminal.id),
     ),
@@ -171,6 +209,10 @@ export const toDeviceNodes = (
   registry: ComponentDefinitionRegistry,
   selectedComponentIds: readonly string[] = [],
   view: SimulationView = IDLE_SIMULATION_VIEW,
+  terminalConnections: ReadonlyMap<
+    string,
+    readonly ConnectedTerminalInfo[]
+  > = new Map(),
 ): DeviceNode[] => {
   const selected = new Set(selectedComponentIds);
   const nodes: DeviceNode[] = [];
@@ -178,7 +220,13 @@ export const toDeviceNodes = (
     const definition = registry.get(instance.definitionId);
     if (!definition) continue;
     nodes.push(
-      toDeviceNode(instance, definition, selected.has(instance.id), view),
+      toDeviceNode(
+        instance,
+        definition,
+        selected.has(instance.id),
+        view,
+        terminalConnections,
+      ),
     );
   }
   return nodes;
