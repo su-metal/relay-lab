@@ -109,6 +109,43 @@ describe("履歴のスナップショット地点", () => {
   });
 });
 
+describe("配置の自動整理（applyLayout）", () => {
+  it("部品が何個動いても履歴は 1 手で、Undo 1 回で全部戻る", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 3, y: 5 });
+    const lamp = store().addComponent(dc24vLamp, { x: 403, y: 405 });
+    const before = store().past.length;
+
+    store().applyLayout(
+      new Map([
+        [power, { x: 0, y: 0 }],
+        [lamp, { x: 400, y: 400 }],
+      ]),
+    );
+    expect(store().past).toHaveLength(before + 1);
+    expect(store().document.components.map((c) => c.position)).toEqual([
+      { x: 0, y: 0 },
+      { x: 400, y: 400 },
+    ]);
+
+    store().undo();
+    expect(store().document.components.map((c) => c.position)).toEqual([
+      { x: 3, y: 5 },
+      { x: 403, y: 405 },
+    ]);
+  });
+
+  it("空振り（空の Map・存在しない ID・同じ位置）では履歴を汚さない", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 16, y: 16 });
+    const before = store().past.length;
+
+    store().applyLayout(new Map());
+    store().applyLayout(new Map([["missing", { x: 0, y: 0 }]]));
+    store().applyLayout(new Map([[power, { x: 16, y: 16 }]]));
+
+    expect(store().past).toHaveLength(before);
+  });
+});
+
 describe("削除と選択", () => {
   it("選択した部品と配線をまとめて 1 手で消す", () => {
     const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
@@ -225,6 +262,131 @@ describe("削除と選択", () => {
 
     store().addComponent(dc24vLamp, { x: 0, y: 0 });
     expect(store().future).toHaveLength(0);
+  });
+});
+
+/**
+ * 配線のつなぎ替え（design.md §8.8）。
+ *
+ * 守りたいのは **同じ 1 本のまま端子だけが移る**こと。消して張り直す実装にすると
+ * ID が変わり、選択が外れ、Undo も「削除」「追加」の 2 手になる。
+ */
+describe("配線のつなぎ替え", () => {
+  /** 電源 + → ランプ 1 の 1 本だけを張った回路。ランプはもう 1 個置いておく */
+  const wiredCircuit = () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const lampA = store().addComponent(dc24vLamp, { x: 200, y: 0 });
+    const lampB = store().addComponent(dc24vLamp, { x: 400, y: 0 });
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: lampA,
+      targetHandle: "1",
+    });
+    return { power, lampA, lampB, wire: store().document.connections[0]!.id };
+  };
+
+  it("端子だけが移り、配線 ID は変わらない", () => {
+    const { power, lampB, wire } = wiredCircuit();
+    const before = store().past.length;
+
+    // ランプ A 側の端を掴んでランプ B の端子 1 へ落とす
+    store().reconnectConnection(wire, {
+      source: power,
+      sourceHandle: "plus",
+      target: lampB,
+      targetHandle: "1",
+    });
+
+    expect(store().document.connections).toHaveLength(1);
+    const connection = store().document.connections[0]!;
+    expect(connection.id).toBe(wire);
+    expect(connection.to).toEqual({ componentId: lampB, terminalId: "1" });
+    expect(store().past).toHaveLength(before + 1);
+  });
+
+  it("Undo 1 回で元の端子に戻る（削除と追加の 2 手にならない）", () => {
+    const { power, lampA, lampB, wire } = wiredCircuit();
+
+    store().reconnectConnection(wire, {
+      source: power,
+      sourceHandle: "plus",
+      target: lampB,
+      targetHandle: "1",
+    });
+    store().undo();
+
+    expect(store().document.connections).toHaveLength(1);
+    const connection = store().document.connections[0]!;
+    expect(connection.id).toBe(wire);
+    expect(connection.to).toEqual({ componentId: lampA, terminalId: "1" });
+  });
+
+  it("掴んで同じ端子へ戻しただけなら履歴を汚さない", () => {
+    const { power, lampA, wire } = wiredCircuit();
+    const before = store().past.length;
+
+    // 向きを入れ替えて落とす（配線に向きは無いので同じ 1 本）
+    store().reconnectConnection(wire, {
+      source: lampA,
+      sourceHandle: "1",
+      target: power,
+      targetHandle: "plus",
+    });
+
+    expect(store().past).toHaveLength(before);
+    expect(store().document.connections[0]!.to).toEqual({
+      componentId: lampA,
+      terminalId: "1",
+    });
+  });
+
+  it("既に同じ端子ペアの配線があるつなぎ替えは、元のまま残す", () => {
+    const { power, lampA, lampB, wire } = wiredCircuit();
+    // 電源 + → ランプ B 1 を別に張っておく
+    store().addConnection({
+      source: power,
+      sourceHandle: "plus",
+      target: lampB,
+      targetHandle: "1",
+    });
+    const before = store().past.length;
+
+    store().reconnectConnection(wire, {
+      source: power,
+      sourceHandle: "plus",
+      target: lampB,
+      targetHandle: "1",
+    });
+
+    expect(store().past).toHaveLength(before);
+    expect(store().document.connections).toHaveLength(2);
+    expect(store().document.connections[0]!.to).toEqual({
+      componentId: lampA,
+      terminalId: "1",
+    });
+  });
+
+  it("端子以外への落とし先・存在しない配線 ID は空振り", () => {
+    const { power, lampB, wire } = wiredCircuit();
+    const before = store().past.length;
+
+    // 部品本体へのドロップ（Handle ID が無い）
+    store().reconnectConnection(wire, {
+      source: power,
+      sourceHandle: "plus",
+      target: lampB,
+      targetHandle: null,
+    });
+    store().reconnectConnection("wire-nope", {
+      source: power,
+      sourceHandle: "plus",
+      target: lampB,
+      targetHandle: "1",
+    });
+
+    expect(store().past).toHaveLength(before);
+    expect(store().document.connections).toHaveLength(1);
   });
 });
 

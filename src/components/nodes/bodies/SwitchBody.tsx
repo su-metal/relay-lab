@@ -7,28 +7,39 @@ import { useSimulationStore } from "@/store/simulationStore";
 import styles from "./bodies.module.css";
 import type { BodyProps } from "./types";
 
+/** ノードドラッグの始動だけ止める（状態は click で変える） */
+const stopOnly = (event: PointerEvent<HTMLButtonElement>) => {
+  event.stopPropagation();
+};
+
 /**
- * 押しボタン。a 接点（NO）は開いた線、b 接点（NC）は閉じた線で描く。
- * `contactType` を読むだけなので、型番が増えても分岐は増えない。
+ * スイッチ。a 接点（NO）は開いた線、b 接点（NC）は閉じた線で描く。
+ * 読むのは `contactType` と `action` の 2 値だけなので、型番が増えても分岐は増えない。
  * A/B の別はモデル名にも出るため、図記号側に文字は重ねない。
  *
- * シミュレーション中は操作ボタンを出し、押下中は図記号も実際の開閉に合わせる。
- * モーメンタリなので **押している間だけ**状態が変わる（マウスダウンで押下、
- * マウスアップで復帰）。ボタン外でマウスを離す事故に備えて
- * `pointerleave` / `pointercancel` でも必ず復帰させる。押しっぱなしのまま
- * 状態が残ると、自己保持回路の検証で「離したのに保持が効いている」と誤読する。
+ * シミュレーション中は操作子を出し、図記号も実際の開閉に合わせる。
+ * 操作の仕方は `action` で分かれる（design.md §4.7）。
+ *
+ * - **モーメンタリ**（押しボタン）: 押している間だけ状態が変わる。ボタン外で
+ *   マウスを離す事故に備えて `pointerleave` / `pointercancel` でも必ず復帰させる。
+ *   押しっぱなしのまま状態が残ると、自己保持回路の検証で「離したのに保持が
+ *   効いている」と誤読する
+ * - **オルタネート**（切替スイッチ）: 1 クリックで ON 位置に留まり、もう 1 回で戻る。
+ *   こちらは離しても復帰させてはならない
  */
 export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
   const pressSwitch = useSimulationStore((state) => state.pressSwitch);
   const releaseSwitch = useSimulationStore((state) => state.releaseSwitch);
+  const toggleSwitch = useSimulationStore((state) => state.toggleSwitch);
 
   const electrical =
     definition.electrical.kind === "switch" ? definition.electrical : null;
   const normallyClosed = electrical?.contactType === "NC";
+  const maintained = electrical?.action === "maintained";
 
-  const pressed = simulation?.pressed ?? false;
-  // B 接点は押すと開き、A 接点は押すと閉じる
-  const closed = normallyClosed !== pressed;
+  const operated = simulation?.pressed ?? false;
+  // B 接点は操作すると開き、A 接点は操作すると閉じる
+  const closed = normallyClosed !== operated;
 
   const press = (event: PointerEvent<HTMLButtonElement>) => {
     // React Flow のノードドラッグを始動させない（`nodrag` と二重の保険）
@@ -39,6 +50,11 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
   const release = (event: PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     releaseSwitch(componentId);
+  };
+
+  const toggle = (event: PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    toggleSwitch(componentId);
   };
 
   // キーボード操作でもモーメンタリにする。button 既定の click では
@@ -56,6 +72,18 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
     releaseSwitch(componentId);
   };
 
+  // オルタネートは button 既定の click で足りる（Space / Enter もこれで動く）。
+  // pointerdown 側で拾わないのは、ドラッグ開始と誤って切り替わるのを避けるため
+  const maintainedHandlers = { onClick: toggle, onPointerDown: stopOnly };
+  const momentaryHandlers = {
+    onPointerDown: press,
+    onPointerUp: release,
+    onPointerLeave: release,
+    onPointerCancel: release,
+    onKeyDown: keyDown,
+    onKeyUp: keyUp,
+  };
+
   return (
     <div className={styles.stack}>
       <svg
@@ -65,11 +93,20 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
         viewBox="0 0 46 28"
         aria-hidden
       >
-        {/* 押しボタンの頭。押下中は少し沈める */}
-        <g transform={pressed ? "translate(0 3)" : undefined}>
-          <line x1="23" y1="0" x2="23" y2="6" />
-          <line x1="15" y1="6" x2="31" y2="6" />
-        </g>
+        {maintained ? (
+          // 切替スイッチ。押しボタンの頭は付けず、支点と接点を丸で示す
+          // （復帰ばねを持たない＝操作した位置に留まる、という図記号の約束）
+          <>
+            <circle cx="14" cy="20" r="2" className={styles.switchPivot} />
+            <circle cx="32" cy="20" r="2" className={styles.switchPivot} />
+          </>
+        ) : (
+          // 押しボタンの頭。押下中は少し沈める
+          <g transform={operated ? "translate(0 3)" : undefined}>
+            <line x1="23" y1="0" x2="23" y2="6" />
+            <line x1="15" y1="6" x2="31" y2="6" />
+          </g>
+        )}
         {/* 接点。閉じていれば水平、開いていれば斜め */}
         <line x1="2" y1="20" x2="14" y2="20" />
         {closed ? (
@@ -78,7 +115,10 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
           <line x1="14" y1="20" x2="32" y2="12" />
         )}
         <line x1="32" y1="20" x2="44" y2="20" />
-        <line x1="23" y1="6" x2="23" y2="14" strokeDasharray="2 2" />
+        {/* 押しボタンの頭と接点をつなぐ操作リンク。頭が沈んでも据え置く */}
+        {!maintained && (
+          <line x1="23" y1="6" x2="23" y2="14" strokeDasharray="2 2" />
+        )}
       </svg>
 
       {simulation && (
@@ -86,16 +126,11 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
           type="button"
           // React Flow はこのクラスの付いた要素の上でノードドラッグを始めない
           className={`${styles.pressButton} nodrag`}
-          data-pressed={pressed ? "true" : undefined}
-          aria-pressed={pressed}
-          onPointerDown={press}
-          onPointerUp={release}
-          onPointerLeave={release}
-          onPointerCancel={release}
-          onKeyDown={keyDown}
-          onKeyUp={keyUp}
+          data-pressed={operated ? "true" : undefined}
+          aria-pressed={operated}
+          {...(maintained ? maintainedHandlers : momentaryHandlers)}
         >
-          {pressed ? "押下中" : "押す"}
+          {maintained ? (operated ? "ON" : "OFF") : operated ? "押下中" : "押す"}
         </button>
       )}
     </div>

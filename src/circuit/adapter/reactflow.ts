@@ -275,24 +275,46 @@ export const isSameTerminalPair = (
   return aKeys[0] === bKeys[0] && aKeys[1] === bKeys[1];
 };
 
-/** 同じ端子ペアの配線がすでに存在するか */
+/**
+ * 同じ端子ペアの配線がすでに存在するか。
+ *
+ * **自分自身は重複とみなさない**（`id` が一致する既存は飛ばす）。つなぎ替え
+ * （§8.8）では引き直している最中の配線がドキュメントに残ったままなので、
+ * 素直に比べると「元の端子へ戻す」「片端だけ動かす」がどちらも自分との重複に
+ * なって弾かれる。新規配線の候補 ID は既存とぶつからないため影響を受けない。
+ */
 export const hasTerminalPair = (
   document: CircuitDocument,
   connection: CircuitConnection,
 ): boolean =>
-  document.connections.some((existing) =>
-    isSameTerminalPair(existing, connection),
+  document.connections.some(
+    (existing) =>
+      existing.id !== connection.id && isSameTerminalPair(existing, connection),
   );
+
+/**
+ * まだドキュメントに無い配線を表す仮 ID。既存の配線 ID（`wire-...`）とは
+ * 決してぶつからない綴りにしてある（上の「自分自身は除く」を骨抜きにしないため）。
+ */
+const CANDIDATE_CONNECTION_ID = "__candidate__";
 
 /**
  * 配線ドラッグ中に接続先として許可してよいか（React Flow の `isValidConnection`）。
  * 端子以外・自己接続・重複配線を弾く。
+ *
+ * `reconnectingConnectionId` は**つなぎ替え中の配線 ID**（§8.8）。既存の配線の端を
+ * 掴んで引き直している間は、その配線自身を重複判定から外さないと、どこへ落としても
+ * 不許可になる。新規配線のときは省略する。
  */
 export const canConnectTerminals = (
   document: CircuitDocument,
   params: Connection | Edge,
+  reconnectingConnectionId?: string,
 ): boolean => {
-  const candidate = connectionFromReactFlow(params, "candidate");
+  const candidate = connectionFromReactFlow(
+    params,
+    reconnectingConnectionId ?? CANDIDATE_CONNECTION_ID,
+  );
   if (!candidate) return false;
   return !hasTerminalPair(document, candidate);
 };

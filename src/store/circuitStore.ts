@@ -17,6 +17,7 @@ import { create } from "zustand";
 import {
   connectionFromReactFlow,
   hasTerminalPair,
+  isSameTerminalPair,
 } from "@/circuit/adapter/reactflow";
 import type {
   CircuitDocument,
@@ -88,6 +89,20 @@ export type CircuitStore = {
   moveComponent: (componentId: string, position: Point) => void;
 
   /**
+   * 複数の部品を一度に置き直す（配置の自動整理・design.md §8.9）。
+   *
+   * **`moveComponent` と違い履歴に 1 手だけ積む。** ドラッグ中の移動は
+   * `beginComponentDrag` / `endComponentDrag` の対が履歴を受け持つが、
+   * 自動整理は 1 回のボタン操作なので、部品 20 個が動いても Undo 1 回で戻る
+   * こと自体が要件になる。
+   *
+   * 実際に動く部品が無ければ（空の Map・存在しない ID だけ）履歴を汚さない。
+   * どこをどう整えるかは `adapter/auto-layout.ts` の純粋関数が決める。
+   * ストアは寸法もレジストリも知らない。
+   */
+  applyLayout: (positions: ReadonlyMap<string, Point>) => void;
+
+  /**
    * 部品と配線を **1 手として**消す。部品を消せばその端子に繋がる配線も道連れ。
    *
    * 削除の入口はこれ 1 本に絞る。要素ごとに呼べる API を残すと、範囲選択で
@@ -136,6 +151,18 @@ export type CircuitStore = {
    * 端子以外への接続と重複配線はここで捨てる（adapter が判定する）。
    */
   addConnection: (params: Connection) => void;
+
+  /**
+   * 既存の配線の端を掴み直して、別の端子へ繋ぎ替える（design.md §8.8）。
+   *
+   * **配線 ID を変えない。** 同じ 1 本を引き回しただけなので、消して張り直すのでは
+   * なく端子参照だけを差し替える。ID が変わると選択が外れ、レーン（§8.7）も
+   * 振り直しになり、「今掴んでいる線」が画面上で別物にすり替わる。
+   *
+   * 履歴は 1 手。空振り（存在しない ID・掴んで同じ端子へ戻した・既に同じ端子ペアの
+   * 配線がある）は履歴を汚さない。
+   */
+  reconnectConnection: (connectionId: string, params: Connection) => void;
 
   setComponentSelected: (componentId: string, selected: boolean) => void;
   setConnectionSelected: (connectionId: string, selected: boolean) => void;
@@ -327,6 +354,28 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
         },
       })),
 
+    applyLayout: (positions) => {
+      if (positions.size === 0) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          const position = positions.get(component.id);
+          if (
+            !position ||
+            (position.x === component.position.x &&
+              position.y === component.position.y)
+          ) {
+            return component;
+          }
+          changed = true;
+          return { ...component, position };
+        });
+        // 空振り（存在しない ID・現在と同じ位置だけ）なら履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
     setComponentLabel: (componentId, label) => {
       // 入力値をそのまま持つ。ここで trim すると「RY 1」の途中（"RY "）で
       // 空白が消えてしまい、制御された input に文字が打てなくなる。
@@ -452,6 +501,32 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           connections: [...state.document.connections, candidate],
         }),
       );
+    },
+
+    reconnectConnection: (connectionId, params) => {
+      // 引き直した先の端子ペアを、**同じ ID の**接続として組み立てる
+      const candidate = connectionFromReactFlow(params, connectionId);
+      // 端子 → 端子 でない落とし先（部品本体・自己接続）は無視して元のまま残す
+      if (!candidate) return;
+
+      set((state) => {
+        const current = state.document.connections.find(
+          (connection) => connection.id === connectionId,
+        );
+        if (!current) return {};
+        // 掴んで同じ端子へ戻しただけ。何も変わっていないので履歴を積まない
+        if (isSameTerminalPair(current, candidate)) return {};
+        // 引き直した先に既に同じ 1 本がある。重ねて張るのではなく元のまま残す
+        // （自分自身は hasTerminalPair 側で除かれる）
+        if (hasTerminalPair(state.document, candidate)) return {};
+
+        return commit(state, {
+          ...state.document,
+          connections: state.document.connections.map((connection) =>
+            connection.id === connectionId ? candidate : connection,
+          ),
+        });
+      });
     },
 
     setComponentSelected: (componentId, selected) =>

@@ -21,6 +21,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { WarningList } from "./WarningList";
 import type { RangeSelectionTarget } from "./range-selection";
+import { useArrangeShortcut } from "./useArrangeShortcut";
 import { useDocumentPersistence } from "./useDocumentPersistence";
 import { useFlipShortcut } from "./useFlipShortcut";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -42,6 +43,9 @@ function Workspace() {
   const persistence = useDocumentPersistence();
   useHistoryShortcuts();
   useFlipShortcut();
+  // L キーで配置を整理する（design.md §8.9）。リスナーは 1 本だけ張る —
+  // 操作バーのボタンは同じ `runAutoArrange` を直接呼ぶ
+  useArrangeShortcut();
 
   // 範囲選択の設定は画面の操作モードで、保存対象でも履歴の対象でもない。
   // circuitStore に混ぜず、操作バーとキャンバスがここで共有する（design.md §8.6）

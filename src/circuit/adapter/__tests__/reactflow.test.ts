@@ -291,4 +291,49 @@ describe("canConnectTerminals", () => {
       }),
     ).toBe(true);
   });
+
+  /**
+   * つなぎ替え（design.md §8.8）。引き直している最中の配線はドキュメントに
+   * 残ったままなので、自分自身を重複扱いすると **どこへ落としても不許可**になる。
+   */
+  it("つなぎ替え中は、その配線自身を重複とみなさない", () => {
+    const params = {
+      source: "cmp-relay",
+      sourceHandle: "14",
+      target: "cmp-power",
+      targetHandle: "plus",
+    };
+
+    // 新規配線としては既存の wire-1 と重複する
+    expect(canConnectTerminals(document, params)).toBe(false);
+    // wire-1 自身を引き直して元の端子へ戻す操作としては許可する
+    expect(canConnectTerminals(document, params, "wire-1")).toBe(true);
+  });
+
+  it("つなぎ替えでも、他の配線と同じ端子ペアになるなら許可しない", () => {
+    const twoWires: CircuitDocument = {
+      ...document,
+      connections: [
+        ...document.connections,
+        {
+          id: "wire-2",
+          from: { componentId: "cmp-power", terminalId: "zero" },
+          to: { componentId: "cmp-relay", terminalId: "13" },
+        },
+      ],
+    };
+
+    expect(
+      canConnectTerminals(
+        twoWires,
+        {
+          source: "cmp-power",
+          sourceHandle: "plus",
+          target: "cmp-relay",
+          targetHandle: "14",
+        },
+        "wire-2",
+      ),
+    ).toBe(false);
+  });
 });

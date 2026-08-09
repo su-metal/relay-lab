@@ -16,6 +16,7 @@ import { APP_NAME } from "@/lib/app-info";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
+import { runAutoArrange } from "./auto-arrange";
 import { RANGE_SELECTION_TARGETS } from "./range-selection";
 import type { RangeSelectionTarget } from "./range-selection";
 import type { PersistenceStatus } from "./useDocumentPersistence";
@@ -185,6 +186,20 @@ export function Toolbar({
         >
           選択を削除
           {selectedCount > 0 && ` (${selectedCount})`}
+        </button>
+        {/*
+          配置の自動整理（design.md §8.9）。対象は選択中があればそれだけ、
+          無ければ全体 —— ラベルもそれに合わせて言い換える。
+          「整列」とだけ書くと、囲んで押したときに図面全部が動くように読める
+        */}
+        <button
+          type="button"
+          className={styles.button}
+          onClick={runAutoArrange}
+          disabled={componentCount === 0}
+          title="部品をグリッドに揃え、行・列を整え、重なりをほどきます（L キーでも可）。Undo 1 回で元に戻せます"
+        >
+          ▦ {selectedComponentIds.length > 0 ? "選択を整列" : "配置を整列"}
         </button>
         <button type="button" className={styles.button} onClick={handleFitView}>
           全体表示

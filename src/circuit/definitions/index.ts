@@ -7,6 +7,7 @@
  *
  * Step 7 で MY2N / MY4N-D2 / 端子台 / ダイオードを足したが、
  * **エンジンの差分は 0 行**（requirements.md US-F）。
+ * 切替スイッチ（オルタネート）も同じく定義データだけで足りている（design.md §4.7）。
  */
 
 import type {
@@ -21,7 +22,12 @@ import { omronMy2nDc24 } from "./omron/my2n-dc24";
 import { omronMy4nD2Dc24 } from "./omron/my4n-d2-dc24";
 import { omronMy4nDc24 } from "./omron/my4n-dc24";
 import { dc24vPowerSupply } from "./power";
-import { pushbuttonNc, pushbuttonNo } from "./switches";
+import {
+  pushbuttonNc,
+  pushbuttonNo,
+  selectorSwitchNc,
+  selectorSwitchNo,
+} from "./switches";
 import { genericTerminalBlock } from "./terminals";
 
 /** パレットの表示順もこの並びに従う */
@@ -29,6 +35,8 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   dc24vPowerSupply,
   pushbuttonNo,
   pushbuttonNc,
+  selectorSwitchNo,
+  selectorSwitchNc,
   omronMy2nDc24,
   omronMy4nDc24,
   omronMy4nD2Dc24,
@@ -90,4 +98,6 @@ export {
   omronMy4nDc24,
   pushbuttonNc,
   pushbuttonNo,
+  selectorSwitchNc,
+  selectorSwitchNo,
 };

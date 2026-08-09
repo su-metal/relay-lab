@@ -368,8 +368,12 @@ function ElectricalSection({
             <Row name="操作">
               <StateBadge
                 on={device?.pressed}
-                onLabel="押下中"
-                offLabel="復帰"
+                onLabel={
+                  electrical.action === "maintained" ? "ON 位置" : "押下中"
+                }
+                offLabel={
+                  electrical.action === "maintained" ? "OFF 位置" : "復帰"
+                }
               />
             </Row>
             <Row name="導通">

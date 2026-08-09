@@ -30,7 +30,7 @@ import type {
   NodeChange,
   Viewport,
 } from "@xyflow/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
 import {
@@ -47,7 +47,7 @@ import { buildWireLanes } from "@/circuit/adapter/wire-lane";
 import { buildWireRoles } from "@/circuit/adapter/wire-role";
 import type { WireRole } from "@/circuit/adapter/wire-role";
 import { componentRegistry, getComponentDefinition } from "@/circuit/definitions";
-import { WireEdge } from "@/components/edges/WireEdge";
+import { WIRE_RECONNECT_RADIUS, WireEdge } from "@/components/edges/WireEdge";
 import { DeviceNode } from "@/components/nodes/DeviceNode";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
@@ -166,6 +166,9 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
   const moveComponent = useCircuitStore((state) => state.moveComponent);
   const removeElements = useCircuitStore((state) => state.removeElements);
   const addConnection = useCircuitStore((state) => state.addConnection);
+  const reconnectConnection = useCircuitStore(
+    (state) => state.reconnectConnection,
+  );
   const setComponentSelected = useCircuitStore(
     (state) => state.setComponentSelected,
   );
@@ -311,8 +314,42 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [addConnection],
   );
 
+  /**
+   * つなぎ替え中の配線 ID（design.md §8.8）。
+   *
+   * **state ではなく ref で持つ。** これを見るのはドラッグ中に毎フレーム呼ばれる
+   * `isValidConnection` で、state にすると掴んだ瞬間にハンドラーが作り直され、
+   * React Flow が握っている `isValidConnection` が古いままになる恐れがある。
+   * 表示にも使わないので再描画する理由が無い。
+   */
+  const reconnectingWireId = useRef<string | null>(null);
+
+  const onReconnectStart = useCallback((_event: unknown, edge: Edge) => {
+    reconnectingWireId.current = edge.id;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, connection: Connection) =>
+      reconnectConnection(oldEdge.id, connection),
+    [reconnectConnection],
+  );
+
+  /**
+   * 掴んだ端を離したとき。**接続先が無ければ配線は元のまま残す。**
+   * 空きスペースへ落として消える仕様にすると、掴み損ねただけで配線が消える。
+   * 削除は Delete / D（`DELETE_KEYS`）という別の操作に任せる。
+   */
+  const onReconnectEnd = useCallback(() => {
+    reconnectingWireId.current = null;
+  }, []);
+
   const isValidConnection = useCallback(
-    (params: Connection | Edge) => canConnectTerminals(document, params),
+    (params: Connection | Edge) =>
+      canConnectTerminals(
+        document,
+        params,
+        reconnectingWireId.current ?? undefined,
+      ),
     [document],
   );
 
@@ -367,6 +404,12 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         onNodeDragStop={endComponentDrag}
         onDelete={onDelete}
         onConnect={onConnect}
+        // 既存の配線の端を掴んで引き直す（design.md §8.8）。
+        // onReconnect を渡して初めて端の掴み手が現れる
+        onReconnectStart={onReconnectStart}
+        onReconnect={onReconnect}
+        onReconnectEnd={onReconnectEnd}
+        reconnectRadius={WIRE_RECONNECT_RADIUS}
         isValidConnection={isValidConnection}
         onMoveEnd={onMoveEnd}
         defaultViewport={document.viewport}
