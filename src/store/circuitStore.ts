@@ -89,6 +89,20 @@ export type CircuitStore = {
   moveComponent: (componentId: string, position: Point) => void;
 
   /**
+   * 複数の部品を一度に置き直す（配置の自動整理・design.md §8.9）。
+   *
+   * **`moveComponent` と違い履歴に 1 手だけ積む。** ドラッグ中の移動は
+   * `beginComponentDrag` / `endComponentDrag` の対が履歴を受け持つが、
+   * 自動整理は 1 回のボタン操作なので、部品 20 個が動いても Undo 1 回で戻る
+   * こと自体が要件になる。
+   *
+   * 実際に動く部品が無ければ（空の Map・存在しない ID だけ）履歴を汚さない。
+   * どこをどう整えるかは `adapter/auto-layout.ts` の純粋関数が決める。
+   * ストアは寸法もレジストリも知らない。
+   */
+  applyLayout: (positions: ReadonlyMap<string, Point>) => void;
+
+  /**
    * 部品と配線を **1 手として**消す。部品を消せばその端子に繋がる配線も道連れ。
    *
    * 削除の入口はこれ 1 本に絞る。要素ごとに呼べる API を残すと、範囲選択で
@@ -339,6 +353,28 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           ),
         },
       })),
+
+    applyLayout: (positions) => {
+      if (positions.size === 0) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          const position = positions.get(component.id);
+          if (
+            !position ||
+            (position.x === component.position.x &&
+              position.y === component.position.y)
+          ) {
+            return component;
+          }
+          changed = true;
+          return { ...component, position };
+        });
+        // 空振り（存在しない ID・現在と同じ位置だけ）なら履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
 
     setComponentLabel: (componentId, label) => {
       // 入力値をそのまま持つ。ここで trim すると「RY 1」の途中（"RY "）で

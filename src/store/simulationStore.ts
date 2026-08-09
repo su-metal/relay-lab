@@ -24,7 +24,12 @@ const EMPTY_PRESSED: ReadonlySet<string> = new Set();
 
 export type SimulationStore = {
   running: boolean;
-  /** 押下中の押しボタンの componentId */
+  /**
+   * **操作中**のスイッチの componentId。
+   * モーメンタリは押下中、オルタネートは ON 位置の間ずっと入る。
+   * どちらも「操作された状態か」の 1 ビットなので集合を分けない
+   * （エンジンは `action` を見て開閉を決める・design.md §4.7）。
+   */
   pressedSwitches: ReadonlySet<string>;
   /** 最新の結果。停止中は null */
   result: SimulationResult | null;
@@ -38,6 +43,12 @@ export type SimulationStore = {
    */
   pressSwitch: (componentId: string) => void;
   releaseSwitch: (componentId: string) => void;
+
+  /**
+   * オルタネート操作。1 回で ON 位置に入り、もう 1 回で戻る。
+   * 停止中は無視する（`pressSwitch` と同じ理由）。
+   */
+  toggleSwitch: (componentId: string) => void;
 
   /**
    * 現在の回路と入力で解き直す。
@@ -73,6 +84,15 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       if (!state.pressedSwitches.has(componentId)) return {};
       const next = new Set(state.pressedSwitches);
       next.delete(componentId);
+      return { pressedSwitches: next };
+    }),
+
+  toggleSwitch: (componentId) =>
+    set((state) => {
+      if (!state.running) return {};
+      const next = new Set(state.pressedSwitches);
+      // delete は「消せたか」を返す。ON なら OFF へ、OFF なら ON へ
+      if (!next.delete(componentId)) next.add(componentId);
       return { pressedSwitches: next };
     }),
 

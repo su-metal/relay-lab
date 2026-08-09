@@ -109,6 +109,43 @@ describe("履歴のスナップショット地点", () => {
   });
 });
 
+describe("配置の自動整理（applyLayout）", () => {
+  it("部品が何個動いても履歴は 1 手で、Undo 1 回で全部戻る", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 3, y: 5 });
+    const lamp = store().addComponent(dc24vLamp, { x: 403, y: 405 });
+    const before = store().past.length;
+
+    store().applyLayout(
+      new Map([
+        [power, { x: 0, y: 0 }],
+        [lamp, { x: 400, y: 400 }],
+      ]),
+    );
+    expect(store().past).toHaveLength(before + 1);
+    expect(store().document.components.map((c) => c.position)).toEqual([
+      { x: 0, y: 0 },
+      { x: 400, y: 400 },
+    ]);
+
+    store().undo();
+    expect(store().document.components.map((c) => c.position)).toEqual([
+      { x: 3, y: 5 },
+      { x: 403, y: 405 },
+    ]);
+  });
+
+  it("空振り（空の Map・存在しない ID・同じ位置）では履歴を汚さない", () => {
+    const power = store().addComponent(dc24vPowerSupply, { x: 16, y: 16 });
+    const before = store().past.length;
+
+    store().applyLayout(new Map());
+    store().applyLayout(new Map([["missing", { x: 0, y: 0 }]]));
+    store().applyLayout(new Map([[power, { x: 16, y: 16 }]]));
+
+    expect(store().past).toHaveLength(before);
+  });
+});
+
 describe("削除と選択", () => {
   it("選択した部品と配線をまとめて 1 手で消す", () => {
     const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });

@@ -183,9 +183,15 @@ export const deviceStatusOf = (
         ? { label: "点灯中", active: true }
         : { label: "消灯", active: false };
     case "switch":
-      return simulation.pressed
-        ? { label: "押下中", active: true }
-        : { label: "未押下", active: false };
+      // オルタネートは「押下」ではなく位置なので言い方を変える。
+      // 同じ「押下中」と出すと、手を離しても状態が残ることが読めない
+      return definition.electrical.action === "maintained"
+        ? simulation.pressed
+          ? { label: "ON 位置", active: true }
+          : { label: "OFF 位置", active: false }
+        : simulation.pressed
+          ? { label: "押下中", active: true }
+          : { label: "未押下", active: false };
     default:
       return undefined;
   }

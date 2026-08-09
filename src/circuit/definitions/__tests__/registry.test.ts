@@ -16,11 +16,13 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("Step 7 までの 9 定義が登録されている", () => {
+  it("11 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
+      "switch-selector-no",
+      "switch-selector-nc",
       "omron-my2n-dc24",
       "omron-my4n-dc24",
       "omron-my4n-d2-dc24",
@@ -28,7 +30,7 @@ describe("部品定義レジストリ", () => {
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(9);
+    expect(componentRegistry.size).toBe(11);
   });
 
   it("型番から定義を取得できる", () => {
@@ -49,8 +51,10 @@ describe("部品定義レジストリ", () => {
     expect(listComponentDefinitions("switch").map((d) => d.id)).toEqual([
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
+      "switch-selector-no",
+      "switch-selector-nc",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(9);
+    expect(listComponentDefinitions()).toHaveLength(11);
   });
 
   it("全定義が未検証であり、端子データの出典を持つ", () => {
@@ -259,6 +263,41 @@ describe("汎用部品の追加（design.md §4.5）", () => {
     ]);
     // 実型番を持たないので実端子番号も存在しない
     expect(diode.terminals.every((t) => t.number === undefined)).toBe(true);
+  });
+
+  it("スイッチ 4 種は端子構成が同一で、接点種別と動作だけが違う（§4.7）", () => {
+    const ids = [
+      "switch-pushbutton-no",
+      "switch-pushbutton-nc",
+      "switch-selector-no",
+      "switch-selector-nc",
+    ];
+    const switches = ids.map(requireComponentDefinition);
+
+    // 端子の呼称が 1 つでもずれると「1–2 で統一」という約束（§4.5）が崩れる
+    for (const definition of switches) {
+      expect(definition.terminals.map((t) => t.label), definition.id).toEqual([
+        "1",
+        "2",
+      ]);
+      expect(
+        definition.terminals.every((t) => t.number === undefined),
+        definition.id,
+      ).toBe(true);
+    }
+
+    expect(
+      switches.map((d) =>
+        d.electrical.kind === "switch"
+          ? [d.electrical.contactType, d.electrical.action]
+          : null,
+      ),
+    ).toEqual([
+      ["NO", "momentary"],
+      ["NC", "momentary"],
+      ["NO", "maintained"],
+      ["NC", "maintained"],
+    ]);
   });
 
   it("端子台は全端子を `electrical.terminals` に列挙する", () => {
