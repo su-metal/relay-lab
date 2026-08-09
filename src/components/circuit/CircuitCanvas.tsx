@@ -117,10 +117,11 @@ const PAN_BUTTONS = [1, 2];
  *
  * React Flow は Edge の `className` を `<g class="react-flow__edge ...">` に
  * 載せるので、ハッシュ済みのモジュールクラスをここで解決して渡す。
- * 非通電は既定色（`.canvas` 側）に任せるためクラスを付けない。
+ * 非通電（`inactive`）も色は既定の灰のままだが、**実行中だけ濃さを落とす**
+ * ためにクラスを持つ（停止中の役割色と同じ灰にしてしまわない）。
  */
 const WIRE_CLASS: Record<WireState, string | undefined> = {
-  inactive: undefined,
+  inactive: styles.wireInactive,
   plus: styles.wirePlus,
   zero: styles.wireZero,
   energized: styles.wireEnergized,
@@ -214,16 +215,21 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document, selectedComponentIds, view],
   );
   /**
-   * 停止中の役割配色（design.md §5.8）。**実行中は計算しない** —— 実行中の色は
-   * 実際の電位（`view`）で決まり、役割色を混ぜると同じ線に 2 つの意味が載る。
+   * 配線の役割（design.md §5.8）。**実行中も計算する。**
+   *
+   * 色として使うのは停止中だけ —— 実行中の色は実際の電位（`view`）で決まり、
+   * 役割色を混ぜると同じ線に 2 つの意味が載る。実行中に借りるのは
+   * `isolated`（どう動作させても電源に届かない）の 1 ビットだけで、
+   * 用途も色ではなく破線というパターンに限る。実行した瞬間に配線漏れの
+   * 手がかりが消えないようにするため。
    *
    * ドキュメントが変わるたびに組み直すので、部品をドラッグしている間も毎フレーム
    * 走る。ネット構築は端子数に線形の Union-Find（数百端子で数十マイクロ秒）で、
    * 同じ useMemo 群にいる `toDeviceNodes` より軽いため、キャッシュを足していない。
    */
   const wireRoles = useMemo(
-    () => (result ? null : buildWireRoles(document, componentRegistry)),
-    [document, result],
+    () => buildWireRoles(document, componentRegistry),
+    [document],
   );
 
   /**
@@ -246,18 +252,40 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     () =>
       toWireEdges(document, selectedConnectionIds, wireLanes).map((edge) => {
         const zIndex = edge.id === hoveredWireId ? HOVERED_WIRE_Z : undefined;
-        if (wireRoles) {
-          const role = wireRoles.get(edge.id);
+        const role = wireRoles.get(edge.id);
+
+        if (!result) {
           return {
             ...edge,
             zIndex,
             className: role ? WIRE_ROLE_CLASS[role] : undefined,
           };
         }
+
         const state = view.wireOf.get(edge.id) ?? "inactive";
-        return { ...edge, zIndex, className: WIRE_CLASS[state] };
+        /*
+         * 実行中に破線を足すのは **今も届いておらず、どう動作させても届かない**
+         * 線だけ。役割の判定は 3 状態しか見ない近似なので（§5.8）、
+         * 「あるリレーは励磁し、別のリレーは非励磁」でしか電源に届かない線を
+         * `isolated` と誤ることがある。今まさに電位が乗っている線に
+         * 「配線漏れ」の破線を引くのは明白な矛盾なので、食い違ったら
+         * 現在の状態を優先する。
+         */
+        const className =
+          state === "inactive" && role === "isolated"
+            ? `${styles.wireInactive} ${styles.wireUnreachable}`
+            : WIRE_CLASS[state];
+        return { ...edge, zIndex, className };
       }),
-    [document, hoveredWireId, selectedConnectionIds, view, wireLanes, wireRoles],
+    [
+      document,
+      hoveredWireId,
+      result,
+      selectedConnectionIds,
+      view,
+      wireLanes,
+      wireRoles,
+    ],
   );
 
   const onEdgeMouseEnter = useCallback(

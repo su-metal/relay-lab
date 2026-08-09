@@ -33,13 +33,49 @@
  *
  * 選択中の配線は `.react-flow__edge.selected`（クラス 4 個）でさらに上を行くので、
  * 実行中でも選択したものはアクセント色で判別できる。
+ *
+ * **実行中は「電流が流れているか」を太さと濃さの軸に載せる。** 通電中
+ * （緑・紫）だけが太く不透明で、電圧が来ているだけの線（赤・青）と
+ * どこにも届かない線（灰）は背景へ下げる。色相の違いだけに頼ると、
+ * 色覚特性によっては「今できている閉回路」がまったく読み取れない。
+ * これらのクラスが載るのは実行中だけなので（停止中は `.wireRole*`）、
+ * 不透明度を直接ここへ書いてよい。
  */
 .canvas .wirePlus :global(.react-flow__edge-path) {
   stroke: var(--wire-plus);
+  opacity: 0.55;
 }
 
 .canvas .wireZero :global(.react-flow__edge-path) {
   stroke: var(--wire-minus);
+  opacity: 0.55;
+}
+
+/*
+ * どちらの電源にも届いていない線。色は既定の灰のままで、濃さだけをさらに
+ * 落とす。**「今は届いていない」であって「配線が間違っている」ではない**
+ * （接点が閉じれば流れる線もここに入る）ので、赤・青より一段引くに留める。
+ */
+.canvas .wireInactive :global(.react-flow__edge-path) {
+  opacity: 0.45;
+}
+
+/*
+ * どう動作させても電源に届かない線（§5.8 の `isolated`）を実行中にも示す。
+ *
+ * **色は借りず、破線というパターンだけを借りる。** 実行中の色は電位の意味を
+ * 持っているので役割色を混ぜられないが、破線であれば「電源が届いていない」の
+ * 意味を停止中と共有できる。これが無いと、実行した瞬間に配線漏れの手がかりが
+ * 消えて、動かないまま原因を探すことになる。
+ *
+ * **濃さは落とさない**（`.wireInactive` の 0.45 を打ち消す。同詳細度なので
+ * 必ずこの順で後ろに置くこと）。非通電の中で唯一「直すべき線」であり、
+ * 画面で最も薄い線にしてしまうと気付かせる役目を果たせない。停止中とまったく
+ * 同じ見た目になるので、実行しても配線漏れの読み方が変わらない。
+ */
+.canvas .wireUnreachable :global(.react-flow__edge-path) {
+  stroke-dasharray: 5 4;
+  opacity: 1;
 }
 
 /* 通電中。色覚に依存しないよう線幅と発光も併用する（要件書 §8） */
@@ -127,9 +163,14 @@
   stroke-dasharray: 5 4;
 }
 
+/*
+ * 選択中・ホバー中は薄めた線を必ず戻す（クラス 4 個で上の `.wire*` に勝つ）。
+ * 掴んだ線・触れた線が薄いままだと、束の中の 1 本を端から端まで追えない。
+ */
 .canvas :global(.react-flow__edge.selected .react-flow__edge-path) {
   stroke: var(--accent);
   stroke-width: 3;
+  opacity: 1;
 }
 
 /*
@@ -145,6 +186,7 @@
  */
 .canvas :global(.react-flow__edge:hover .react-flow__edge-path) {
   stroke-width: 4;
+  opacity: 1;
 }
 
 /*
