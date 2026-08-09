@@ -9,8 +9,10 @@
  */
 
 import { useReactFlow } from "@xyflow/react";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
+import type { ChangeEvent } from "react";
 
+import { CIRCUIT_FILE_ACCEPT } from "@/circuit/persistence/document-file";
 import type { SimulationStatus } from "@/circuit/types";
 import { APP_NAME } from "@/lib/app-info";
 import { useCircuitStore } from "@/store/circuitStore";
@@ -52,14 +54,19 @@ export type ToolbarProps = {
   saveStatus: PersistenceStatus;
   rangeSelectionTarget: RangeSelectionTarget;
   onRangeSelectionTargetChange: (value: RangeSelectionTarget) => void;
+  onExportFile: () => void;
+  onImportFile: (file: File) => Promise<void>;
 };
 
 export function Toolbar({
   saveStatus,
   rangeSelectionTarget,
   onRangeSelectionTargetChange,
+  onExportFile,
+  onImportFile,
 }: ToolbarProps) {
   const { fitView } = useReactFlow();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const componentCount = useCircuitStore(
     (state) => state.document.components.length,
@@ -91,6 +98,29 @@ export function Toolbar({
   const handleFitView = useCallback(() => {
     void fitView({ padding: 0.2, duration: 200 });
   }, [fitView]);
+
+  /**
+   * 読み込みは**いまの回路を捨てる操作**で、`replaceDocument` は履歴も消すので
+   * Undo で戻れない（design.md §7）。空でなければ必ず確認を取る。
+   */
+  const handleImportChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      // 同じファイルを続けて選び直せるようにする（value が同じだと change が出ない）
+      event.target.value = "";
+      if (!file) return;
+      if (
+        componentCount > 0 &&
+        !window.confirm(
+          `いまの回路（部品 ${componentCount} 個）を「${file.name}」で置き換えます。元に戻せません。続けますか？`,
+        )
+      ) {
+        return;
+      }
+      void onImportFile(file);
+    },
+    [componentCount, onImportFile],
+  );
 
   return (
     <header className={styles.toolbar}>
@@ -204,6 +234,40 @@ export function Toolbar({
         <button type="button" className={styles.button} onClick={handleFitView}>
           全体表示
         </button>
+      </div>
+
+      {/*
+        回路の持ち出し（design.md §8.4）。LocalStorage の自動保存はこのブラウザの
+        中だけなので、別の PC へ渡す・課題として提出する経路をここに置く。
+      */}
+      <div className={styles.group}>
+        <button
+          type="button"
+          className={styles.button}
+          onClick={onExportFile}
+          disabled={componentCount === 0}
+          title="いまの回路を JSON ファイルに書き出します"
+        >
+          ⬇ 書き出し
+        </button>
+        <button
+          type="button"
+          className={styles.button}
+          onClick={() => fileInputRef.current?.click()}
+          title="JSON ファイルから回路を読み込みます（いまの回路は置き換わります）"
+        >
+          ⬆ 読み込み
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={CIRCUIT_FILE_ACCEPT}
+          className={styles.fileInput}
+          onChange={handleImportChange}
+          // ボタンから開くだけで、この input 自体は操作対象にしない
+          tabIndex={-1}
+          aria-hidden
+        />
       </div>
 
       <span className={styles.counts}>

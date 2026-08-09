@@ -16,7 +16,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { componentRegistry } from "@/circuit/definitions";
 import {
+  CIRCUIT_FILE_MIME,
+  circuitFileName,
+  serializeDocumentToFile,
+} from "@/circuit/persistence/document-file";
+import {
   getDocumentStorage,
+  parseDocument,
   readStoredDocument,
   writeStoredDocument,
 } from "@/circuit/persistence/document-storage";
@@ -48,6 +54,14 @@ export type PersistenceState = {
   /** 読み込み時に捨てた要素の理由。そのまま画面に出せる日本語 */
   notices: readonly string[];
   dismissNotices: () => void;
+
+  /** いまの回路を JSON ファイルとしてダウンロードする */
+  exportToFile: () => void;
+  /**
+   * JSON ファイルから回路を読み込み、いまの回路を**置き換える。**
+   * 置き換えてよいかの確認は呼び出し側（操作バー）が済ませておくこと。
+   */
+  importFromFile: (file: File) => Promise<void>;
 };
 
 export function useDocumentPersistence(): PersistenceState {
@@ -105,5 +119,60 @@ export function useDocumentPersistence(): PersistenceState {
 
   const dismissNotices = useCallback(() => setNotices([]), []);
 
-  return { status, notices, dismissNotices };
+  /**
+   * Blob を一時 URL にして `<a download>` をクリックする。
+   *
+   * **`window.document` と書くのは必須。** このフックのスコープでは `document` が
+   * 回路ドキュメント（`CircuitDocument`）を指しており、素で書くと DOM ではなく
+   * 回路の方を掴む。型が付いているので落ちるが、間違えやすいので明示する。
+   */
+  const exportToFile = useCallback(() => {
+    const blob = new Blob([serializeDocumentToFile(document)], {
+      type: CIRCUIT_FILE_MIME,
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = circuitFileName();
+    anchor.click();
+    // クリックは同期なので、この時点で解放してよい（保持し続けるとリークする）
+    URL.revokeObjectURL(url);
+  }, [document]);
+
+  /**
+   * 読み込みは LocalStorage からの復元と同じ経路を通す（`parseDocument`）。
+   * 未知の部品定義や存在しない端子は捨てられ、理由が `notices` に出る。
+   */
+  const importFromFile = useCallback(
+    async (file: File) => {
+      let raw: string;
+      try {
+        raw = await file.text();
+      } catch {
+        setNotices([`${file.name} を読み取れませんでした。`]);
+        return;
+      }
+
+      const outcome = parseDocument(raw, componentRegistry);
+      if (outcome.status === "empty") {
+        setNotices([`${file.name} は空のファイルでした。`]);
+        return;
+      }
+      if (outcome.status === "invalid") {
+        setNotices([
+          `${file.name} を読み込めませんでした（${outcome.reason}）`,
+        ]);
+        return;
+      }
+
+      replaceDocument(outcome.document);
+      void setViewport(outcome.document.viewport);
+      // 成功も必ず知らせる。捨てた要素が無いと通知が一切出ず、
+      // 「押したのに何も起きていない」のか「読み込めた」のか区別が付かない
+      setNotices([`${file.name} を読み込みました。`, ...outcome.dropped]);
+    },
+    [replaceDocument, setViewport],
+  );
+
+  return { status, notices, dismissNotices, exportToFile, importFromFile };
 }

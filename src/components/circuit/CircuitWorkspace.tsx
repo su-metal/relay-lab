@@ -58,6 +58,8 @@ function Workspace() {
         saveStatus={persistence.status}
         rangeSelectionTarget={rangeSelectionTarget}
         onRangeSelectionTargetChange={setRangeSelectionTarget}
+        onExportFile={persistence.exportToFile}
+        onImportFile={persistence.importFromFile}
       />
 
       {persistence.notices.length > 0 && (
