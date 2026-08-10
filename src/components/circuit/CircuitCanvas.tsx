@@ -41,6 +41,7 @@ import {
   toWireEdges,
 } from "@/circuit/adapter/reactflow";
 import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
+import { buildCurrentFlow } from "@/circuit/adapter/current-flow";
 import { buildSelfHold } from "@/circuit/adapter/self-hold";
 import { buildSimulationView } from "@/circuit/adapter/simulation-view";
 import type { WireState } from "@/circuit/adapter/simulation-view";
@@ -246,13 +247,31 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document],
   );
 
+  /**
+   * 電流の向き（design.md §5.10）。**停止中は計算しない** —— 動かしていない
+   * 回路に電流は流れておらず、`buildCurrentFlow` が空を返す。
+   *
+   * 経路グラフと橋の計算は回路につき 1 回で、計算量は端子数・配線数に線形。
+   * `selfHold` と同じ道具を使うが、問いが別（保持しているか / どちらへ流れるか）
+   * なので別の useMemo に置く。
+   */
+  const currentFlow = useMemo(
+    () => buildCurrentFlow(document, componentRegistry, result, pressedSwitches),
+    [document, result, pressedSwitches],
+  );
+
   // ホバー中の 1 本だけを最前面へ出すための表示状態。回路の一部ではないので
   // circuitStore（保存対象＋履歴）には入れない
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
 
   const edges = useMemo(
     () =>
-      toWireEdges(document, selectedConnectionIds, wireLanes).map((edge) => {
+      toWireEdges(
+        document,
+        selectedConnectionIds,
+        wireLanes,
+        currentFlow,
+      ).map((edge) => {
         const zIndex = edge.id === hoveredWireId ? HOVERED_WIRE_Z : undefined;
         const role = wireRoles.get(edge.id);
 
@@ -280,6 +299,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         return { ...edge, zIndex, className };
       }),
     [
+      currentFlow,
       document,
       hoveredWireId,
       result,

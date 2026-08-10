@@ -15,11 +15,16 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import { inspectComponent } from "@/circuit/adapter/inspection";
+import { explainLoadPath, trimLoadEnds } from "@/circuit/adapter/load-path";
 import { buildSelfHold } from "@/circuit/adapter/self-hold";
 import type {
   ComponentInspection,
   ContactInspection,
 } from "@/circuit/adapter/inspection";
+import type {
+  LoadPathExplanation,
+  PathStep,
+} from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
 import type { ComponentDefinition, ElectricalDefinition } from "@/circuit/types";
 import {
@@ -77,6 +82,25 @@ export function PropertiesPanel() {
     [document, result, pressedSwitches, selectedId, selfHold],
   );
 
+  /**
+   * 負荷 1 個の経路説明（design.md §5.11）。
+   *
+   * `inspection` とは別に組むのは、こちらが**経路グラフ**を必要とするため。
+   * 部品の中身（接点の倒れている側・端子の電位）はネットだけで読めるが、
+   * 「どこを通って励磁しているか」はネットからは復元できない（§5.9 と同じ理由）。
+   */
+  const loadPath = useMemo(
+    () =>
+      explainLoadPath(
+        document,
+        componentRegistry,
+        result,
+        pressedSwitches,
+        selectedId,
+      ),
+    [document, result, pressedSwitches, selectedId],
+  );
+
   return (
     <aside className={styles.panel} aria-label="プロパティ">
       <h2 className={styles.title}>プロパティ</h2>
@@ -92,6 +116,7 @@ export function PropertiesPanel() {
       ) : (
         <ComponentDetails
           inspection={inspection}
+          loadPath={loadPath}
           onLabelChange={(label) =>
             setComponentLabel(inspection.instance.id, label)
           }
@@ -107,6 +132,8 @@ export function PropertiesPanel() {
 
 type DetailsProps = {
   inspection: ComponentInspection;
+  /** 負荷（コイル / ランプ）のときだけ入る。停止中・負荷以外は null */
+  loadPath: LoadPathExplanation | null;
   onLabelChange: (label: string) => void;
   onFlip: () => void;
   onReplace: (definition: ComponentDefinition) => void;
@@ -114,6 +141,7 @@ type DetailsProps = {
 
 function ComponentDetails({
   inspection,
+  loadPath,
   onLabelChange,
   onFlip,
   onReplace,
@@ -217,6 +245,8 @@ function ComponentDetails({
         inspection={inspection}
       />
 
+      {loadPath && <LoadPathSection explanation={loadPath} />}
+
       {contacts.length > 0 && (
         <section className={styles.section}>
           <h3 className={styles.heading}>接点</h3>
@@ -252,6 +282,130 @@ function ComponentDetails({
         </ul>
       </section>
     </div>
+  );
+}
+
+/**
+ * 通電経路と、通電しない理由（design.md §5.11）。
+ *
+ * 判定は `adapter/load-path.ts` が済ませてある。ここがやるのは、
+ * 返ってきた区間を上から順に並べることと、**言い回しをコイル / ランプで
+ * 分けること**（"励磁" と "点灯"）だけ。
+ */
+function LoadPathSection({
+  explanation,
+}: {
+  explanation: LoadPathExplanation;
+}) {
+  const verb = explanation.kind === "relay" ? "励磁" : "点灯";
+
+  if (explanation.active) {
+    const { supply, back } = trimLoadEnds(explanation);
+    return (
+      <section className={styles.section}>
+        <h3 className={styles.heading}>{verb}している経路</h3>
+        <ol className={styles.path}>
+          {supply.map((step, index) => (
+            <PathRow key={`supply-${index}`} step={step} />
+          ))}
+          {/* 負荷そのもの。ここで電流が仕事をしている */}
+          <li className={styles.pathLoad}>
+            <span className={styles.pathLoadName}>
+              {explanation.kind === "relay" ? "コイル" : "ランプ"}
+            </span>
+            <span className={styles.pathTerminals}>
+              {explanation.inletLabel} → {explanation.outletLabel}
+            </span>
+          </li>
+          {back.map((step, index) => (
+            <PathRow key={`back-${index}`} step={step} />
+          ))}
+        </ol>
+        {(explanation.supplyRun?.branched ||
+          explanation.returnRun?.branched) && (
+          <p className={styles.hint}>
+            途中に並列に分かれた区間があるため、一本道には絞れていません。
+            分岐した区間は配線上でも電流の向きを出しません。
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  const [first, second] = explanation.reach ?? [];
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.heading}>{verb}しない理由</h3>
+      <ul className={styles.reachList}>
+        {[first, second].map(
+          (terminal) =>
+            terminal && (
+              <li key={terminal.label} className={styles.reachRow}>
+                <span
+                  className={styles.terminalLabel}
+                  data-state={
+                    terminal.expects === "plus" ? "plus" : "zero"
+                  }
+                >
+                  {terminal.label}
+                </span>
+                <span className={styles.reachText}>
+                  {terminal.expects === "plus"
+                    ? terminal.reachesPlus
+                      ? "+ 側に届いています"
+                      : "+ 側に届いていません"
+                    : terminal.reachesZero
+                      ? "0V 側に届いています"
+                      : "0V 側に届いていません"}
+                </span>
+              </li>
+            ),
+        )}
+      </ul>
+
+      {explanation.gates && explanation.gates.length > 0 ? (
+        <>
+          <p className={styles.hint}>閉じれば電源に届く接点：</p>
+          <ul className={styles.reachList}>
+            {explanation.gates.map((gate) => (
+              <li
+                key={`${gate.componentId}-${gate.terminalLabels.join("-")}`}
+                className={styles.gateRow}
+              >
+                <span className={styles.pathName}>{gate.label}</span>
+                <span className={styles.pathTerminals}>
+                  {gate.terminalLabels.join("–")}
+                </span>
+                <span className={styles.gateCondition}>{gate.condition}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className={styles.hint}>
+          {/*
+            指摘できる接点が 1 枚も無い状態は 2 通りある。両側とも電源に届いて
+            いないなら配線そのものが足りておらず、両側に届いているなら
+            接点ではなく極性の問題（§5.7 の coil-polarity-reversed）
+          */}
+          {first?.reachesPlus || first?.reachesZero || second?.reachesPlus || second?.reachesZero
+            ? "接点を閉じても電源に届きません。配線か、コイルの極性を確かめてください。"
+            : "どちらの端子も電源につながっていません。配線を確かめてください。"}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** 経路の 1 区間。"S1  1 → 2" のように部品名と通る端子を並べる */
+function PathRow({ step }: { step: PathStep }) {
+  return (
+    <li className={styles.pathRow}>
+      <span className={styles.pathName}>{step.label}</span>
+      <span className={styles.pathTerminals}>
+        {step.terminalLabels.join(" → ")}
+      </span>
+    </li>
   );
 }
 

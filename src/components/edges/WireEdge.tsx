@@ -14,6 +14,9 @@
  *
  * 経路の計算そのものは `getSmoothStepPath` に任せる。ここは「どれだけずらすか」を
  * 足すだけで、折れ方の規則は React Flow と同じものが使われる。
+ *
+ * 電流の向き（design.md §5.10）もここで描く。**向きの判定は一切しない** ——
+ * `adapter/current-flow.ts` が決めた `data.flow` を受け取るだけ。
  */
 
 import { BaseEdge, Position, getSmoothStepPath } from "@xyflow/react";
@@ -75,6 +78,7 @@ export function WireEdge({
   data,
 }: EdgeProps<WireEdgeType>) {
   const lane = data?.lane ?? 0;
+  const flow = data?.flow;
   const [path] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -114,11 +118,26 @@ export function WireEdge({
       <BaseEdge
         id={id}
         path={path}
-        style={style}
+        /*
+         * 自己保持の紫は線そのものが流れる破線（§5.9）。その流れる向きを
+         * 電流の向きに合わせる。**インラインで渡すのは、CSS の
+         * `animation-direction` を切り替える手段が Edge には無いため** ——
+         * `className` は `<g>` に付くので、`.react-flow__edge-path` を
+         * 直接指す形にできない。
+         */
+        style={flow === "backward" ? { ...style, animationDirection: "reverse" } : style}
         markerStart={markerStart}
         markerEnd={markerEnd}
         interactionWidth={interactionWidth}
       />
+      {/*
+        電流の向き（design.md §5.10）。線の上を背景色の切れ目が流れていく。
+        **向きが決まった線にしか出さない** —— 並列に分かれた区間は
+        実際に分流するので、`current-flow.ts` が向きを返さない
+      */}
+      {flow && (
+        <path className={styles.flow} data-flow={flow} d={path} />
+      )}
       {/*
         つなぎ替えの掴み手（design.md §8.8）。ホバー / 選択中だけ現れる。
         当たり判定は React Flow の透明な円が持つので、こちらは

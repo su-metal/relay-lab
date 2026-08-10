@@ -302,3 +302,95 @@
 .terminalState {
   color: var(--text-muted);
 }
+
+/* 通電経路と、通電しない理由（design.md §5.11） ------------------------ */
+
+/*
+ * 経路は**上から下へ 1 列**に並べる。横に流すと部品名と端子番号のどちらが
+ * 「次」なのか読み手が決めかねる。左端に縦線を引き、電源から負荷へ、
+ * 負荷から 0V へと 1 本の道が続いていることを見せる。
+ */
+.path {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--wire-energized);
+  list-style: none;
+}
+
+.pathRow,
+.pathLoad {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.pathName {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 端子番号は本プロダクトが最優先で読ませたいもの。等幅で桁を揃える */
+.pathTerminals {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 負荷そのものの行。ここだけ強調するのは、経路の中で
+ * **電流が仕事をしている唯一の場所**だから（他の区間は導線でしかない）。
+ */
+.pathLoad {
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 4px;
+  color: var(--wire-energized-text);
+  background: var(--state-on-bg);
+}
+
+.pathLoadName {
+  font-weight: 600;
+}
+
+.reachList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reachRow {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.reachText {
+  color: var(--text-muted);
+}
+
+/*
+ * 閉じれば電源に届く接点。**部品名・端子・条件の 3 列**に分ける ——
+ * 「どの部品の」「どの端子が」「何をすれば閉じるか」がこの順で要る。
+ */
+.gateRow {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.gateCondition {
+  color: var(--text-muted);
+}
