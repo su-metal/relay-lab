@@ -17,6 +17,7 @@
 
 import { useEffect } from "react";
 
+import { FLIP_KEYS } from "@/lib/shortcuts";
 import { useCircuitStore } from "@/store/circuitStore";
 
 import { isTextEntry } from "./keyboard";
@@ -26,8 +27,8 @@ export function useFlipShortcut(): void {
     const onKeyDown = (event: KeyboardEvent) => {
       // Ctrl+F（ブラウザの検索）などを奪わない
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      // CapsLock で "F" になる場合も拾う
-      if (event.key !== "f" && event.key !== "F") return;
+      // CapsLock で "F" になる場合も拾う（`FLIP_KEYS` が両方を持つ）
+      if (!FLIP_KEYS.includes(event.key)) return;
       if (isTextEntry(event.target)) return;
 
       // ストアは購読せずその場で読む。選択が変わるたびに

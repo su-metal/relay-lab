@@ -7,8 +7,10 @@
  * **判定も文面の組み立てもここには書かない** — 本文はエンジン（`validation.ts`）が
  * 日本語で持っており、並べ替えと束ねだけを `lib/warning-display.ts` が受け持つ。
  *
- * 停止中（`result === null`）は「問題なし」ではなく「未実行」と出す。
- * 診断していないことと、診断して何も出なかったことは別物。
+ * **停止中は「配線チェック」に切り替わる**（design.md §5.7・§8.4）。電源を入れる
+ * 前から分かる指摘（未接続の端子・静止状態の短絡・ダイオードの向き）はここで出し、
+ * ボタンを押して初めて起きることは ▶ の診断に任せる。停止中に何も出ないことを
+ * 「問題なし」と読ませないよう、見出しと注記でどちらを見ているかを必ず示す。
  */
 
 import { useState } from "react";
@@ -22,10 +24,12 @@ import {
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
+import { useWiringCheck } from "./useWiringCheck";
 import styles from "./WarningList.module.css";
 
 export function WarningList() {
   const result = useSimulationStore((state) => state.result);
+  const wiringCheck = useWiringCheck();
   const selectOnlyComponent = useCircuitStore(
     (state) => state.selectOnlyComponent,
   );
@@ -33,20 +37,41 @@ export function WarningList() {
   /** 「他 N 件」を開いたグループ。未接続端子は既定で畳む */
   const [expanded, setExpanded] = useState<readonly string[]>([]);
 
-  const groups = groupWarnings(result?.warnings ?? []);
-  const total = result?.warnings.length ?? 0;
+  const empty = useCircuitStore(
+    (state) => state.document.components.length === 0,
+  );
+
+  const running = result !== null;
+  const warnings = running ? result.warnings : wiringCheck;
+  const groups = groupWarnings(warnings);
+  const total = warnings.length;
 
   return (
     <section className={styles.panel} aria-label="診断">
       <h2 className={styles.title}>
-        診断
+        {running ? "診断" : "配線チェック"}
         {total > 0 && <span className={styles.total}>{total}</span>}
       </h2>
 
-      {!result ? (
-        <p className={styles.empty}>▶ 実行すると診断結果を表示します。</p>
-      ) : groups.length === 0 ? (
-        <p className={styles.empty}>指摘はありません。</p>
+      {/*
+        いま何を見ているのかを常に添える。停止中の「指摘はありません」を
+        「この回路は正しい」と読まれるのが、この画面でいちばん困る誤解
+      */}
+      {!running && !empty && (
+        <p className={styles.scope}>
+          電源を入れずに分かる範囲を見ています。押しボタンを押して初めて起きることは
+          ▶ で確認してください。
+        </p>
+      )}
+
+      {groups.length === 0 ? (
+        <p className={styles.empty}>
+          {empty
+            ? "部品を置くと配線チェックを表示します。"
+            : running
+              ? "指摘はありません。"
+              : "配線そのものへの指摘はありません。"}
+        </p>
       ) : (
         <ul className={styles.groups}>
           {groups.map((group) => {

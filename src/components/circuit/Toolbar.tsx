@@ -56,6 +56,7 @@ export type ToolbarProps = {
   onRangeSelectionTargetChange: (value: RangeSelectionTarget) => void;
   onExportFile: () => void;
   onImportFile: (file: File) => Promise<void>;
+  onOpenHelp: () => void;
 };
 
 export function Toolbar({
@@ -64,6 +65,7 @@ export function Toolbar({
   onRangeSelectionTargetChange,
   onExportFile,
   onImportFile,
+  onOpenHelp,
 }: ToolbarProps) {
   const { fitView } = useReactFlow();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -269,6 +271,20 @@ export function Toolbar({
           aria-hidden
         />
       </div>
+
+      {/*
+        操作ヘルプ（design.md §8.10）。D / F / L や「画面移動は Shift+ドラッグ」は
+        画面のどこにも書かれておらず、知らなければ辿り着けない。
+      */}
+      <button
+        type="button"
+        className={styles.help}
+        onClick={onOpenHelp}
+        title="操作一覧と、このシミュレーターが扱わないことを表示します"
+        aria-label="使い方"
+      >
+        ?
+      </button>
 
       <span className={styles.counts}>
         部品 {componentCount} ／ 配線 {connectionCount}
