@@ -35,7 +35,13 @@ import { buildSimulationView } from "./simulation-view";
 import type { DeviceSimulationState, WireState } from "./simulation-view";
 
 /** SPDT の COM がどちら側に倒れているか */
-export type ClosedSide = "no" | "nc";
+/**
+ * いま COM が倒れている側。
+ *
+ * `"open"` は **どこにも閉じていない**状態で、a 接点のみ（`SPST-NO`）の
+ * リレーが非励磁のときに起きる。c 接点なら必ず `"no"` か `"nc"` のどちらかになる。
+ */
+export type ClosedSide = "no" | "nc" | "open";
 
 export type ContactInspection = {
   contact: RelayContact;
@@ -232,10 +238,10 @@ const restingNets = (
 /**
  * 接点ごとの開閉を読む。
  *
- * SPDT が「非励磁なら COM–NC、励磁なら COM–NO」という規則はエンジン側
- * （`closedContactPairs`）に 1 箇所だけ置いてある。ここで
- * `energized ? "no" : "nc"` と書き直すと規則が 2 箇所に増えるので、
- * エンジンの答えを引き直して COM の相手が NO かどうかで判定する。
+ * 「非励磁なら COM–NC、励磁なら COM–NO。ただし NC 端子が無ければ非励磁で
+ * どこにも閉じない」という規則はエンジン側（`closedContactPairs`）に
+ * 1 箇所だけ置いてある。ここで `energized ? "no" : "nc"` と書き直すと
+ * 規則が 2 箇所に増えるので、エンジンの答えを引き直して COM の相手を見る。
  */
 const inspectContacts = (
   relay: RelayDefinition,
@@ -248,9 +254,11 @@ const inspectContacts = (
 
   const sideOf = (contact: RelayContact): ClosedSide | undefined => {
     if (!closedOf) return undefined;
-    return closedOf.get(contact.commonTerminal) === contact.noTerminal
-      ? "no"
-      : "nc";
+    const other = closedOf.get(contact.commonTerminal);
+    if (other === contact.noTerminal) return "no";
+    // NC 端子を持たない a 接点は、非励磁で相手がいない。
+    // ここを "nc" に丸めると存在しない b 接点が導通していることになる
+    return other === undefined ? "open" : "nc";
   };
 
   return relay.contacts.map((contact, index) => ({

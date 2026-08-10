@@ -26,6 +26,7 @@ import { useArrangeShortcut } from "./useArrangeShortcut";
 import { useDocumentPersistence } from "./useDocumentPersistence";
 import { useFlipShortcut } from "./useFlipShortcut";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
+import { useSimulationShortcut } from "./useSimulationShortcut";
 import { useSimulationSync } from "./useSimulationSync";
 import styles from "./CircuitWorkspace.module.css";
 
@@ -47,6 +48,8 @@ function Workspace() {
   // L キーで配置を整理する（design.md §8.9）。リスナーは 1 本だけ張る —
   // 操作バーのボタンは同じ `runAutoArrange` を直接呼ぶ
   useArrangeShortcut();
+  // S キーでシミュレーションを開始・停止する（design.md §8.2）
+  useSimulationShortcut();
 
   // 範囲選択の設定は画面の操作モードで、保存対象でも履歴の対象でもない。
   // circuitStore に混ぜず、操作バーとキャンバスがここで共有する（design.md §8.6）

@@ -33,13 +33,23 @@ describe("部品検索", () => {
       "omron-my2n-dc24",
       "omron-my4n-dc24",
       "omron-my4n-d2-dc24",
+      "omron-g7l-1a-b-dc24",
+      "omron-g7l-2a-b-dc24",
     ]);
+  });
+
+  it("型番の系列で絞れる", () => {
+    expect(ids("g7l")).toEqual([
+      "omron-g7l-1a-b-dc24",
+      "omron-g7l-2a-b-dc24",
+    ]);
+    expect(ids("g7l-2a")).toEqual(["omron-g7l-2a-b-dc24"]);
   });
 
   it("カテゴリの日本語表示で引ける", () => {
     expect(ids("端子台")).toEqual(["terminal-block-6p"]);
     expect(ids("ランプ")).toEqual(["lamp-dc24v"]);
-    expect(ids("リレー")).toHaveLength(3);
+    expect(ids("リレー")).toHaveLength(5);
   });
 
   it("空白区切りの語は AND で絞り込む", () => {

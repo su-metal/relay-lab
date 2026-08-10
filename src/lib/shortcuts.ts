@@ -26,6 +26,16 @@ export const FLIP_KEYS = ["f", "F"];
 export const ARRANGE_KEYS = ["l", "L"];
 
 /**
+ * シミュレーションの開始・停止（`useSimulationShortcut`）。S 単独（Start / Stop）。
+ *
+ * **Space は割り当てない。** スイッチの押しボタンが Space / Enter で押下・復帰を
+ * 表現しており、シミュレーション中はそのボタンにフォーカスが残る。Space を
+ * 停止に充てると「スイッチを押す」のか「停止する」のかが打鍵時のフォーカス位置で
+ * 変わる（design.md §8.2）。
+ */
+export const SIMULATION_KEYS = ["s", "S"];
+
+/**
  * 画面移動の同時押しキー（`ReactFlow.panActivationKeyCode`）。
  *
  * 素の左ドラッグを範囲選択に取ったので、パンを Shift へ逃がしている
@@ -109,6 +119,16 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       },
       { keys: ["Ctrl/⌘ + ホイール"], action: "拡大・縮小" },
       { keys: ["Ctrl/⌘ + クリック"], action: "選択に足す・外す" },
+    ],
+  },
+  {
+    title: "シミュレーション",
+    rows: [
+      {
+        keys: displayKeys(SIMULATION_KEYS),
+        action: "シミュレーションの開始・停止",
+        note: "操作バーの ▶ / ■ と同じ。停止すると押下状態と励磁状態は捨てられる",
+      },
     ],
   },
   {
