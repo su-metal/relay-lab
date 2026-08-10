@@ -142,8 +142,35 @@
   background: #fef2f2;
 }
 
-.counts {
+/*
+ * 使い方（design.md §8.10）。右端の情報群の先頭に置き、ここから右を
+ * 「回路そのものではなく、アプリの状態を見る場所」にまとめる。
+ */
+.help {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.help:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.counts {
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;

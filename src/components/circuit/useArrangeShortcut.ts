@@ -17,6 +17,8 @@
 
 import { useEffect } from "react";
 
+import { ARRANGE_KEYS } from "@/lib/shortcuts";
+
 import { runAutoArrange } from "./auto-arrange";
 import { isTextEntry } from "./keyboard";
 
@@ -25,8 +27,8 @@ export function useArrangeShortcut(): void {
     const onKeyDown = (event: KeyboardEvent) => {
       // Ctrl+L（アドレスバー）などを奪わない
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      // CapsLock で "L" になる場合も拾う
-      if (event.key !== "l" && event.key !== "L") return;
+      // CapsLock で "L" になる場合も拾う（`ARRANGE_KEYS` が両方を持つ）
+      if (!ARRANGE_KEYS.includes(event.key)) return;
       if (isTextEntry(event.target)) return;
 
       event.preventDefault();

@@ -1,0 +1,42 @@
+# push された変更を守るゲート（design.md §2）。
+#
+# ローカルの Stop フック（`.claude/hooks/check-tests-pass.mjs`）は手元でしか
+# 動かないので、これが無いと **push 後は何も検証されていない**。
+# Cloudflare Pages へ静的書き出しでデプロイしている以上、`next build` の失敗は
+# そのまま本番の失敗になるため、テストと型検査だけでなくビルドまで回す。
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# 同じブランチへ続けて push したら、古い実行は打ち切る
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Next.js 16 の要求に合わせる。package-lock.json をキャッシュキーにする
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # 落ちた理由が「型」「テスト」「ビルド」のどれなのかを分けて見たいので、
+      # 1 つのコマンドに繋げず個別のステップに割る
+      - name: 型検査
+        run: npm run typecheck
+
+      - name: テスト
+        run: npm test
+
+      - name: 本番ビルド
+        run: npm run build

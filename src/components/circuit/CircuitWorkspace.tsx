@@ -17,6 +17,7 @@ import { useState } from "react";
 
 import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
+import { HelpDialog } from "./HelpDialog";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { WarningList } from "./WarningList";
@@ -55,6 +56,9 @@ function Workspace() {
   const [rangeSelectionTarget, setRangeSelectionTarget] =
     useState<RangeSelectionTarget>("both");
 
+  // ヘルプの開閉も画面の状態。保存対象でも履歴の対象でもない（design.md §8.10）
+  const [helpOpen, setHelpOpen] = useState(false);
+
   return (
     <div className={styles.workspace}>
       <Toolbar
@@ -63,6 +67,7 @@ function Workspace() {
         onRangeSelectionTargetChange={setRangeSelectionTarget}
         onExportFile={persistence.exportToFile}
         onImportFile={persistence.importFromFile}
+        onOpenHelp={() => setHelpOpen(true)}
       />
 
       {persistence.notices.length > 0 && (
@@ -80,6 +85,8 @@ function Workspace() {
           <WarningList />
         </div>
       </div>
+
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

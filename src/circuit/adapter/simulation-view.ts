@@ -197,16 +197,26 @@ export const buildSimulationView = (
     });
   }
 
-  // 配線の色は端子と同じネットの色。両端は同一ネットなので from 側だけ見ればよい。
-  // 自己保持（§5.9）も同じ —— 電線は必ず union されるので、what-if で電源を失うか
-  // どうかは配線の両端で必ず一致する
+  /*
+   * 配線の色は端子と同じネットの色。両端は同一ネットなので from 側だけ見ればよい。
+   *
+   * **自己保持の紫だけは端子から引けない**（design.md §5.9）。保持ループから
+   * 行き止まりの線が枝分かれしていると、同じ端子から出ている 2 本のうち
+   * 一方だけが「切れば落ちる線」になるため。配線は配線として判定する。
+   */
   const wireOf = new Map<string, WireState>();
   for (const connection of document.connections) {
     const key = terminalKey(
       connection.from.componentId,
       connection.from.terminalId,
     );
-    wireOf.set(connection.id, terminalOf.get(key) ?? "inactive");
+    const state = terminalOf.get(key) ?? "inactive";
+    wireOf.set(
+      connection.id,
+      state === "self-hold" && !selfHold.connections.has(connection.id)
+        ? "energized"
+        : state,
+    );
   }
 
   return { wireOf, terminalOf, deviceOf };

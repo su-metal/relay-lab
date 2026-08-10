@@ -39,6 +39,20 @@
   color: var(--text-muted);
 }
 
+/*
+ * いま何を見ているのか（停止中の配線チェック・design.md §8.4）。
+ * 指摘そのものではないので、警告の色は使わず注記として置く。
+ */
+.scope {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
 .groups,
 .items {
   display: flex;
