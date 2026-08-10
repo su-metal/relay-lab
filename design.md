@@ -66,6 +66,7 @@ src/
       useHistoryShortcuts.ts     # Undo / Redo のキーボード操作（§8.4）
       useFlipShortcut.ts         # F キーで選択部品を左右反転（§8.1）
       useArrangeShortcut.ts      # L キーで配置を自動整理（§8.9）
+      useSimulationShortcut.ts   # S キーでシミュレーションを開始・停止（§8.2）
       auto-arrange.ts            # 整理の呼び出し口。ボタンと L キーの共通経路（§8.9）
       useRangeSelection.ts       # 範囲選択中の選択集合を毎フレーム決める（§8.6）
       range-selection.ts         # 範囲選択の対象（部品 / 配線）の型と表示文言（§8.6）
@@ -976,7 +977,7 @@ React Flow 側に状態を持たせない（CLAUDE.md 設計原則 4）。
 
 **キャンバス操作。** 左ドラッグ＝範囲選択、**Shift+ドラッグ＝画面移動（パン）**、
 Ctrl/Cmd+クリック＝複数選択、Delete / Backspace / **D** ＝削除、**F** ＝選択中の部品を左右反転、
-**配線の端をドラッグ＝つなぎ替え**（§8.8）。
+**S** ＝シミュレーションの開始・停止（§8.2）、**配線の端をドラッグ＝つなぎ替え**（§8.8）。
 編集（囲む・つなぐ・動かす）は修飾キー無し、画面の操作は Shift 併用、という切り分け（§8.6）。
 
 #### 部品の左右反転（`flipped`）
@@ -1052,8 +1053,10 @@ input / textarea / contenteditable を自分で除外する。Ctrl / Cmd / Alt �
 この除外を自分で実装すること**（`useHistoryShortcuts` / `useFlipShortcut` /
 `useArrangeShortcut` の `isTextEntry` が同じ役割）。
 
-修飾キー無しの単独キーは現在 **D（削除）/ F（左右反転）/ L（配置の整理・§8.9）** の 3 つ。
-いずれも編集操作で、Undo 1 回で戻せることを条件にしている。
+修飾キー無しの単独キーは現在 **D（削除）/ F（左右反転）/ L（配置の整理・§8.9）/
+S（シミュレーションの開始・停止・§8.2）** の 4 つ。D / F / L は編集操作で、Undo 1 回で
+戻せることを条件にしている。S だけは履歴に積まない画面操作だが、押し間違えても
+もう一度押せば戻り、回路そのものは変わらない。
 
 **「未検証」バッジは実端子番号を持つ型番にだけ出す。** 汎用部品（電源 / スイッチ / ランプ）は
 `verified: false` だが実端子番号そのものが無く、検証対象が存在しない（§4.4 / §4.5）。
@@ -1107,6 +1110,21 @@ Step 3 で 押しボタン 160×125 / 電源 150×110 / ランプ 140×130 / MY4
   競合させない
 - キーボードは `keydown` / `keyup` で扱う。`button` 既定の `click` では
   「押しっぱなし」を表現できない
+
+#### 開始・停止のショートカットは S 単独
+
+`useSimulationShortcut` が `window` に 1 本だけリスナーを張り、いまの `running` を見て
+`start()` / `stop()` を切り替える。修飾キー無しの単独キーで、`isTextEntry()` による
+入力欄の除外と Ctrl / Cmd / Alt での離脱は D / F / L と同じ（§8.1）。押しっぱなしの
+キーリピートは `event.repeat` で捨てる。**リピートでトグルが走ると、開始のたびに
+`pressedSwitches` と前回の励磁状態が捨てられる**（§7）。
+
+**Space は割り当てない。** 上の押しボタンが Space / Enter で押下・復帰を表現しており、
+シミュレーション中はクリックしたスイッチにフォーカスが残る。Space を停止に充てると
+「スイッチを押す」のか「停止する」のかが打鍵時のフォーカス位置で変わる。開始・停止
+ボタン自身にもフォーカスが残るため、ネイティブの `click` とグローバルハンドラーが
+二重に発火する。React Flow の Space パン（`panActivationKeyCode` 既定）は Shift へ
+移してあり空いている（§8.6）が、この 2 つは残る。
 
 **配線色は CSS Modules のクラスで当てる。** `WireState` → クラス の対応表を
 `CircuitCanvas` が持ち、React Flow の Edge の `className` として渡す。

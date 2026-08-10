@@ -132,7 +132,7 @@ export function Toolbar({
           className={styles.run}
           onClick={start}
           disabled={running}
-          title="回路を解いて通電状態を表示します"
+          title="回路を解いて通電状態を表示します（S キーでも可）"
         >
           ▶ シミュレーション開始
         </button>
@@ -141,7 +141,7 @@ export function Toolbar({
           className={styles.button}
           onClick={stop}
           disabled={!running}
-          title="シミュレーションを停止し、押下状態と励磁状態を捨てます"
+          title="シミュレーションを停止し、押下状態と励磁状態を捨てます（S キーでも可）"
         >
           ■ 停止
         </button>
