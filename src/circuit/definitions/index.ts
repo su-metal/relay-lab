@@ -8,6 +8,10 @@
  * Step 7 で MY2N / MY4N-D2 / 端子台 / ダイオードを足したが、
  * **エンジンの差分は 0 行**（requirements.md US-F）。
  * 切替スイッチ（オルタネート）も同じく定義データだけで足りている（design.md §4.7）。
+ *
+ * G7L（a 接点のみのパワーリレー）だけは、この原則を保ったまま
+ * **接点の形の表現力を 1 段広げる**必要があった。`RelayContact.ncTerminal` を
+ * 省略可能にした 1 点で、エンジンの分岐は増えていない（design.md §5.1）。
  */
 
 import type {
@@ -18,6 +22,8 @@ import type {
 
 import { genericDiode } from "./diodes";
 import { dc24vLamp } from "./lamps";
+import { omronG7l1aBDc24 } from "./omron/g7l-1a-b-dc24";
+import { omronG7l2aBDc24 } from "./omron/g7l-2a-b-dc24";
 import { omronMy2nDc24 } from "./omron/my2n-dc24";
 import { omronMy4nD2Dc24 } from "./omron/my4n-d2-dc24";
 import { omronMy4nDc24 } from "./omron/my4n-dc24";
@@ -40,6 +46,8 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   omronMy2nDc24,
   omronMy4nDc24,
   omronMy4nD2Dc24,
+  omronG7l1aBDc24,
+  omronG7l2aBDc24,
   dc24vLamp,
   genericDiode,
   genericTerminalBlock,
@@ -93,6 +101,8 @@ export {
   dc24vPowerSupply,
   genericDiode,
   genericTerminalBlock,
+  omronG7l1aBDc24,
+  omronG7l2aBDc24,
   omronMy2nDc24,
   omronMy4nD2Dc24,
   omronMy4nDc24,

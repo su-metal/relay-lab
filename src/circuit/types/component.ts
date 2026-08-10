@@ -32,13 +32,29 @@ export type CoilPolarity =
   /** 正しい極性でのみ励磁。逆接は内蔵ダイオードが順方向になり故障扱い */
   | "strict";
 
+/**
+ * 接点 1 回路ぶん。
+ *
+ * `type` は接点の形であって型番ではない。エンジンが見るのは
+ * **NC 端子があるかどうか**の 1 点だけで、型番も `type` の文字列も参照しない
+ * （CLAUDE.md 設計原則 2・design.md §5.1）。
+ *
+ * - `SPDT`（c 接点）… COM が NC / NO のどちらかへ必ず倒れる。MY シリーズ
+ * - `SPST-NO`（a 接点）… NC 端子が**実機に存在しない**。励磁している間だけ
+ *   COM–NO が閉じ、非励磁では COM がどこにも繋がらない。G7L のような
+ *   ねじ／タブ端子のパワーリレーがこれにあたる
+ *
+ * **`ncTerminal` を「無いから空文字」で埋めない。** 存在しない端子を
+ * 空の端子番号として持つと、端子一覧にも接点表にも幽霊の行が出る。
+ */
 export type RelayContact = {
   /** リレー定義内で一意な接点 ID。`TerminalDefinition.contactGroup` と対応する */
   id: string;
   commonTerminal: string;
   noTerminal: string;
-  ncTerminal: string;
-  type: "SPDT";
+  /** b 接点の端子。a 接点のみ（`SPST-NO`）のリレーには存在しない */
+  ncTerminal?: string;
+  type: "SPDT" | "SPST-NO";
 };
 
 export type RelayDefinition = {

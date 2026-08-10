@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("11 定義が登録されている", () => {
+  it("13 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "switch-pushbutton-no",
@@ -26,11 +26,13 @@ describe("部品定義レジストリ", () => {
       "omron-my2n-dc24",
       "omron-my4n-dc24",
       "omron-my4n-d2-dc24",
+      "omron-g7l-1a-b-dc24",
+      "omron-g7l-2a-b-dc24",
       "lamp-dc24v",
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(11);
+    expect(componentRegistry.size).toBe(13);
   });
 
   it("型番から定義を取得できる", () => {
@@ -54,7 +56,14 @@ describe("部品定義レジストリ", () => {
       "switch-selector-no",
       "switch-selector-nc",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(11);
+    expect(listComponentDefinitions("relay").map((d) => d.id)).toEqual([
+      "omron-my2n-dc24",
+      "omron-my4n-dc24",
+      "omron-my4n-d2-dc24",
+      "omron-g7l-1a-b-dc24",
+      "omron-g7l-2a-b-dc24",
+    ]);
+    expect(listComponentDefinitions()).toHaveLength(13);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -104,11 +113,13 @@ describe("部品定義レジストリ", () => {
                 : [
                     electrical.relay.coil.positiveTerminal,
                     electrical.relay.coil.negativeTerminal,
-                    ...electrical.relay.contacts.flatMap((c) => [
-                      c.commonTerminal,
-                      c.noTerminal,
-                      c.ncTerminal,
-                    ]),
+                    // NC 端子は a 接点のみのリレーには存在しない。
+                    // 未定義を混ぜると「実在しない端子を参照している」判定になる
+                    ...electrical.relay.contacts.flatMap((c) =>
+                      [c.commonTerminal, c.noTerminal, c.ncTerminal].filter(
+                        (id): id is string => id !== undefined,
+                      ),
+                    ),
                   ];
 
       for (const terminalId of referenced) {
@@ -271,6 +282,107 @@ describe("OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）", () => {
     expect(d2.terminals.find((t) => t.id === "14")?.description).toContain(
       "ダイオード内蔵",
     );
+  });
+});
+
+describe("OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）", () => {
+  const g7l1a = requireComponentDefinition("omron-g7l-1a-b-dc24");
+  const g7l2a = requireComponentDefinition("omron-g7l-2a-b-dc24");
+
+  const relayOf = (definition: typeof g7l1a) => {
+    if (definition.electrical.kind !== "relay") throw new Error("relay ではない");
+    return definition.electrical.relay;
+  };
+
+  it("2 極形の端子番号が 0・1・2・4・6・8 で並ぶ", () => {
+    expect(g7l2a.terminals.map((t) => t.number)).toEqual([
+      "0",
+      "1",
+      "2",
+      "4",
+      "6",
+      "8",
+    ]);
+  });
+
+  /**
+   * **本アプリの価値の中核。** カタログ p.8 の 1 極形の図は接点端子を
+   * **4 と 6** に振っており、2 極形の 2 と 8 が欠番になる。
+   * 2–4 に詰め直すと実機と違う番号を教えることになる（design.md §4.8）。
+   */
+  it("1 極形の端子番号は 0・1・4・6 の飛び番のまま（2 と 8 が欠番）", () => {
+    expect(g7l1a.terminals.map((t) => t.number)).toEqual(["0", "1", "4", "6"]);
+  });
+
+  it("接点は a 接点のみで、NC 端子を持たない", () => {
+    expect(relayOf(g7l2a).contacts).toEqual([
+      { id: "c1", commonTerminal: "2", noTerminal: "4", type: "SPST-NO" },
+      { id: "c2", commonTerminal: "6", noTerminal: "8", type: "SPST-NO" },
+    ]);
+    expect(relayOf(g7l1a).contacts).toEqual([
+      { id: "c1", commonTerminal: "4", noTerminal: "6", type: "SPST-NO" },
+    ]);
+    for (const contact of [
+      ...relayOf(g7l1a).contacts,
+      ...relayOf(g7l2a).contacts,
+    ]) {
+      expect(contact.ncTerminal).toBeUndefined();
+    }
+  });
+
+  /**
+   * カタログ p.8 に「（コイル極性はありません）」と明記され、
+   * p.12 のコイル内部接続図でも直流操作コイルは 0–1 間が素のコイルだけ。
+   * MY シリーズのように `+` / `−` を名乗らせない（design.md §4.8）。
+   */
+  it("コイルは 0・1 で極性を持たず、端子の役割も +/− を名乗らない", () => {
+    for (const definition of [g7l1a, g7l2a]) {
+      expect(relayOf(definition).coil).toMatchObject({
+        voltage: 24,
+        currentType: "DC",
+        polarity: "none",
+      });
+      const coilTerminals = definition.terminals.filter((t) =>
+        ["0", "1"].includes(t.id),
+      );
+      expect(coilTerminals.map((t) => t.role)).toEqual(["coil", "coil"]);
+      for (const terminal of coilTerminals) {
+        expect(terminal.description).toContain("極性なし");
+      }
+    }
+  });
+
+  /**
+   * 接点の 2 端子は対等な a 接点で、実機に COM は無い。
+   * `commonTerminal` は `RelayContact` の形に合わせた並びの規約でしかないので、
+   * 端子の `role` まで COM を名乗らせない（design.md §4.8）。
+   */
+  it("接点端子はどちらも a 接点として扱い、COM を名乗らない", () => {
+    const contactTerminals = g7l2a.terminals.filter(
+      (t) => t.contactGroup !== undefined,
+    );
+    expect(contactTerminals.map((t) => [t.id, t.role, t.contactGroup])).toEqual([
+      ["2", "normally_open", "c1"],
+      ["4", "normally_open", "c1"],
+      ["6", "normally_open", "c2"],
+      ["8", "normally_open", "c2"],
+    ]);
+  });
+
+  it("1 極形と 2 極形の差は接点行だけ", () => {
+    expect(relayOf(g7l1a).coil).toEqual(relayOf(g7l2a).coil);
+    expect(g7l1a.manufacturer).toBe(g7l2a.manufacturer);
+    expect(g7l1a.source).toBe(g7l2a.source);
+  });
+
+  it("実端子番号は公式カタログで検証済み", () => {
+    for (const definition of [g7l1a, g7l2a]) {
+      expect(definition.verified, definition.id).toBe(true);
+      // 出典にカタログ番号と図の位置が残っていること。
+      // 「オムロンのどこか」に薄まると再検証できなくなる（design.md §4.9）
+      expect(definition.source).toContain("CDPA-041C");
+      expect(definition.source).toContain("p.8");
+    }
   });
 });
 
