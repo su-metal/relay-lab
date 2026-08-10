@@ -298,12 +298,16 @@ type RelayContact = {
   id: string            // "c1"
   commonTerminal: string
   noTerminal: string
-  ncTerminal: string
-  type: "SPDT"
+  ncTerminal?: string   // a 接点のみのリレーには存在しない
+  type: "SPDT" | "SPST-NO"
 }
 ```
 
 **要件書からの変更点:** `polaritySensitive: boolean` を 3 値の `CoilPolarity` に変更した。理由は §5.3 を参照。
+
+**`ncTerminal` は省略可能。** すべてのリレーが c 接点（切替接点）を持つわけではない。ねじ／タブ端子のパワーリレーには **a 接点のみ（`SPST-NO`）** の型番があり、b 接点の端子が**実機に存在しない**。ここを「無いから空文字」で埋めると、端子一覧にも接点表にも幽霊の行が出て、実端子番号が正しいという前提が崩れる。
+
+**エンジンが見るのは `ncTerminal` の有無だけで、`type` の文字列は見ない。** `type` は接点の形を人が読むための値（プロパティパネル・`contactSummaryOf()` の "4c" / "2a" 表示）であって、判定条件ではない。`type: "SPST-NO"` を足しても `engine/` の分岐は増えず、開閉規則は §5.1 の 1 箇所に閉じたままになる（CLAUDE.md 設計原則 2）。
 
 ### 3.3 回路ドキュメント（保存対象）
 
@@ -570,6 +574,12 @@ Step 7 の 4 部品はいずれも既存のエンジンの分岐（`ElectricalDe
 - 端子台の全端子どうし
 - CLOSED 状態のスイッチの 2 端子
 - CLOSED 状態のリレー接点（非励磁なら COM–NC、励磁なら COM–NO）
+
+**接点の開閉規則はこの 1 箇所（`engine/relay.ts` の `closedContactPairs()`）にしか無い。** 実装は「励磁なら `noTerminal`、非励磁なら `ncTerminal` を COM の相手にする。**相手の端子が定義に無ければペアを出さない**」の 1 行に集約している。
+
+この最後の 1 句が a 接点のみ（`SPST-NO`）のリレーを支えている。b 接点の端子が実機に無いので、非励磁では閉じるペアが 1 つも無く、COM はどこにも繋がらない。ここを「COM は必ずどちらかへ倒れる」と書くと、存在しない端子どうしを union して実機に無い経路を作ってしまう。検証は `engine/__tests__/relay.test.ts`。
+
+プロパティパネル側の `ClosedSide`（§8.3）にも `"open"` がある。**「停止中（`undefined`）」「非励磁で開いている（`"open"`）」「NC 側で閉じている（`"nc"`）」は別物**で、a 接点のみのリレーが取るのは前 2 者だけ。`adapter/inspection.ts` はこの区別をエンジンの答え（COM の相手が誰か）から引き直しており、`energized ? "no" : "nc"` と書き直さない。
 
 **union しない（導通しないもの）:**
 

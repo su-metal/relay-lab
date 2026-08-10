@@ -1,10 +1,12 @@
+import { contactSummaryOf } from "@/lib/component-display";
+
 import styles from "./bodies.module.css";
 import type { BodyProps } from "./types";
 
 /**
- * リレー。コイル記号と、接点数・コイル仕様のキャプション。
+ * リレー。コイル記号と、接点構成・コイル仕様のキャプション。
  *
- * 接点数は `RelayDefinition.contacts.length` から取る。MY2N（2c）を足しても
+ * 接点構成は `contactSummaryOf()` から取る。MY2N（2c）でも G7L（1a / 2a）でも
  * このファイルは変わらない。
  *
  * 励磁中はコイル枠を強調し、キャプションを「励磁中」に差し替える。
@@ -42,7 +44,7 @@ export function RelayBody({ definition, simulation }: BodyProps) {
       ) : (
         relay && (
           <span className={styles.caption}>
-            {relay.contacts.length}c ／ コイル {relay.coil.currentType}
+            {contactSummaryOf(relay)} ／ コイル {relay.coil.currentType}
             {relay.coil.voltage}V
           </span>
         )

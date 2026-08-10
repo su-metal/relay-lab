@@ -263,11 +263,15 @@ function ContactRow({ inspection }: { inspection: ContactInspection }) {
     <li className={styles.contact}>
       <span className={styles.contactName}>第{order}接点</span>
       <span className={styles.contactPairs}>
-        <ContactPair
-          role="COM–NC"
-          terminals={`${contact.commonTerminal}–${contact.ncTerminal}`}
-          closed={closed === undefined ? undefined : closed === "nc"}
-        />
+        {/* NC 端子が実機に無い a 接点（G7L など）では行ごと出さない。
+            「COM–NC 開」と出すと存在しない端子があるように読めてしまう */}
+        {contact.ncTerminal !== undefined && (
+          <ContactPair
+            role="COM–NC"
+            terminals={`${contact.commonTerminal}–${contact.ncTerminal}`}
+            closed={closed === undefined ? undefined : closed === "nc"}
+          />
+        )}
         <ContactPair
           role="COM–NO"
           terminals={`${contact.commonTerminal}–${contact.noTerminal}`}

@@ -16,17 +16,22 @@ export type TerminalPair = readonly [string, string];
 /**
  * 励磁状態に応じて閉じている接点の端子ペアを返す。
  *
- * SPDT なので COM は必ずどちらか一方に繋がる。
+ * c 接点（SPDT）は COM が必ずどちらか一方に繋がる。
  * 非励磁なら COM–NC、励磁なら COM–NO。
+ *
+ * a 接点のみ（SPST-NO）のリレーは **NC 端子が実機に存在しない**ので、
+ * 非励磁では閉じるペアが 1 つも無い（COM はどこにも繋がらない）。
+ * ここで見ているのは `ncTerminal` の有無だけで、接点の形の名前も型番も見ない
+ * —— 相手の端子が定義に無ければ union する対象が無い、という 1 行で済む。
  */
 export const closedContactPairs = (
   relay: RelayDefinition,
   energized: boolean,
 ): TerminalPair[] =>
-  relay.contacts.map((contact) => [
-    contact.commonTerminal,
-    energized ? contact.noTerminal : contact.ncTerminal,
-  ]);
+  relay.contacts.flatMap((contact) => {
+    const other = energized ? contact.noTerminal : contact.ncTerminal;
+    return other === undefined ? [] : [[contact.commonTerminal, other]];
+  });
 
 export type CoilEvaluation = {
   /** コイルが励磁するか */

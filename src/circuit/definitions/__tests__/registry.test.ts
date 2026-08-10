@@ -104,11 +104,13 @@ describe("部品定義レジストリ", () => {
                 : [
                     electrical.relay.coil.positiveTerminal,
                     electrical.relay.coil.negativeTerminal,
-                    ...electrical.relay.contacts.flatMap((c) => [
-                      c.commonTerminal,
-                      c.noTerminal,
-                      c.ncTerminal,
-                    ]),
+                    // NC 端子は a 接点のみのリレーには存在しない。
+                    // 未定義を混ぜると「実在しない端子を参照している」判定になる
+                    ...electrical.relay.contacts.flatMap((c) =>
+                      [c.commonTerminal, c.noTerminal, c.ncTerminal].filter(
+                        (id): id is string => id !== undefined,
+                      ),
+                    ),
                   ];
 
       for (const terminalId of referenced) {
