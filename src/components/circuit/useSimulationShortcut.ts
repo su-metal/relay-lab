@@ -24,6 +24,7 @@
 
 import { useEffect } from "react";
 
+import { SIMULATION_KEYS } from "@/lib/shortcuts";
 import { useSimulationStore } from "@/store/simulationStore";
 
 import { isTextEntry } from "./keyboard";
@@ -33,8 +34,8 @@ export function useSimulationShortcut(): void {
     const onKeyDown = (event: KeyboardEvent) => {
       // Ctrl+S（ブラウザの保存）などを奪わない
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      // CapsLock で "S" になる場合も拾う
-      if (event.key !== "s" && event.key !== "S") return;
+      // CapsLock で "S" になる場合も拾う（`SIMULATION_KEYS` が両方を持つ）
+      if (!SIMULATION_KEYS.includes(event.key)) return;
       if (event.repeat) return;
       if (isTextEntry(event.target)) return;
 

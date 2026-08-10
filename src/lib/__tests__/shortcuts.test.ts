@@ -14,6 +14,7 @@ import {
   FLIP_KEYS,
   PAN_ACTIVATION_KEY,
   SHORTCUT_GROUPS,
+  SIMULATION_KEYS,
   displayKeys,
 } from "@/lib/shortcuts";
 
@@ -53,6 +54,27 @@ describe("ヘルプの操作一覧", () => {
 
   it("整列の行が useArrangeShortcut のキーと一致する", () => {
     expect(rowFor("配置を整列").keys).toEqual(displayKeys(ARRANGE_KEYS));
+  });
+
+  it("開始・停止の行が useSimulationShortcut のキーと一致する", () => {
+    expect(rowFor("シミュレーションの開始・停止").keys).toEqual(
+      displayKeys(SIMULATION_KEYS),
+    );
+  });
+
+  /**
+   * **修飾キー無しの単独キーどうしが衝突していないこと。** D / F / L / S は
+   * どれも `window` に別々のリスナーを張っており、同じキーを 2 つに割り当てると
+   * 1 打鍵で 2 つの動作が走る。表に載る前にここで落とす。
+   */
+  it("単独キーの割り当てが互いに衝突しない", () => {
+    const singles = [
+      ...DELETE_KEYS,
+      ...FLIP_KEYS,
+      ...ARRANGE_KEYS,
+      ...SIMULATION_KEYS,
+    ].filter((key) => key.length === 1);
+    expect(new Set(singles).size).toBe(singles.length);
   });
 
   /**
