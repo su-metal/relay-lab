@@ -66,3 +66,33 @@
   border-top-width: 3px;
   border-top-style: dashed;
 }
+
+/*
+ * 電流の向き（design.md §5.10）。**色ではなく動きの見本**なので、
+ * 他の項目のように border では描けない。キャンバス側と同じ周期・同じ
+ * 切れ目（3px / 16px 周期）で背景を流し、実際の線と同じ動きを見せる。
+ */
+.flow {
+  height: 3px;
+  border-top: 0;
+  background-color: var(--wire-energized);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--canvas-bg) 0 3px,
+    transparent 3px 16px
+  );
+  animation: legendFlow 0.75s linear infinite;
+}
+
+@keyframes legendFlow {
+  to {
+    background-position: 16px 0;
+  }
+}
+
+/* キャンバス側（`WireEdge.module.css`）と同じく、動きを抑える設定では止める */
+@media (prefers-reduced-motion: reduce) {
+  .flow {
+    animation: none;
+  }
+}

@@ -152,7 +152,7 @@ export const inspectComponent = (
 
   const contacts: ContactInspection[] =
     electrical.kind === "relay"
-      ? inspectContacts(electrical.relay, device)
+      ? inspectContacts(electrical.relay, device?.energized)
       : [];
 
   const conducting =
@@ -242,15 +242,23 @@ const restingNets = (
  * どこにも閉じない」という規則はエンジン側（`closedContactPairs`）に
  * 1 箇所だけ置いてある。ここで `energized ? "no" : "nc"` と書き直すと
  * 規則が 2 箇所に増えるので、エンジンの答えを引き直して COM の相手を見る。
+ *
+ * **公開しているのは接点の図記号（design.md §8.11）のため。** ノード側で
+ * 「励磁中なら NO 側」と書き直すと、同じ規則が 3 箇所目に増える。
+ *
+ * @param energized `undefined` は**シミュレーション停止中**。停止中は
+ *   `closed` を返さない —— 消磁しているのか動いていないのかを取り違えさせない
+ *   （design.md §8.2）。静止状態の絵が欲しい呼び出し側は `false` を渡す
  */
-const inspectContacts = (
+export const inspectContacts = (
   relay: RelayDefinition,
-  device: DeviceSimulationState | undefined,
+  energized: boolean | undefined,
 ): ContactInspection[] => {
   // COM の相手を引ける形にする。COM 端子はリレー内で一意なのでキーにできる
-  const closedOf = device
-    ? new Map<string, string>(closedContactPairs(relay, device.energized))
-    : undefined;
+  const closedOf =
+    energized === undefined
+      ? undefined
+      : new Map<string, string>(closedContactPairs(relay, energized));
 
   const sideOf = (contact: RelayContact): ClosedSide | undefined => {
     if (!closedOf) return undefined;

@@ -67,6 +67,35 @@
   filter: drop-shadow(0 0 5px var(--lamp-on));
 }
 
+/*
+ * リレーの接点の図記号（design.md §8.11）。
+ *
+ * 線の描き方は `.symbol` と同じだが、**左右反転で鏡像にしない。**
+ * 端子番号という文字を含む図なので、反転すると番号が読めなくなる
+ * （キャプションを反転させないのと同じ理由）。図記号の向きが部品と
+ * 揃わなくなるが、読めない番号よりは揃わない向きのほうがまし。
+ */
+.contactDiagram {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  color: var(--text);
+}
+
+/*
+ * 図記号に添える実端子番号。**線ではなく文字なので `fill` で描く**
+ * （`.contactDiagram` の `fill: none` / `stroke` を打ち消す）。
+ */
+.contactNumber {
+  fill: var(--text-muted);
+  stroke: none;
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* リレー: コイル枠を塗って接点部と区別する */
 .relayCoil {
   fill: var(--coil-fill);

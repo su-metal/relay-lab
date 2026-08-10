@@ -23,6 +23,11 @@ import type {
 import { terminalRefKey } from "@/circuit/types";
 
 import {
+  EMPTY_CURRENT_FLOW,
+  type CurrentFlowView,
+  type FlowDirection,
+} from "./current-flow";
+import {
   IDLE_SIMULATION_VIEW,
   terminalStatesOf,
   type DeviceSimulationState,
@@ -244,6 +249,13 @@ export type WireEdgeData = {
    * 縦の幹線なら右が正、横の幹線なら下が正。0 なら既定の経路。
    */
   lane?: number;
+  /**
+   * 電流の向き（design.md §5.10）。`from` → `to` に流れていれば `"forward"`。
+   *
+   * **向きが決まらない線は持たない。** 並列に分かれた区間は実際に分流するので
+   * 1 本に決まらず、`current-flow.ts` がそもそも返さない。
+   */
+  flow?: FlowDirection;
 };
 
 export type WireEdge = Edge<WireEdgeData, typeof WIRE_EDGE_TYPE>;
@@ -253,6 +265,7 @@ export const toWireEdge = (
   connection: CircuitConnection,
   selected = false,
   lane = 0,
+  flow?: FlowDirection,
 ): WireEdge => ({
   id: connection.id,
   type: WIRE_EDGE_TYPE,
@@ -261,13 +274,14 @@ export const toWireEdge = (
   target: connection.to.componentId,
   targetHandle: handleIdOf(connection.to.terminalId),
   selected,
-  data: { lane },
+  data: { lane, flow },
 });
 
 export const toWireEdges = (
   document: CircuitDocument,
   selectedConnectionIds: readonly string[] = [],
   lanes: ReadonlyMap<string, number> = new Map(),
+  flow: CurrentFlowView = EMPTY_CURRENT_FLOW,
 ): WireEdge[] => {
   const selected = new Set(selectedConnectionIds);
   return document.connections.map((connection) =>
@@ -275,6 +289,7 @@ export const toWireEdges = (
       connection,
       selected.has(connection.id),
       lanes.get(connection.id) ?? 0,
+      flow.directionOf.get(connection.id),
     ),
   );
 };

@@ -52,3 +52,54 @@
 :global(.react-flow__edge.selected) > .grip {
   opacity: 1;
 }
+
+/*
+ * 電流の向き（design.md §5.10）。
+ *
+ * 線の色は「電流が流れている」までしか言わない。回路を初めて読む人が知りたい
+ * **どちらからどちらへ流れているか**は、色の軸には載せられない（緑と紫は
+ * すでに別の意味を持っている）ので、**動きの軸**を 1 本足す。
+ *
+ * 描くのは線そのものではなく、線の上を流れる**背景色の切れ目**。こうすると
+ * 下の線が緑（通電）でも紫（自己保持）でも同じ 1 つのルールで済み、
+ * 色の意味を上書きしない。
+ *
+ * 向きの符号は `d` に与えたパスの向き（source → target ＝ `CircuitConnection`
+ * の from → to）が基準。`stroke-dashoffset` を負へ動かすとパスの進行方向へ
+ * 流れるので、逆流する線は `animation-direction: reverse` で返す。
+ */
+.flow {
+  fill: none;
+  stroke: var(--canvas-bg);
+  stroke-width: 2.4;
+  /* 切れ目を短く、間隔を長く。線が「点線になった」ではなく「流れている」と読ませる */
+  stroke-dasharray: 3 13;
+  stroke-linecap: round;
+  opacity: 0.85;
+  /* 掴む・選ぶ当たり判定は本体の interaction path が持つ */
+  pointer-events: none;
+  animation: currentFlow 0.75s linear infinite;
+}
+
+.flow[data-flow="backward"] {
+  animation-direction: reverse;
+}
+
+@keyframes currentFlow {
+  to {
+    /* dasharray の 1 周期（3 + 13）ぶん動かすと継ぎ目なくループする */
+    stroke-dashoffset: -16;
+  }
+}
+
+/*
+ * 動きを抑える設定では流れを止める。**切れ目そのものは残す** ——
+ * 止まっていても「電流が流れている線」であることは線の色と太さが言っており、
+ * ここで失われるのは向きだけ。向きは端子ツールチップと
+ * プロパティパネルの経路表示（§5.11）からも読める。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .flow {
+    animation: none;
+  }
+}
