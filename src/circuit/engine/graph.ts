@@ -75,8 +75,12 @@ export type NetLookup = {
  * 導線として union すると `+24V → コイル → 0V` を組んだ時点で
  * +24V 端子と 0V 端子が同一ネットになり、電源短絡を誤検出する（design.md §5.2）。
  * 負荷は「両端が異なる電源ネットに属するか」で判定する対象であって、導通経路ではない。
+ *
+ * **公開しているのは自己保持の経路探索（§5.9）のため。** ネット ID からは
+ * 「どの端子どうしが直接つながっているか」が復元できず、adapter 側で同じ規則を
+ * 書き直すと接点の開閉規則が 2 箇所に散る。判定はここ 1 箇所に閉じる。
  */
-const conductingPairs = (
+export const conductingPairs = (
   componentId: string,
   electrical: ElectricalDefinition,
   input: SimulationInput,
