@@ -25,8 +25,15 @@ import styles from "./DeviceNode.module.css";
 import { bodyForCategory } from "./bodies";
 
 function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) {
-  const { definition, terminals, flipped, label, simulation, terminalStates } =
-    data;
+  const {
+    definition,
+    terminals,
+    flipped,
+    label,
+    simulation,
+    terminalStates,
+    terminalConnections,
+  } = data;
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
@@ -147,6 +154,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
           key={terminal.id}
           terminal={terminal}
           state={terminalStates?.get(terminal.id)}
+          connections={terminalConnections?.get(terminal.id)}
         />
       ))}
     </div>

@@ -44,6 +44,7 @@ import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
 import { buildSelfHold } from "@/circuit/adapter/self-hold";
 import { buildSimulationView } from "@/circuit/adapter/simulation-view";
 import type { WireState } from "@/circuit/adapter/simulation-view";
+import { buildTerminalConnections } from "@/circuit/adapter/terminal-connections";
 import { buildWireLanes } from "@/circuit/adapter/wire-lane";
 import { buildWireRoles } from "@/circuit/adapter/wire-role";
 import type { WireRole } from "@/circuit/adapter/wire-role";
@@ -197,9 +198,23 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document, result, pressedSwitches, selfHold],
   );
 
+  // 端子ツールチップの接続先（design.md §8.3）。実行中かどうかに関わらず
+  // 配線そのものから決まるので、シミュレーションビューとは別に組み立てる
+  const terminalConnections = useMemo(
+    () => buildTerminalConnections(document, componentRegistry),
+    [document],
+  );
+
   const nodes = useMemo(
-    () => toDeviceNodes(document, componentRegistry, selectedComponentIds, view),
-    [document, selectedComponentIds, view],
+    () =>
+      toDeviceNodes(
+        document,
+        componentRegistry,
+        selectedComponentIds,
+        view,
+        terminalConnections,
+      ),
+    [document, selectedComponentIds, view, terminalConnections],
   );
   /**
    * 配線の役割（design.md §5.8）。**実行中も計算する。**

@@ -1211,6 +1211,25 @@ Handle は子要素なので Handle にホバーすれば `.terminal:hover` が�
 表示まで 1 秒近く待たされて「端子の意味をすぐ読める」体験にならない。
 読み上げ用には Handle の `aria-label` に同じ本文を載せる。
 
+**端子ツールチップに「接続先」を出す（Step 8 の追加）。** 本文の下に、
+その端子につながる配線の相手側を「RY1 の端子 14」のように 1 本ずつ並べる。
+配線が無い端子は「未接続」と出す。
+
+- **見せるのは配線（`CircuitConnection`）そのもの。** ネットまで辿って
+  スイッチ・端子台の導通で間接的につながる先まで拾うと、ホバーした端子と
+  無関係な部品まで列挙されて「この線がどこへ行くか」がかえって読めなくなる。
+- **1 端子に複数の配線が集まっていれば配列で全部出す。** 端子台の分岐や、
+  同じ電源端子から複数本引き出すケースがあるため。
+- 組み立ては `adapter/terminal-connections.ts` の `buildTerminalConnections()`
+  1 か所に閉じる。ドキュメント全体を 1 回走査して
+  `terminalRefKey()` → 接続先一覧 の表を作り、`toDeviceNode()` が
+  `DeviceNodeData.terminalConnections` として 1 部品ぶんに絞って渡す
+  （`terminalStatesOf()` と同じ「全体表を組んで、ノード側で絞る」形）。
+  React を import しない純粋関数なので Vitest で検証できる。
+- 相手部品の呼び名は `engine/validation.ts` の `describeComponent()`
+  （ラベルがあればラベル、無ければ型番）を使い回す。警告文の言い回し
+  （「RY1 の端子 14 は未接続です」）と揃えるため、ここだけ別の文言にしない。
+
 ### 8.4 保存・Undo・診断の UI（Step 6 で確定）
 
 **`ReactFlowProvider` を張る層とフックを使う層を分ける。** 保存の復元は
