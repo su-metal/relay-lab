@@ -37,9 +37,11 @@ package.json
 tsconfig.json                    # strict / paths "@/*" → "./src/*"
 next.config.ts
 vitest.config.ts                 # environment: node / include: src/**/*.test.ts
+wrangler.jsonc                   # Cloudflare Workers へ静的アセットとして配る設定（§9）
 .github/
   workflows/
     ci.yml                       # push / PR で typecheck → test → build（§9）
+    deploy.yml                   # main への push で test → build → wrangler deploy（§9）
 .claude/
   launch.json                    # dev サーバー起動設定
   settings.json                  # Stop フックの登録
@@ -1694,3 +1696,24 @@ D / F / L は**修飾キー無しの 1 打鍵で回路を変える**（削除・
 **Step 2 を UI より先に置く理由:** 検証回路テスト 1〜5（自己保持・インターロックを含む）は UI を一切使わずに JSON で回路を組んで `simulate()` を呼べば検証できる。収束アルゴリズムのバグをブラウザで部品を並べ直しながら追うより、`npm test` で回すほうが桁違いに速い。
 
 **Step 7 は設計の検証を兼ねる。** ここでエンジンの修正が必要になったら、データ駆動設計が破綻しているサインなので設計を見直す。
+
+### 9.1 デプロイ（`.github/workflows/deploy.yml`）
+
+**main に入った時点で本番。** `next.config.ts` の `output: "export"` で書き出した `out/` を、`wrangler.jsonc` の設定どおり Cloudflare Workers の静的アセットとして配る。バックエンドを持たない（CLAUDE.md）ので、配るものはこのディレクトリだけ。
+
+手元から配るときも同じ経路を通す。
+
+```
+npm run deploy      # = npm run build && wrangler deploy
+```
+
+`wrangler` は **devDependencies に入れて `package-lock.json` で版を固定する**。`npx wrangler` のまま放置すると、手元と CI で別の版が走り、「手元では配れるのに CI では落ちる」を再現できない。
+
+| 使う秘密情報 | 置き場所 | 無いと |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | リポジトリの Actions Secrets | 配布ステップだけが `You are not authenticated` で落ちる（テストとビルドは通る） |
+| `CLOUDFLARE_ACCOUNT_ID` | 同上（トークンが 1 アカウントにしか届かないなら省略可） | 複数アカウントに届くトークンで配布先が定まらず落ちる |
+
+**配布前にテストとビルドを回す。** `ci.yml` と重複するが、`workflow_dispatch` や main への直 push で「検証されていない配布経路」ができるのを防ぐため、このワークフロー単体で完結させる。
+
+**`concurrency` で追い越しを止める。** `ci.yml` と違って `cancel-in-progress` は付けない —— `wrangler deploy` の途中で打ち切ると、どの版が本番に載っているのか分からなくなる。
