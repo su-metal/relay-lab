@@ -17,6 +17,14 @@ export type TerminalRole =
   | "power_zero"
   | "coil_positive"
   | "coil_negative"
+  /**
+   * 極性を持たないコイルの端子。
+   *
+   * G7L のようにデータシートが「コイル極性はありません」と明記し、
+   * 端子に `+` / `−` の印字が無い型番で使う。`coil_positive` を当てると
+   * 実機に無い極性を画面が主張してしまう（design.md §4.8）。
+   */
+  | "coil"
   | "common"
   | "normally_open"
   | "normally_closed"

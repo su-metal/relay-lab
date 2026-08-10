@@ -68,6 +68,7 @@ export const TERMINAL_ROLE_LABELS: Record<TerminalRole, string> = {
   power_zero: "電源 0V",
   coil_positive: "コイル +",
   coil_negative: "コイル −",
+  coil: "コイル",
   common: "COM",
   normally_open: "NO（a接点）",
   normally_closed: "NC（b接点）",

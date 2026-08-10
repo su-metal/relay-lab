@@ -261,7 +261,12 @@ function ContactRow({ inspection }: { inspection: ContactInspection }) {
 
   return (
     <li className={styles.contact}>
-      <span className={styles.contactName}>第{order}接点</span>
+      {/* c 接点は「第1接点」、a 接点のみのパワーリレーはカタログの
+          数え方に合わせて「第1極」と呼ぶ（design.md §4.8） */}
+      <span className={styles.contactName}>
+        第{order}
+        {contact.ncTerminal === undefined ? "極" : "接点"}
+      </span>
       <span className={styles.contactPairs}>
         {/* NC 端子が実機に無い a 接点（G7L など）では行ごと出さない。
             「COM–NC 開」と出すと存在しない端子があるように読めてしまう */}
@@ -273,7 +278,9 @@ function ContactRow({ inspection }: { inspection: ContactInspection }) {
           />
         )}
         <ContactPair
-          role="COM–NO"
+          // NC 端子が無い a 接点に「COM–NO」と出すと、実機に無い COM が
+          // あるように読める。G7L の 2 端子は対等な a 接点（design.md §4.8）
+          role={contact.ncTerminal === undefined ? "a接点" : "COM–NO"}
           terminals={`${contact.commonTerminal}–${contact.noTerminal}`}
           closed={closed === undefined ? undefined : closed === "no"}
         />
@@ -340,6 +347,17 @@ function ElectricalSection({
 
     case "relay": {
       const { coil } = electrical.relay;
+      /**
+       * コイル端子に +/− の印字があるか。
+       *
+       * **`polarity` では判定できない。** MY2N / MY4N は `polarity: "none"`
+       * （逆接でも励磁する）だが、端子 13 / 14 には実際に −/+ の印字がある。
+       * 逆に G7L は印字そのものが無い。両者を分けるのは `TerminalRole` で、
+       * `coil`（極性なし）か `coil_positive` / `coil_negative` か（design.md §4.8）。
+       */
+      const coilTerminalsAreLabeled = inspection.terminals.some(
+        (t) => t.terminal.role === "coil_positive",
+      );
       return (
         <section className={styles.section}>
           <h3 className={styles.heading}>コイル</h3>
@@ -349,7 +367,13 @@ function ElectricalSection({
               {coil.voltage}V
             </Row>
             <Row name="端子">
-              + {coil.positiveTerminal} / − {coil.negativeTerminal}
+              {/*
+                極性の無いコイル（G7L・design.md §4.8）に "+ 0 / − 1" と出すと、
+                すぐ下の「極性なし」と矛盾するうえ、実機に無い印字を教えてしまう
+              */}
+              {coilTerminalsAreLabeled
+                ? `+ ${coil.positiveTerminal} / − ${coil.negativeTerminal}`
+                : `${coil.positiveTerminal} / ${coil.negativeTerminal}`}
             </Row>
             <Row name="極性">{COIL_POLARITY_LABELS[coil.polarity]}</Row>
             <Row name="状態">
