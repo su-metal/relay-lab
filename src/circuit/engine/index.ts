@@ -6,6 +6,7 @@
  */
 
 export { simulate } from "./simulate";
+export { inspectWiring } from "./wiring";
 export {
   buildNets,
   computeNetStates,
