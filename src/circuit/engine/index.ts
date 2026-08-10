@@ -7,7 +7,12 @@
 
 export { simulate } from "./simulate";
 export { inspectWiring } from "./wiring";
-export { buildNets, computeNetStates, stateAt } from "./graph";
+export {
+  buildNets,
+  computeNetStates,
+  conductingPairs,
+  stateAt,
+} from "./graph";
 export type { NetAssignment, NetLookup } from "./graph";
 export { atPlus, atZero, polarityAcross } from "./potential";
 export type { Polarity } from "./potential";
