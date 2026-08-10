@@ -51,6 +51,12 @@ import type { WireRole } from "@/circuit/adapter/wire-role";
 import { componentRegistry, getComponentDefinition } from "@/circuit/definitions";
 import { WIRE_RECONNECT_RADIUS, WireEdge } from "@/components/edges/WireEdge";
 import { DeviceNode } from "@/components/nodes/DeviceNode";
+import {
+  DELETE_KEYS,
+  MULTI_SELECT_KEYS,
+  PAN_ACTIVATION_KEY,
+  PAN_BUTTONS,
+} from "@/lib/shortcuts";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
@@ -77,41 +83,22 @@ const edgeTypes = { [WIRE_EDGE_TYPE]: WireEdge };
 const HOVERED_WIRE_Z = 2000;
 
 /**
- * 削除のキー。Delete / Backspace に加えて **D 単独**でも消せるようにする。
+ * キー割り当ての実体は `lib/shortcuts.ts` にある（design.md §8.10）。
+ * ヘルプの表を同じ定数から組み立てるための集約で、意味は次のとおり。
  *
- * Delete キーはフルサイズキーボードでは右上の端にあり、配線しながら片手で
- * 押すには遠い。D は「配線ドラッグ → 掴み損ねた線を消す」の往復が
- * ホームポジションのまま済む。
- *
- * **入力欄では発火しない。** React Flow の `deleteKeyCode` は
- * `useKeyPress(..., { actInsideInputWithModifier: false })` 経由で
- * `isInputDOMNode()` を見ており、修飾キー無しの打鍵が input / textarea /
- * contenteditable に入っているときは無視される。部品名やパレット検索に
- * "d" を打っても回路は消えない。
- *
- * 大文字も入れているのは CapsLock 対策（`event.key` が "D" になる）。
+ * - `DELETE_KEYS` —— Delete / Backspace に加えて **D 単独**。
+ *   **入力欄では発火しない。** React Flow の `deleteKeyCode` は
+ *   `useKeyPress(..., { actInsideInputWithModifier: false })` 経由で
+ *   `isInputDOMNode()` を見ており、修飾キー無しの打鍵が input / textarea /
+ *   contenteditable に入っているときは無視される。部品名やパレット検索に
+ *   "d" を打っても回路は消えない
+ * - `PAN_ACTIVATION_KEY` —— 押している間だけ `panOnDrag` を有効にするキー
+ *   （既定は Space）。Shift にすることで **Shift+左ドラッグ＝パン**、
+ *   素の左ドラッグ＝範囲選択になる。**`selectionKeyCode` は同時に外すこと。**
+ *   既定では Shift が範囲選択キーで、両方に Shift を割り当てると React Flow は
+ *   `panOnDrag: !selectionKeyPressed && panOnDrag` でパンを打ち消す
+ * - `PAN_BUTTONS` —— 左ボタンは範囲選択の枠に取られるので中・右ボタンへ逃がす
  */
-const DELETE_KEYS = ["Delete", "Backspace", "d", "D"];
-
-/**
- * 画面移動（パン）の同時押しキー（design.md §8.6）。
- *
- * React Flow の `panActivationKeyCode` は「押している間だけ `panOnDrag` を true に
- * する」キーで、既定は Space。ここを Shift にすることで **Shift+左ドラッグ＝パン**、
- * 素の左ドラッグ＝範囲選択、という割り当てになる。
- *
- * **`selectionKeyCode` は同時に外すこと。** 既定では Shift が範囲選択キーで、
- * 両方に Shift を割り当てると React Flow は
- * `panOnDrag: !selectionKeyPressed && panOnDrag` でパンを打ち消し、Shift を押しても
- * 動かなくなる。
- */
-const PAN_ACTIVATION_KEY = "Shift";
-
-/**
- * ドラッグでパンできるマウスボタン。左ボタンは範囲選択の枠に取られるので、
- * 中ボタンと右ボタンへ逃がす。Shift 併用とホイール（`panOnScroll`）でも動かせる。
- */
-const PAN_BUTTONS = [1, 2];
 
 /**
  * 配線の表示状態 → CSS Modules のクラス（design.md §5.6）。
@@ -486,7 +473,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         selectionKeyCode={null}
         panActivationKeyCode={PAN_ACTIVATION_KEY}
         panOnDrag={PAN_BUTTONS}
-        multiSelectionKeyCode={["Control", "Meta"]}
+        multiSelectionKeyCode={MULTI_SELECT_KEYS}
         panOnScroll
         minZoom={0.2}
         maxZoom={2.5}
@@ -504,7 +491,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
           <Panel position="top-center">
             <p className={styles.emptyHint}>
               左のパレットから部品をドラッグして配置し、端子（小さな丸）どうしをドラッグして配線します。何もない所をドラッグすると範囲選択、
-              Shift+ドラッグで画面を動かせます。
+              Shift+ドラッグで画面を動かせます。操作の一覧は右上の ? から。
             </p>
           </Panel>
         )}

@@ -1,0 +1,175 @@
+/*
+ * 操作ヘルプ（design.md §8.10）。
+ * 読み物なので本文幅を絞り、キーの見た目は物理キーに寄せる。
+ */
+
+.dialog {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(80vh, 720px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--panel);
+  font-family: inherit;
+  overflow: hidden;
+}
+
+.dialog::backdrop {
+  background: rgb(15 23 42 / 45%);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 見出しの下だけをスクロールさせる。閉じるボタンは常に見えていてよい */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: calc(min(80vh, 720px) - 53px);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12.5px;
+}
+
+.steps li + li {
+  margin-top: 4px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+/*
+ * キー列は固定幅。動作の文が左端で揃わないと表として読めない。
+ * 幅が足りない画面では 1 行に落とす。
+ */
+.row {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+}
+
+.key {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--bg);
+}
+
+.or {
+  margin: 0 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.action {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.limitations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.limitations li {
+  padding-left: 10px;
+  border-left: 2px solid var(--warn-border);
+}
+
+.limitationTitle {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.limitationBody {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
