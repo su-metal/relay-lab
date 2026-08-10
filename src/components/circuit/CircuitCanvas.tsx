@@ -84,6 +84,31 @@ const edgeTypes = { [WIRE_EDGE_TYPE]: WireEdge };
 const HOVERED_WIRE_Z = 2000;
 
 /**
+ * 配線の重ね順（design.md §8.7）。
+ *
+ * 同じ座標を走る配線は重なり、**後に描かれた 1 本しか見えない。** レーン分離で
+ * 離せる重なりは離すが、それでも交差点は必ず残る。そこで
+ * **「隠されると情報そのものが消える線」ほど前面**に置く。
+ *
+ * これは §5.6 の判定順（最も危険な配線ミスを最も安全な見た目にしない）を
+ * 描画順へ延長したもの。実線に覆われた流れる線は「電流の向きが分からない」
+ * ではなく「向きが無い線」に見えてしまうので、色の判定順と同じ扱いが要る。
+ */
+const WIRE_Z = {
+  /** 電源短絡。交差点でも必ず見える */
+  short: 4,
+  /**
+   * 隠れると情報が消える線 —— 電流の向きの切れ目（§5.10）・自己保持の破線
+   * （§5.9）・配線漏れの破線（§5.8）。どれも模様そのものが意味を持つ
+   */
+  patterned: 3,
+  /** 生きている閉回路。待機線より前に出す */
+  energized: 2,
+  /** 待機線・役割色。既定 */
+  base: 0,
+} as const;
+
+/**
  * キー割り当ての実体は `lib/shortcuts.ts` にある（design.md §8.10）。
  * ヘルプの表を同じ定数から組み立てるための集約で、意味は次のとおり。
  *
@@ -272,13 +297,23 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         wireLanes,
         currentFlow,
       ).map((edge) => {
-        const zIndex = edge.id === hoveredWireId ? HOVERED_WIRE_Z : undefined;
+        const hovered = edge.id === hoveredWireId;
         const role = wireRoles.get(edge.id);
 
         if (!result) {
+          /*
+           * 停止中の重ね順。短絡が最前面、次が配線漏れの破線 —— どちらも
+           * 隠されると気付けない。制御線・電源線は既定のままでよい
+           */
+          const roleZ =
+            role === "short"
+              ? WIRE_Z.short
+              : role === "isolated"
+                ? WIRE_Z.patterned
+                : WIRE_Z.base;
           return {
             ...edge,
-            zIndex,
+            zIndex: hovered ? HOVERED_WIRE_Z : roleZ,
             className: role ? WIRE_ROLE_CLASS[role] : undefined,
           };
         }
@@ -292,13 +327,28 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
          * 「配線漏れ」の破線を引くのは明白な矛盾なので、食い違ったら
          * 現在の状態を優先する。
          */
-        const className =
-          state === "inactive" && role === "isolated"
-            ? `${styles.wireInactive} ${styles.wireUnreachable}`
-            : WIRE_CLASS[state];
+        const unreachable = state === "inactive" && role === "isolated";
+        const className = unreachable
+          ? `${styles.wireInactive} ${styles.wireUnreachable}`
+          : WIRE_CLASS[state];
+
+        /*
+         * 実行中の重ね順。模様（切れ目・破線）が意味を持つ線を、
+         * のっぺりした実線より前に出す。**実線に覆われた流れる線は
+         * 「向きが分からない」ではなく「向きが無い」に見える。**
+         */
+        const stateZ =
+          state === "short"
+            ? WIRE_Z.short
+            : state === "self-hold" || unreachable || edge.data?.flow
+              ? WIRE_Z.patterned
+              : state === "energized"
+                ? WIRE_Z.energized
+                : WIRE_Z.base;
+
         return {
           ...edge,
-          zIndex,
+          zIndex: hovered ? HOVERED_WIRE_Z : stateZ,
           className,
           /*
            * 自己保持の紫は線自身が流れる破線（§5.9）。そこへ切れ目の

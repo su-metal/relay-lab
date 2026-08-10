@@ -19,6 +19,18 @@
  * ここが返すのは「幹線をどれだけ動かすか」の px だけで、描画は
  * `components/edges/WireEdge.tsx` が `centerX` / `centerY` に足して行う。
  *
+ * ## 真っ直ぐ向かい合う配線だけは例外（`straightRunPath`）
+ *
+ * 両端の端子が同じ高さに並ぶと `getSmoothStepPath` は**直線**を返し、
+ * `centerX` / `centerY` をいくら動かしても線は 1 px も動かない。電源の 0V
+ * レールのように同じ高さの端子へ何本も渡す配線がまさにこれで、複数本が
+ * ピクセル単位で完全に重なる。**重なった線は後に描かれた 1 本しか見えない**
+ * ので、電流の向き（§5.10）も自己保持の破線（§5.9）も消える。
+ *
+ * この形だけは経路を自前で組む —— 端子から真っ直ぐ出て、レーンぶん横へ逃げ、
+ * 平行に走って、元の高さへ戻る。角の丸めは `getSmoothStepPath` と同じ規則で
+ * 付けるので、他の配線と見た目が揃う。
+ *
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
@@ -55,6 +67,29 @@ const HANDLE_GAP = 20;
 
 /** 角丸（`borderRadius` 既定 5）に食われるぶんの余白。幹線が潰れるまでは寄せない */
 const CORNER_SLACK = 6;
+
+/** 角の丸め半径。**React Flow の `borderRadius` 既定値と一致させること** */
+const CORNER_RADIUS = 5;
+
+/**
+ * 幹線の長さがこれ以下なら「両端が真っ直ぐ向かい合っている」とみなす。
+ *
+ * 0 と比べないのは、レーンを決めるここ（部品の位置＋端子の相対座標）と
+ * 描画側（React Flow が測った Handle の座標）で末尾の桁がずれうるため。
+ */
+const SPAN_EPSILON = 0.5;
+
+/**
+ * 真っ直ぐな配線を逃がせる上限。
+ *
+ * 幹線をずらす場合と違って経路が破綻する限界は無いが、**離しすぎると
+ * 線が部品の並びから浮いて、どの端子から出ているのか読めなくなる。**
+ * 3 レーンぶん（±30px）まで。それ以上混んだ束では一部が同じ道に残る。
+ */
+const STRAIGHT_ROOM = LANE_STEP * 3;
+
+/** 迂回の折れ 2 つが収まる最小の走行長。これを下回るなら曲げない */
+const MIN_JOG_RUN = 24;
 
 /** 端子の辺 → 配線が出ていく向き（`getSmoothStepPath` の `handleDirections` と同じ） */
 const SIDE_DIRECTION: Record<TerminalSide, Point> = {
@@ -146,6 +181,28 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
 
   const spanAxis = vertical ? "y" : "x";
   const coordAxis = vertical ? "x" : "y";
+
+  /*
+   * 幹線の長さが 0 —— 両端の端子が真っ直ぐ向かい合っており、描かれるのは
+   * 直線 1 本。`centerX` / `centerY` を動かしても線は動かないので、
+   * **走行そのものを幹線とみなして直交方向へ逃がす**（`straightRunPath`）。
+   * 幹線の向きも入れ替わる（横に走る線の幹線は横）。
+   */
+  if (
+    alongAxis &&
+    Math.abs(fromGap[spanAxis] - toGap[spanAxis]) <= SPAN_EPSILON
+  ) {
+    const run = Math.abs(toGap[coordAxis] - fromGap[coordAxis]);
+    return {
+      id,
+      vertical: !vertical,
+      coord: fromGap[spanAxis],
+      start: Math.min(fromGap[coordAxis], toGap[coordAxis]),
+      end: Math.max(fromGap[coordAxis], toGap[coordAxis]),
+      room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
+    };
+  }
+
   return {
     id,
     vertical,
@@ -157,6 +214,108 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
     ),
   };
+};
+
+/**
+ * 3 点 a → b → c の b で曲がる区間を、角を丸めた SVG コマンドにする。
+ *
+ * **React Flow の `getBend` と同じ規則。** 半径の決め方（隣り合う辺の
+ * 半分と `CORNER_RADIUS` の最小）まで揃えないと、自前で組んだ経路の角だけが
+ * 他の配線と違う丸みになって浮く。
+ */
+const bend = (a: Point, b: Point, c: Point): string => {
+  const length = (p: Point, q: Point) =>
+    Math.sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
+  const size = Math.min(
+    length(a, b) / 2,
+    length(b, c) / 2,
+    CORNER_RADIUS,
+  );
+  const { x, y } = b;
+
+  // 一直線に並んでいる（＝曲がらない）ならただ通過する
+  if ((a.x === x && x === c.x) || (a.y === y && y === c.y)) {
+    return `L ${x},${y}`;
+  }
+
+  if (a.y === y) {
+    const xDir = a.x < c.x ? -1 : 1;
+    const yDir = a.y < c.y ? 1 : -1;
+    return `L ${x + size * xDir},${y}Q ${x},${y} ${x},${y + size * yDir}`;
+  }
+  const xDir = a.x < c.x ? 1 : -1;
+  const yDir = a.y < c.y ? -1 : 1;
+  return `L ${x},${y + size * yDir}Q ${x},${y} ${x + size * xDir},${y}`;
+};
+
+export type StraightRunParams = {
+  source: Point;
+  target: Point;
+  sourceSide: TerminalSide;
+  targetSide: TerminalSide;
+  /** 走行に直交する向きへ逃がす量（px）。`buildWireLanes` が配る値 */
+  offset: number;
+};
+
+/**
+ * 真っ直ぐ向かい合った 2 端子を、`offset` px 横へ逃がして結ぶ経路を組む。
+ *
+ * ```
+ *   ┌──────────────┐        ← offset ぶん逃げた走行
+ *  ─┘              └─        ← 端子から真っ直ぐ出る HANDLE_GAP
+ * ```
+ *
+ * **この形でない配線には `null` を返す**（呼び出し側は `getSmoothStepPath` に
+ * 戻す）。判定は `trunkOf` の分岐とまったく同じ条件で行うが、渡ってくる座標は
+ * React Flow が測った実測値なので、ここでも独立に確かめる —— レーンだけ配られて
+ * 経路が直線のまま、という食い違いを起こさないため。
+ */
+export const straightRunPath = ({
+  source,
+  target,
+  sourceSide,
+  targetSide,
+  offset,
+}: StraightRunParams): string | null => {
+  if (offset === 0) return null;
+
+  const fromDir = SIDE_DIRECTION[sourceSide];
+  const toDir = SIDE_DIRECTION[targetSide];
+  const horizontal = sourceSide === "left" || sourceSide === "right";
+  const axis = horizontal ? "x" : "y";
+  const cross = horizontal ? "y" : "x";
+
+  // 真っ直ぐ並んでいない／向かい合っていない／回り込んでいる配線は対象外
+  if (Math.abs(source[cross] - target[cross]) > SPAN_EPSILON) return null;
+  if (fromDir[axis] * toDir[axis] !== -1) return null;
+  const dir = target[axis] > source[axis] ? 1 : -1;
+  if (fromDir[axis] !== dir) return null;
+
+  if (Math.abs(target[axis] - source[axis]) - HANDLE_GAP * 2 < MIN_JOG_RUN) {
+    return null;
+  }
+
+  /** 走行方向の位置と、走行から直交方向へずれた量から点を作る */
+  const at = (along: number, aside: number): Point =>
+    horizontal
+      ? { x: along, y: source.y + aside }
+      : { x: source.x + aside, y: along };
+
+  const points: Point[] = [
+    at(source[axis], 0),
+    at(source[axis] + dir * HANDLE_GAP, 0),
+    at(source[axis] + dir * HANDLE_GAP, offset),
+    at(target[axis] - dir * HANDLE_GAP, offset),
+    at(target[axis] - dir * HANDLE_GAP, 0),
+    at(target[axis], 0),
+  ];
+
+  let path = `M ${points[0].x},${points[0].y}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    path += bend(points[index - 1], points[index], points[index + 1]);
+  }
+  const last = points[points.length - 1];
+  return `${path}L ${last.x},${last.y}`;
 };
 
 /**

@@ -23,8 +23,24 @@ import { BaseEdge, Position, getSmoothStepPath } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 
 import type { WireEdge as WireEdgeType } from "@/circuit/adapter/reactflow";
+import { straightRunPath } from "@/circuit/adapter/wire-lane";
+import type { TerminalSide } from "@/circuit/types";
 
 import styles from "./WireEdge.module.css";
+
+/**
+ * React Flow の `Position` → 端子の辺。
+ *
+ * 値は同じ文字列だが**キャストで済ませない。** `wire-lane.ts` は
+ * `@xyflow/react` に実行時依存を持たない（node 環境の Vitest で検証するため）
+ * ので、React Flow の型を持ち込むのはこちら側の仕事。
+ */
+const SIDE_OF_POSITION: Record<Position, TerminalSide> = {
+  [Position.Left]: "left",
+  [Position.Right]: "right",
+  [Position.Top]: "top",
+  [Position.Bottom]: "bottom",
+};
 
 /**
  * つなぎ替えの掴み手の半径（design.md §8.8）。React Flow の `reconnectRadius` に
@@ -79,7 +95,22 @@ export function WireEdge({
 }: EdgeProps<WireEdgeType>) {
   const lane = data?.lane ?? 0;
   const flow = data?.flow;
-  const [path] = getSmoothStepPath({
+
+  /*
+   * 両端が真っ直ぐ向かい合う配線は `getSmoothStepPath` が直線を返し、
+   * `centerX` / `centerY` を動かしても 1 px も動かない（design.md §8.7）。
+   * この形だけは経路を自前で組んで、レーンぶん横へ逃がす。
+   * 対象外なら `null` が返り、従来どおり smoothstep に任せる。
+   */
+  const jogged = straightRunPath({
+    source: { x: sourceX, y: sourceY },
+    target: { x: targetX, y: targetY },
+    sourceSide: SIDE_OF_POSITION[sourcePosition],
+    targetSide: SIDE_OF_POSITION[targetPosition],
+    offset: lane,
+  });
+
+  const [smoothPath] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -95,6 +126,8 @@ export function WireEdge({
     centerX: lane === 0 ? undefined : (sourceX + targetX) / 2 + lane,
     centerY: lane === 0 ? undefined : (sourceY + targetY) / 2 + lane,
   });
+
+  const path = jogged ?? smoothPath;
 
   // 掴み手の当たり判定は React Flow（EdgeUpdateAnchors）が透明な円で持っている。
   // ここで描くのは**見えるようにするための点だけ**なので、同じ位置に重ねる
