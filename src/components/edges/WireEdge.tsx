@@ -132,10 +132,13 @@ export function WireEdge({
       />
       {/*
         電流の向き（design.md §5.10）。線の上を背景色の切れ目が流れていく。
-        **向きが決まった線にしか出さない** —— 並列に分かれた区間は
-        実際に分流するので、`current-flow.ts` が向きを返さない
+
+        出さないのは 2 つ。**向きが決まらない線**（並列に分かれた区間は実際に
+        分流するので `current-flow.ts` が向きを返さない）と、**線そのものが
+        流れる破線になっている線**（自己保持の紫。重ねると周期の違う破線が
+        2 つ重なって模様が壊れる —— そちらは上の `animationDirection` が担う）
       */}
-      {flow && (
+      {flow && !data?.flowOnStroke && (
         <path className={styles.flow} data-flow={flow} d={path} />
       )}
       {/*

@@ -296,7 +296,20 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
           state === "inactive" && role === "isolated"
             ? `${styles.wireInactive} ${styles.wireUnreachable}`
             : WIRE_CLASS[state];
-        return { ...edge, zIndex, className };
+        return {
+          ...edge,
+          zIndex,
+          className,
+          /*
+           * 自己保持の紫は線自身が流れる破線（§5.9）。そこへ切れ目の
+           * オーバーレイを重ねると**周期の違う破線が 2 つ重なり、模様が壊れる。**
+           * 向きは線の `animation-direction` に任せる（§5.10）。
+           *
+           * 破線を持つ他の状態（`wireUnreachable` / `wireShort`）は
+           * そもそも通電していないので `flow` を持たず、ここには来ない。
+           */
+          data: { ...edge.data, flowOnStroke: state === "self-hold" },
+        };
       }),
     [
       currentFlow,
