@@ -1,0 +1,53 @@
+# main に入った変更を Cloudflare Workers へ配る（design.md §2）。
+#
+# `ci.yml` と分けているのは、**検証は全ブランチ・配布は main だけ**だから。
+# 1 つのワークフローに if で押し込めると、配布しない実行にも配布の設定
+# （Secrets・concurrency）が付いて回り、どちらの都合で失敗したのか読めなくなる。
+#
+# 配布前にもう一度テストとビルドを回すのは重複ではなく、**このワークフロー単体で
+# 「壊れたものを配らない」を成立させるため**。workflow_run で ci.yml の成功に
+# ぶら下げる書き方もあるが、手動実行（workflow_dispatch）や main への直 push で
+# 検証の無い配布経路ができてしまう。
+name: デプロイ
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 配布は追い越し禁止。CI と違い cancel-in-progress は付けない ——
+# wrangler の途中で打ち切ると、どの版が本番に載っているのかが分からなくなる
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # ci.yml と揃える。package-lock.json をキャッシュキーにする
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: テスト
+        run: npm test
+
+      # `next.config.ts` の output: "export" で out/ を書き出す。
+      # wrangler.jsonc の assets.directory がこの out/ を指している
+      - name: 静的書き出し
+        run: npm run build
+
+      # wrangler は devDependencies に入っているので npx はローカル版を使う
+      # （package-lock.json で版が固定される）
+      - name: Cloudflare へ配布
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # トークンが複数アカウントに届く場合に配布先を確定させる
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

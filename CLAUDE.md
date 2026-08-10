@@ -9,6 +9,7 @@
 - CSS は **CSS Modules**。Tailwind 等の CSS フレームワークは使わない
 - バックエンド・ログイン・DB は持たない。永続化は LocalStorage
 - 部品データは TypeScript でローカル保持。将来 Supabase / Firebase へ移行できる構造を崩さない
+- デプロイは **main への push で自動**（`.github/workflows/deploy.yml`）。静的書き出し（`out/`）を Cloudflare Workers へ配る。リポジトリの Actions Secrets に `CLOUDFLARE_API_TOKEN`（必要なら `CLOUDFLARE_ACCOUNT_ID`）が要る。手元から配るなら `npm run deploy`（`design.md` §9.1）
 
 ## 設計原則（必ず守ること）
 
