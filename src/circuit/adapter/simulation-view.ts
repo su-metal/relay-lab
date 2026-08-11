@@ -1,7 +1,7 @@
 /**
  * `SimulationResult` を画面表示用の状態へ落とす層（design.md §5.6・§8.2）。
  *
- * エンジンが返すのはネットごとの `{ reachesPlus, reachesZero }` の 2 ビットまで。
+ * エンジンが返すのはネットごとの「どの電源の + / 0V に届くか」まで。
  * **「緑＝通電中」は 2 ビットだけでは決まらない**（design.md §5.6）ので、
  * 負荷側の結果（`energizedRelays` / `litLamps`）と突き合わせてここで決める。
  * この判断を UI 層に置いたのは、エンジンに表示都合を持ち込まないため。
@@ -9,6 +9,7 @@
  * このファイルは React を import しない純粋関数なので、node 環境の Vitest で検証できる。
  */
 
+import { isShorted, reachesPlus, reachesZero } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
@@ -21,7 +22,7 @@ import { EMPTY_SELF_HOLD, type SelfHoldView } from "./self-hold";
 /**
  * 端子・配線の表示状態（design.md §5.6 の表に対応）。
  *
- * `short` を独立させているのは、`reachesPlus && reachesZero` が
+ * `short` を独立させているのは、同じ電源の + と 0V が同じネットに乗る状態が
  * 「通電中」ではなく **電源短絡そのもの**だから。負荷をグラフ上で union しない
  * 設計（design.md §5.2）の下では、正常な回路にこのネットは現れない。
  */
@@ -63,6 +64,16 @@ export type DeviceSimulationState = {
   lit: boolean;
   /** 押しボタンが押下中か */
   pressed: boolean;
+  /**
+   * **操作しているのに、両端がどちらの電源にも届いていないスイッチ**
+   * （design.md §5.12）。スイッチ以外は常に false。
+   *
+   * 「ON なのに配線が灰色」は、放っておくと**バグに見える。** 実際には
+   * 正しい —— スイッチを閉じることは 2 点を繋ぐだけで、電流を作らない。
+   * 先行優先回路のように「起動した瞬間に自分が回路から切り離される」
+   * 使い方では、これが正常な最終状態になる。
+   */
+  cutOff: boolean;
 };
 
 export type SimulationView = {
@@ -132,10 +143,10 @@ const wireStateOfNet = (
   if (netId === undefined) return "inactive";
   const state = result.netState.get(netId);
   if (!state) return "inactive";
-  if (state.reachesPlus && state.reachesZero) return "short";
+  if (isShorted(state)) return "short";
   if (energizedNets.has(netId)) return "energized";
-  if (state.reachesPlus) return "plus";
-  if (state.reachesZero) return "zero";
+  if (reachesPlus(state)) return "plus";
+  if (reachesZero(state)) return "zero";
   return "inactive";
 };
 
@@ -187,13 +198,31 @@ export const buildSimulationView = (
       );
     }
 
+    /*
+     * 操作しているのに両端が非通電のスイッチ（§5.12）。
+     *
+     * **端子の色をここで組み終わってから判定する。** 「ON なのに灰色」は
+     * まさに端子の色そのものから読み取れる矛盾であり、別の経路で導くと
+     * 画面の色と食い違いうる。
+     */
+    const operated = pressedSwitches.has(instance.id);
+    const cutOff =
+      definition.electrical.kind === "switch" &&
+      operated &&
+      definition.terminals.every(
+        (terminal) =>
+          (terminalOf.get(terminalKey(instance.id, terminal.id)) ??
+            "inactive") === "inactive",
+      );
+
     // 実行中はすべての部品にエントリを作る。存在すること自体が
     // 「シミュレーション中」の合図になり、ノード側は追加の判定を持たずに済む
     deviceOf.set(instance.id, {
       energized: result.energizedRelays.has(instance.id),
       selfHeld: selfHold.relays.has(instance.id),
       lit: result.litLamps.has(instance.id),
-      pressed: pressedSwitches.has(instance.id),
+      pressed: operated,
+      cutOff,
     });
   }
 

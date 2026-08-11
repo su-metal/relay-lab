@@ -19,6 +19,7 @@ import { MAX_ITERATIONS } from "@/lib/app-info";
 
 import { inspectDiodes } from "./diode";
 import type { NetLookup } from "./graph";
+import { shortedSupplies } from "./potential";
 
 /**
  * 警告文に使う部品の呼び名。
@@ -44,14 +45,18 @@ const nameResolver = (
 };
 
 /**
- * 電源短絡。+ 側の電位と 0V 側の電位が同じネットに乗っている状態。
+ * 電源短絡。**同じ 1 台の電源**の + 側と 0V 側が同じネットに乗っている状態。
  *
  * 負荷を union しない設計（design.md §5.2）のおかげで、
  * これは「配線ミスで電源が直結された」ことと厳密に一致する。
  *
- * ネット ID の一致ではなく `NetState` の 2 ビットで見るのは、順方向の
+ * ネット ID の一致ではなく `NetState` の到達集合で見るのは、順方向の
  * ダイオードを経由した短絡（§5.4）を取りこぼさないため。ダイオードは
  * union されないので + 側と 0V 側は別ネットのままだが、電位は伝わっている。
+ *
+ * **「1 台の」が要点。** PS1 の + と PS2 の 0V が同じネットに乗るのは短絡では
+ * ない（基準が繋がっていないので電流が流れない）。直列接続した 2 台の電源も
+ * 同じ理由で短絡にならず、正しく通る（design.md §5.3）。
  */
 export const detectPowerShortCircuits = (
   document: CircuitDocument,
@@ -70,8 +75,10 @@ export const detectPowerShortCircuits = (
       terminalKey(instance.id, electrical.positiveTerminal),
     );
     if (plusNet === undefined) continue;
-    const state = lookup.netState.get(plusNet);
-    if (!state?.reachesPlus || !state.reachesZero) continue;
+    // 自分の 0V が自分の + と同じネットに乗っているか
+    if (!shortedSupplies(lookup.netState.get(plusNet)).includes(instance.id)) {
+      continue;
+    }
 
     warnings.push({
       code: "power-short-circuit",

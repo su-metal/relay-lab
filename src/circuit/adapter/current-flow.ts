@@ -12,16 +12,20 @@
  *
  * ## 何に向きを付けるか
  *
- * 付けるのは **必ず通る線（橋）だけ。** 並列に分岐した区間は、実際にも
- * 両方へ分流するので「どちらへ流れるか」が 1 本に決まらない。
- * ここで無理に向きを描くと、電流が分かれていることを隠すぶん嘘になる。
- * §5.9 の紫が同じ理由で橋だけを塗っているのと同じ判断で、
+ * 基本は **必ず通る線（橋）。** 加えて、入口と出口の間に並列に並んだ枝の束は、
+ * 枝の中の向きが入口 → 出口で確定するので向きを付ける（`orientedEdgesOnPath`）。
+ * **分流するから決まらない、のは「どちらの枝を通るか」であって
+ * 「枝の中でどちら向きか」ではない。**
+ *
+ * 束と見なせない形 —— 途中で枝分かれする・区間の内側から外へ橋が出ている
+ * （ホイートストンブリッジのような形）—— は今までどおり向きを出さない。
+ * §5.9 の紫が橋だけを塗っているのと同じ判断で、
  * **塗り漏れ（向きが出ない線）はあっても、誤った向きは出ない。**
  *
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { atPlus } from "@/circuit/engine";
+import { polarityAcross } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
@@ -33,7 +37,7 @@ import { terminalKey, terminalRefKey } from "@/circuit/types";
 import {
   PLUS_NODE,
   ZERO_NODE,
-  orientedBridgesOnPath,
+  orientedEdgesOnPath,
   solvePathGraph,
 } from "./path-graph";
 
@@ -84,9 +88,16 @@ export const orientLoad = (
   const stateOf = (key: string): NetState | undefined =>
     result.netState.get(result.netOf.get(key) ?? -1);
 
-  if (atPlus(stateOf(keyA))) return { inlet: keyA, outlet: keyB };
-  if (atPlus(stateOf(keyB))) return { inlet: keyB, outlet: keyA };
-  // 通電しているのにどちらも + 側でない＝短絡か浮いている。向きは付けない
+  /*
+   * **片側だけを見て「+ 側だから入口」と決めない。** 電源が複数あると、
+   * 片側が PS1 の + に、もう片側が PS2 の 0V に届いていることがある ——
+   * 基準が繋がっていなければ電流は流れないので、入口も出口も無い。
+   * 両端を突き合わせる `polarityAcross` に判定を寄せる（design.md §5.3）。
+   */
+  const polarity = polarityAcross(stateOf(keyA), stateOf(keyB));
+  if (polarity === "forward") return { inlet: keyA, outlet: keyB };
+  if (polarity === "reverse") return { inlet: keyB, outlet: keyA };
+  // 通電しているのに電位差が読めない＝短絡か浮いている。向きは付けない
   return null;
 };
 
@@ -187,24 +198,12 @@ export const buildCurrentFlow = (
      * 負荷は union されていない（§5.2）ので、この 2 本を別々に辿って
      * 初めて一周になる —— §5.9 の保持ループとまったく同じ組み立て方。
      *
-     * どちらも `orientedBridgesOnPath` の `from` を**電流の上流**に置く。
+     * どちらも `orientedEdgesOnPath` の `from` を**電流の上流**に置く。
      * こうすると返ってくる `tail → head` がそのまま電流の向きになる。
      */
     const runs = [
-      orientedBridgesOnPath(
-        graph,
-        bridges,
-        componentOf,
-        PLUS_NODE,
-        load.inlet,
-      ),
-      orientedBridgesOnPath(
-        graph,
-        bridges,
-        componentOf,
-        load.outlet,
-        ZERO_NODE,
-      ),
+      orientedEdgesOnPath(graph, bridges, componentOf, PLUS_NODE, load.inlet),
+      orientedEdgesOnPath(graph, bridges, componentOf, load.outlet, ZERO_NODE),
     ];
 
     for (const run of runs) {

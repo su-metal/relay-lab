@@ -5,8 +5,8 @@
  * 一方通行を無向グラフの Union-Find で表せないという §5.4 の事情は変わっていない。
  * 代わりに、ネットを組み終えた後の電位をアノード → カソードの一方向にだけ流す。
  *
- * - `reachesPlus` は アノード側ネット → カソード側ネット へ伝わる（順方向探索）
- * - `reachesZero` は カソード側ネット → アノード側ネット へ伝わる（逆方向探索）
+ * - `plusFrom`（+ 側に届いている電源）は アノード側ネット → カソード側ネット へ伝わる（順方向探索）
+ * - `zeroFrom`（0V 側に届いている電源）は カソード側ネット → アノード側ネット へ伝わる（逆方向探索）
  *
  * これが §5.4 が予告していた「2 パス探索」で、ネットの分割そのものは変えないため
  * コイル（§5.3）とランプの判定規則は 1 行も変わらない。
@@ -23,6 +23,16 @@ import type {
 import { terminalKey } from "@/circuit/types";
 
 import type { NetLookup } from "./graph";
+import { reachesPlus, spansSupply } from "./potential";
+
+/**
+ * 伝搬中だけ使う可変版の `NetState`。
+ * 読み出し側（`NetState`）は `ReadonlySet` なので、書き換えはここに閉じる。
+ */
+export type MutableNetState = {
+  plusFrom: Set<string>;
+  zeroFrom: Set<string>;
+};
 
 /** ネット間の有向辺。アノード側ネット → カソード側ネット */
 export type DiodeEdge = {
@@ -66,10 +76,21 @@ export const collectDiodeEdges = (
  * 辺は回路 1 枚で高々数本なので素朴な反復で足りる。
  */
 export const spreadThroughDiodes = (
-  states: Map<number, NetState>,
+  states: Map<number, MutableNetState>,
   edges: readonly DiodeEdge[],
 ): void => {
   if (edges.length === 0) return;
+
+  /** `from` の要素を `into` へ足す。1 個でも増えたら true */
+  const absorb = (into: Set<string>, from: ReadonlySet<string>): boolean => {
+    let grew = false;
+    for (const id of from) {
+      if (into.has(id)) continue;
+      into.add(id);
+      grew = true;
+    }
+    return grew;
+  };
 
   for (let changed = true; changed; ) {
     changed = false;
@@ -78,16 +99,12 @@ export const spreadThroughDiodes = (
       const cathode = states.get(edge.cathodeNet);
       if (!anode || !cathode) continue;
 
-      // 順方向：+ 側の電位はアノードからカソードへ抜ける
-      if (anode.reachesPlus && !cathode.reachesPlus) {
-        cathode.reachesPlus = true;
-        changed = true;
-      }
+      // 順方向：+ 側の電位はアノードからカソードへ抜ける。
+      // **どの電源から来たのかも一緒に運ぶ** —— ここで潰すと、ダイオードの
+      // 先で「別の電源の 0V」と組み合わさって通電と誤判定される
+      if (absorb(cathode.plusFrom, anode.plusFrom)) changed = true;
       // 逆方向探索：0V へ「戻れる」のもカソード側からアノード側だけ
-      if (cathode.reachesZero && !anode.reachesZero) {
-        anode.reachesZero = true;
-        changed = true;
-      }
+      if (absorb(anode.zeroFrom, cathode.zeroFrom)) changed = true;
     }
   }
 };
@@ -119,8 +136,8 @@ export type DiodeInspection = {
   componentId: string;
   bias: DiodeBias;
   /**
-   * 負荷を挟まずに + と 0V をまたいでいる。
-   * `reachesPlus` がアノード側に、`reachesZero` がカソード側に届いている状態で、
+   * 負荷を挟まずに + と 0V をまたいでいる。**同じ 1 台の電源**の + が
+   * アノード側に、0V がカソード側に届いている状態で、
    * 実機ではダイオードに電流が集中して焼損する。
    */
   shorting: boolean;
@@ -163,8 +180,8 @@ const biasOf = (
   cathode: NetState | undefined,
 ): DiodeBias => {
   // 伝搬後は順方向のカソード側にも + が乗っているので、アノード側から見る
-  if (anode?.reachesPlus) return "forward";
-  if (cathode?.reachesPlus) return "reverse";
+  if (reachesPlus(anode)) return "forward";
+  if (reachesPlus(cathode)) return "reverse";
   return "none";
 };
 
@@ -196,7 +213,9 @@ export const inspectDiodes = (
     return {
       componentId: edge.componentId,
       bias: biasOf(anode, cathode),
-      shorting: anode?.reachesPlus === true && cathode?.reachesZero === true,
+      // **同じ 1 台の電源**をまたいでいるときだけ焼損する。別々の電源の
+      // + と 0V をまたいでも、基準が繋がっていなければ電流は流れない
+      shorting: spansSupply(anode, cathode),
       flyback:
         relayId === undefined
           ? undefined

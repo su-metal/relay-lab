@@ -14,7 +14,11 @@ import type {
 } from "@/circuit/types";
 import { terminalKey, terminalRefKey } from "@/circuit/types";
 
-import { collectDiodeEdges, spreadThroughDiodes } from "./diode";
+import {
+  collectDiodeEdges,
+  spreadThroughDiodes,
+  type MutableNetState,
+} from "./diode";
 import { closedContactPairs, type TerminalPair } from "./relay";
 
 /**
@@ -192,33 +196,36 @@ export const buildNets = (
 /**
  * 各ネットの電位状態を求める。
  *
- * 電源部品の + 端子が属するネットに `reachesPlus`、
- * 0V 端子が属するネットに `reachesZero` を立て、
+ * 電源部品の + 端子が属するネットに**その電源のインスタンス ID**を
+ * `plusFrom` として、0V 端子が属するネットに `zeroFrom` として記録し、
  * そのあとダイオードを通して**一方向にだけ**伝搬させる（design.md §5.4）。
  *
- * 両方立ったネットは電源短絡である（validation.ts で検出する）。
- * ダイオードを跨いで両方立った場合も同じ意味 —— 負荷を挟まずに
- * + から 0V へ抜ける経路ができており、実機ではダイオードが焼損する。
+ * **どの電源のものかを残すのが要点。** 真偽値 2 個に潰すと、基準を共有して
+ * いない 2 台の電源をまたいだ負荷が通電と出る（design.md §5.3）。
+ *
+ * **同じ 1 台**の + と 0V が同じネットに乗ったら電源短絡である
+ * （validation.ts で検出する）。ダイオードを跨いで両方乗った場合も同じ意味 ——
+ * 負荷を挟まずに + から 0V へ抜ける経路ができており、実機では焼損する。
  */
 export const computeNetStates = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   nets: NetAssignment,
 ): Map<number, NetState> => {
-  const states = new Map<number, NetState>();
+  /** 伝搬中は書き換えるので可変の Set で持ち、`NetState` として読み出す */
+  const states = new Map<number, MutableNetState>();
   for (let id = 0; id < nets.netCount; id += 1) {
-    states.set(id, { reachesPlus: false, reachesZero: false });
+    states.set(id, { plusFrom: new Set(), zeroFrom: new Set() });
   }
 
   const mark = (
     componentId: string,
     terminalId: string,
-    flag: keyof NetState,
+    side: "plusFrom" | "zeroFrom",
   ): void => {
     const netId = nets.netOf.get(terminalKey(componentId, terminalId));
     if (netId === undefined) return;
-    const state = states.get(netId);
-    if (state) state[flag] = true;
+    states.get(netId)?.[side].add(componentId);
   };
 
   for (const instance of document.components) {
@@ -226,8 +233,8 @@ export const computeNetStates = (
     if (!definition) continue;
     const { electrical } = definition;
     if (electrical.kind !== "power") continue;
-    mark(instance.id, electrical.positiveTerminal, "reachesPlus");
-    mark(instance.id, electrical.zeroTerminal, "reachesZero");
+    mark(instance.id, electrical.positiveTerminal, "plusFrom");
+    mark(instance.id, electrical.zeroTerminal, "zeroFrom");
   }
 
   spreadThroughDiodes(

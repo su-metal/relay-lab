@@ -133,6 +133,28 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
           {maintained ? (operated ? "ON" : "OFF") : operated ? "押下中" : "押す"}
         </button>
       )}
+
+      {/*
+        操作しているのに両端が非通電（design.md §5.12）。
+
+        **「ON なのに配線が灰色」を矛盾のまま放置しない。** 実際には正しい ——
+        スイッチを閉じるのは 2 点を繋ぐだけで、電流を作る操作ではない。
+        先行優先回路では「起動した瞬間に自分が回路から切り離される」ことが
+        正常な最終状態になる。黙っているとバグとして受け取られる。
+
+        **出し入れではなく `visibility` で見せ消しする。** 条件付きで DOM から
+        外すと行の高さが消え、上下中央寄せの本体ごと繰り上がって操作ボタンが
+        動く。ON にした瞬間にボタンが逃げると押し間違えるので、
+        シミュレーション中は切離の有無に関わらず 1 行分を確保しておく。
+      */}
+      {simulation && (
+        <span
+          className={styles.cutOffCaption}
+          data-visible={simulation.cutOff ? "true" : undefined}
+        >
+          回路から切離
+        </span>
+      )}
     </div>
   );
 }

@@ -358,6 +358,22 @@
   font-weight: 600;
 }
 
+/*
+ * 起動経路（design.md §5.12）。**今は電流が流れていない経路**なので、
+ * 保持経路と同じ緑では描けない。破線＋薄い色にして「かつて通った道」に見せる
+ * —— §5.6 が待機線の濃さを落としているのと同じ軸。
+ */
+.pathBroken {
+  border-left-style: dashed;
+  border-left-color: var(--border);
+  color: var(--text-muted);
+}
+
+.pathLoadBroken {
+  color: var(--text-muted);
+  background: none;
+}
+
 .reachList {
   display: flex;
   flex-direction: column;

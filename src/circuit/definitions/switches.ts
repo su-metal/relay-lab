@@ -18,8 +18,12 @@ import { GENERIC_TERMINAL_SOURCE } from "./source-notes";
 /**
  * スイッチ共通の見た目サイズ。
  * 型番表示（"押しボタン A接点（モーメンタリ）"）が 2 行で収まる幅を確保する。
+ *
+ * 高さはシミュレーション中の最大構成 —— 型番 2 行 + 図記号 + 操作ボタン +
+ * 「回路から切離」の 1 行 —— が収まる分を取る。切離の行を出すときだけ
+ * 伸ばす作りにすると、ON にした瞬間に操作ボタンが動いて押し間違える。
  */
-const SWITCH_VISUAL = { width: 160, height: 170 };
+const SWITCH_VISUAL = { width: 160, height: 200 };
 
 type SwitchSpec = {
   id: string;

@@ -127,19 +127,60 @@ describe("buildSimulationView", () => {
       selfHeld: false,
       lit: false,
       pressed: false,
+      cutOff: false,
     });
     expect(view.deviceOf.get("l1")).toEqual({
       energized: false,
       selfHeld: false,
       lit: true,
       pressed: false,
+      cutOff: false,
     });
+    // 押していて、実際に電流も通っている。切り離されてはいない
     expect(view.deviceOf.get("s1")).toEqual({
       energized: false,
       selfHeld: false,
       lit: false,
       pressed: true,
+      cutOff: false,
     });
+  });
+
+  it("操作しているのに両端が非通電のスイッチを cutOff で示す", () => {
+    /*
+     * 押しボタンの先に何も繋がっていない回路（design.md §5.12）。
+     * 押しても電流は流れず、配線は灰色のまま —— **これは正しい。**
+     * スイッチを閉じるのは 2 点を繋ぐだけで、電流を作る操作ではない。
+     * 黙っているとバグに見えるので、状態として持ち上げる。
+     */
+    const floating: CircuitDocument = {
+      ...document,
+      // 押しボタンをどこにも繋がず、コイルは電源へ直結する
+      connections: [
+        wire("w-coil-plus", ["ry1", "14"], ["ps", "plus"]),
+        wire("w-coil-zero", ["ry1", "13"], ["ps", "zero"]),
+      ],
+    };
+    const pressedSwitches = new Set(["s1"]);
+    const result = simulate(floating, componentRegistry, { pressedSwitches });
+    const view = buildSimulationView(
+      floating,
+      componentRegistry,
+      result,
+      pressedSwitches,
+    );
+
+    expect(view.deviceOf.get("s1")?.cutOff).toBe(true);
+    // 押していないスイッチは対象外（「操作しているのに効かない」が読ませたい形）
+    const idle = buildSimulationView(
+      floating,
+      componentRegistry,
+      simulate(floating, componentRegistry, { pressedSwitches: new Set() }),
+      new Set(),
+    );
+    expect(idle.deviceOf.get("s1")?.cutOff).toBe(false);
+    // スイッチ以外には立たない
+    expect(view.deviceOf.get("ry1")?.cutOff).toBe(false);
   });
 
   it("実行中は全部品にエントリがある（停止中との区別に使う）", () => {

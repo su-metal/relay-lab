@@ -22,13 +22,21 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { conductingPairs, describeComponent } from "@/circuit/engine";
+import {
+  conductingPairs,
+  describeComponent,
+  polarityAcross,
+  reachesPlus,
+  reachesZero,
+  simulate,
+} from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
   ElectricalDefinition,
+  NetState,
   SimulationResult,
 } from "@/circuit/types";
 import { terminalKey } from "@/circuit/types";
@@ -99,6 +107,75 @@ export type OpenGate = {
   supply: "plus" | "zero";
 };
 
+/** 経路が今どこで切れているか（`StartPath.breaks`） */
+export type PathBreak = {
+  componentId: string;
+  label: string;
+  /** 今は開いている 2 端子のラベル */
+  terminalLabels: [string, string];
+};
+
+/**
+ * 起動経路 —— **そのリレーが非励磁だったときに、コイルへ電気を入れた道**
+ * （design.md §5.12）。
+ *
+ * 保持経路（`supplyRun` / `returnRun`）とは別物で、自己保持を組むと
+ * **起動した瞬間に自分の接点が起動経路を切る**ことがよくある。そうなると
+ * きっかけを作ったスイッチが画面上で完全に無関係に見える。
+ */
+export type StartPath = {
+  /** 電源 + からコイルの入口まで */
+  supply: PathRun;
+  /** コイルの出口から 0V まで */
+  back: PathRun;
+  /**
+   * この経路のうち、**今は開いている接点。** 空でないことが
+   * 「起動経路はもう生きていない」の根拠になる。
+   *
+   * `trigger` の押しボタン自身はここに入れない —— 「離したから開いている」は
+   * `trigger` がすでに言っており、2 度言うと接点が切れたせいに見える。
+   */
+  breaks: PathBreak[];
+  /**
+   * この経路を通すために**押していた押しボタン**（design.md §5.12）。
+   *
+   * オルタネートで起動した場合は無い（そのスイッチは今も ON のままなので、
+   * 何も押さずに経路が再現できる）。モーメンタリで起動して自己保持した回路は、
+   * 押しボタンが既に離れているぶん**現在の状態からは経路が 1 本も引けない** ——
+   * 「どのボタンで動いたのか」が最も分からない場面で何も出せなくなるので、
+   * 押しボタンを 1 個ずつ仮に押して経路が通るかを試す。
+   *
+   * **候補が 2 個以上あるときは諦める**（`startPathOf` が `null` を返す）。
+   * どちらのボタンで起動したかは状態から決まらず、片方だけ挙げると嘘になる。
+   */
+  trigger?: { componentId: string; label: string };
+};
+
+/**
+ * この負荷を落とす（消す）操作の候補（design.md §5.12）。
+ *
+ * **落ちないものも返す。** 「起動に使ったスイッチを戻せば落ちる」は
+ * 自己保持回路では成り立たず、そこが最も誤解される点だから。
+ */
+export type ReleaseAction = {
+  componentId: string;
+  label: string;
+  /** 操作の言い方（"OFF にする" / "押す" / "離す" / "ON にする"） */
+  action: string;
+  /**
+   * 同じ操作の「〜しても」の形（"OFF にしても" / "押しても"）。
+   *
+   * **`action` から機械的に作らない。** 日本語の活用は語ごとに違い
+   * （"押す" → "押しても"、"OFF にする" → "OFF にしても"）、
+   * 文字列を継ぎ足すと「OFF にするしても」のような文が出る。
+   */
+  concessive: string;
+  /** この操作で落ちるか */
+  releases: boolean;
+  /** そのスイッチが今操作されているか（ON 位置 / 押下中） */
+  operated: boolean;
+};
+
 export type LoadPathExplanation = {
   componentId: string;
   /** コイルかランプか。UI の言い回し（"励磁" / "点灯"）の出し分けに使う */
@@ -112,8 +189,24 @@ export type LoadPathExplanation = {
   /** 通電中: 電流が入る端子 / 出る端子のラベル */
   inletLabel?: string;
   outletLabel?: string;
+  /**
+   * 通電中のリレーで、**起動経路が今は切れている**ときだけ入る。
+   * 切れていない（今の経路がそのまま起動経路）なら省く —— 同じものを
+   * 2 度並べると、どちらが今の経路なのか読めなくなる
+   */
+  startPath?: StartPath;
+  /** 通電中: これを落とす操作の候補。停止中・非通電では省く */
+  releases?: ReleaseAction[];
   /** 非通電: 両端がどちらの電源に届いているか */
   reach?: [TerminalReach, TerminalReach];
+  /**
+   * 非通電: **両端とも電源に届いているのに、同じ電源ではない**（design.md §5.3）。
+   *
+   * 0V コモンの繋ぎ忘れ。両端の「届いています」だけを見せると
+   * 「届いているのに動かない」という最も不可解な画面になるので、
+   * ここだけは接点ではなく基準の話だと言い切る。
+   */
+  supplyMismatch?: boolean;
   /** 非通電: 閉じれば電源に届く接点。1 枚も無ければ空配列 */
   gates?: OpenGate[];
 };
@@ -357,6 +450,277 @@ const findGates = (
   return gates;
 };
 
+/** `from` → `to` の道を 1 本の区間列にする。橋の取得と畳み込みをまとめただけ */
+const runBetween = (
+  solved: SolvedPathGraph,
+  naming: Naming,
+  from: string,
+  to: string,
+): PathRun =>
+  describeRun(
+    solved.graph,
+    naming,
+    orientedBridgesOnPath(
+      solved.graph,
+      solved.bridges,
+      solved.componentOf,
+      from,
+      to,
+    ),
+    from,
+    to,
+  );
+
+/**
+ * 起動経路を 1 通りの操作状態について求める（design.md §5.12）。
+ *
+ * **「そのリレーが非励磁だった瞬間」を作るのは、自分の励磁だけを外した状態。**
+ * 他のリレーは今の状態のまま置く —— 全部落とすと回路の別の場所まで巻き戻り、
+ * 実際に起動したときの経路とは違う道が出る。
+ *
+ * `simulate()` は回さない。要るのは経路グラフ 1 枚だけで、収束の結果
+ * （どのリレーが最終的に上がるか）はここでは問わない。
+ *
+ * @param assumedPressed 経路を引くときに押していたことにするスイッチ。
+ *   `pressedSwitches` と別に受け取るのは、**切れているかの判定は必ず今の
+ *   操作状態で行う**ため —— 仮に押した状態で「切れていない」と答えたら、
+ *   起動経路が生きていることになってしまう
+ * @returns 経路が引けなければ `null`
+ */
+const startPathFrom = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  naming: Naming,
+  pressedSwitches: ReadonlySet<string>,
+  assumedPressed: ReadonlySet<string>,
+  energizedRelays: ReadonlySet<string>,
+  componentId: string,
+  coilTerminals: readonly [string, string],
+): StartPath | null => {
+  const beforePickup = new Set(energizedRelays);
+  beforePickup.delete(componentId);
+  const before = solvePathGraph(
+    document,
+    definitions,
+    assumedPressed,
+    beforePickup,
+  );
+
+  // 起動時にどちらの端子が + 側だったかは、その状態のグラフから読む
+  const keys = coilTerminals.map((terminal) =>
+    terminalKey(componentId, terminal),
+  ) as [string, string];
+  const reach = keys.map((key) => reachableFrom(before.graph, key));
+  const inletIndex = reach.findIndex((set) => set.has(PLUS_NODE));
+  if (inletIndex === -1) return null;
+  const outletIndex = inletIndex === 0 ? 1 : 0;
+  if (!reach[outletIndex].has(ZERO_NODE)) return null;
+
+  const supply = runBetween(before, naming, PLUS_NODE, keys[inletIndex]);
+  const back = runBetween(before, naming, keys[outletIndex], ZERO_NODE);
+
+  /*
+   * 起動経路のうち、**今は開いている**区間を拾う。ここが空でないことが
+   * 「この経路はもう生きていない」の根拠になる。判定はエンジンの
+   * `conductingPairs()` に聞く —— 開閉の規則を写さない。
+   */
+  const breaks: PathBreak[] = [];
+  for (const step of [...supply.steps, ...back.steps]) {
+    const instance = document.components.find(
+      (component) => component.id === step.componentId,
+    );
+    const definition = instance
+      ? definitions.get(instance.definitionId)
+      : undefined;
+    if (!instance || !definition) continue;
+
+    const closed = new Set(
+      conductingPairs(
+        instance.id,
+        definition.electrical,
+        { pressedSwitches },
+        energizedRelays,
+      ).map(([a, b]) => pairKey(a, b)),
+    );
+    /*
+     * **開閉する組だけを見る。** 区間の中には配線でつながっただけの端子ペアも
+     * 混じる（同じリレーの `2 → 14` のように、接点ではなく電線で結ばれた 2 端子は
+     * 1 区間に畳まれる）。それを「今は導通していない」と数えると、
+     * 切れてもいない場所を切れたと言うことになる。
+     */
+    const switchable = new Set(
+      gateCandidatesOf(instance, definition, step.label).map((candidate) =>
+        pairKey(candidate.a, candidate.b),
+      ),
+    );
+    // 区間は端子ラベルで持っているので、定義側の端子 ID へ戻す
+    const idOf = (label: string) =>
+      definition.terminals.find((terminal) => terminal.label === label)?.id;
+
+    for (let index = 0; index + 1 < step.terminalLabels.length; index += 1) {
+      const a = idOf(step.terminalLabels[index]);
+      const b = idOf(step.terminalLabels[index + 1]);
+      if (!a || !b) continue;
+      if (!switchable.has(pairKey(a, b))) continue;
+      if (closed.has(pairKey(a, b))) continue;
+      breaks.push({
+        componentId: instance.id,
+        label: step.label,
+        terminalLabels: [
+          step.terminalLabels[index],
+          step.terminalLabels[index + 1],
+        ],
+      });
+    }
+  }
+
+  return { supply, back, breaks };
+};
+
+/**
+ * 起動経路を求める（design.md §5.12）。
+ *
+ * まず**今の操作状態のまま**引いてみる。オルタネートで起動した回路はこれで
+ * 出る —— そのスイッチは今も ON のままだから。
+ *
+ * 出なければ、**離れている押しボタンを 1 個ずつ仮に押して**引き直す。
+ * モーメンタリで起動して自己保持した回路は、今の状態からは経路が 1 本も
+ * 引けない（起動に使ったボタンがもう離れている）。だが「どのボタンで
+ * 動いたのか分からない」のはまさにその場面であり、そこで何も出せないのでは
+ * 機能の意図と逆になる。
+ *
+ * @returns 起動経路が**今も生きている**（切れた接点が無く、押していた
+ *   ボタンも無い）場合は `null` —— 今の経路と同じものを 2 度並べても
+ *   読み手の助けにならない。仮押しの候補が 2 個以上あるときも `null`（どちらで
+ *   起動したかは状態から決まらず、片方だけ挙げると嘘になる）
+ */
+const startPathOf = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  naming: Naming,
+  pressedSwitches: ReadonlySet<string>,
+  energizedRelays: ReadonlySet<string>,
+  componentId: string,
+  coilTerminals: readonly [string, string],
+): StartPath | null => {
+  const resolve = (assumed: ReadonlySet<string>) =>
+    startPathFrom(
+      document,
+      definitions,
+      naming,
+      pressedSwitches,
+      assumed,
+      energizedRelays,
+      componentId,
+      coilTerminals,
+    );
+
+  const asIs = resolve(pressedSwitches);
+  // 切れた接点があるなら、今の保持経路とは別物。そのまま出す
+  if (asIs && asIs.breaks.length > 0) return asIs;
+
+  /*
+   * 仮押しの候補は**モーメンタリで、今は離れているもの**だけ。
+   *
+   * オルタネートを候補に入れない —— 今 OFF のオルタネートを押した経路は
+   * 「起動に使った道」ではなく「これから使える道」であり、別の問い。
+   * 押しっぱなしのボタンも入れない（それは `asIs` で既に出ている）。
+   */
+  const candidates: StartPath[] = [];
+  for (const instance of document.components) {
+    if (pressedSwitches.has(instance.id)) continue;
+    const definition = definitions.get(instance.definitionId);
+    if (definition?.electrical.kind !== "switch") continue;
+    if (definition.electrical.action !== "momentary") continue;
+
+    const assumed = new Set(pressedSwitches);
+    assumed.add(instance.id);
+    const path = resolve(assumed);
+    if (!path) continue;
+
+    candidates.push({
+      ...path,
+      // このボタン自身は「離したから開いている」だけ。`trigger` が言うので重ねない
+      breaks: path.breaks.filter((broken) => broken.componentId !== instance.id),
+      trigger: {
+        componentId: instance.id,
+        label: naming.labelOf(instance.id),
+      },
+    });
+    if (candidates.length > 1) return null;
+  }
+
+  return candidates[0] ?? null;
+};
+
+/**
+ * この負荷を落とす操作の候補を求める（design.md §5.12）。
+ *
+ * スイッチ 1 個ずつ「操作を反転させたら落ちるか」を `simulate()` で問う。
+ * 反転なので**起動系（ON を OFF に戻す）と停止系（b 接点を押す）の両方**が
+ * 同じ 1 つの規則で出る。
+ *
+ * **落ちない候補も返す。** 自己保持回路では「起動に使ったスイッチを戻せば
+ * 落ちる」が成り立たず、そこが最も誤解される点だから（UI が言い分ける）。
+ *
+ * 現在の励磁集合を `previousEnergizedRelays` に渡すのが要点 —— 渡さないと
+ * 双安定な自己保持が毎回解けてしまい、どの操作でも「落ちる」と答える（§3.4）。
+ */
+const releaseActionsOf = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  naming: Naming,
+  result: SimulationResult,
+  pressedSwitches: ReadonlySet<string>,
+  componentId: string,
+  kind: "relay" | "lamp",
+): ReleaseAction[] => {
+  const actions: ReleaseAction[] = [];
+
+  for (const instance of document.components) {
+    const definition = definitions.get(instance.definitionId);
+    if (!definition || definition.electrical.kind !== "switch") continue;
+
+    const operated = pressedSwitches.has(instance.id);
+    const flipped = new Set(pressedSwitches);
+    if (operated) flipped.delete(instance.id);
+    else flipped.add(instance.id);
+
+    const whatIf = simulate(document, definitions, {
+      pressedSwitches: flipped,
+      previousEnergizedRelays: result.energizedRelays,
+    });
+    const stillOn =
+      kind === "relay"
+        ? whatIf.energizedRelays.has(componentId)
+        : whatIf.litLamps.has(componentId);
+
+    const label = naming.labelOf(instance.id);
+    const maintained = definition.electrical.action === "maintained";
+    const wording = operated
+      ? maintained
+        ? { action: "OFF にする", concessive: "OFF にしても" }
+        : { action: "離す", concessive: "離しても" }
+      : maintained
+        ? { action: "ON にする", concessive: "ON にしても" }
+        : { action: "押す", concessive: "押しても" };
+
+    // 落ちない候補は、**今操作しているスイッチだけ**残す。触っていない
+    // スイッチまで「これでは落ちません」と並べるとただの雑音になる
+    if (!stillOn || operated) {
+      actions.push({
+        componentId: instance.id,
+        label,
+        ...wording,
+        releases: !stillOn,
+        operated,
+      });
+    }
+  }
+
+  return actions;
+};
+
 /**
  * 負荷 1 個の経路を説明する。
  *
@@ -418,31 +782,33 @@ export const explainLoadPath = (
         ? naming.terminalLabelOf(outlet.componentId, outlet.terminalId)
         : undefined,
       // 電流の上流を `from` に置くと、返る `tail → head` がそのまま流れる向きになる
-      supplyRun: describeRun(
-        solved.graph,
+      supplyRun: runBetween(solved, naming, PLUS_NODE, oriented.inlet),
+      returnRun: runBetween(solved, naming, oriented.outlet, ZERO_NODE),
+      /*
+       * 起動経路（§5.12）。**リレーだけ。** 「自分が非励磁だった瞬間」は
+       * 自分の励磁を外して作るもので、接点を持たないランプには定義できない。
+       * 今も生きている（切れた接点が無い）場合は `null` が返り、省かれる
+       */
+      startPath:
+        kind === "relay"
+          ? (startPathOf(
+              document,
+              definitions,
+              naming,
+              pressedSwitches,
+              result.energizedRelays,
+              instance.id,
+              terminals,
+            ) ?? undefined)
+          : undefined,
+      releases: releaseActionsOf(
+        document,
+        definitions,
         naming,
-        orientedBridgesOnPath(
-          solved.graph,
-          solved.bridges,
-          solved.componentOf,
-          PLUS_NODE,
-          oriented.inlet,
-        ),
-        PLUS_NODE,
-        oriented.inlet,
-      ),
-      returnRun: describeRun(
-        solved.graph,
-        naming,
-        orientedBridgesOnPath(
-          solved.graph,
-          solved.bridges,
-          solved.componentOf,
-          oriented.outlet,
-          ZERO_NODE,
-        ),
-        oriented.outlet,
-        ZERO_NODE,
+        result,
+        pressedSwitches,
+        instance.id,
+        kind,
       ),
     };
   }
@@ -497,7 +863,29 @@ export const explainLoadPath = (
     );
   }
 
-  return { componentId: instance.id, kind, active: false, reach, gates };
+  /*
+   * 0V コモンの繋ぎ忘れ（design.md §5.3）。
+   *
+   * **経路グラフではなくネット状態から読む。** `@plus` / `@zero` は電源を
+   * 1 点に束ねた仮想ノードなので、そこからの到達性では「どの電源か」が
+   * 落ちる。エンジンが持つ電源ごとの到達集合だけが答えを持っている。
+   */
+  const loadStates = keys.map((key) =>
+    result.netState.get(result.netOf.get(key) ?? -1),
+  ) as [NetState | undefined, NetState | undefined];
+  const supplyMismatch =
+    polarityAcross(loadStates[0], loadStates[1]) === "none" &&
+    ((reachesPlus(loadStates[0]) && reachesZero(loadStates[1])) ||
+      (reachesZero(loadStates[0]) && reachesPlus(loadStates[1])));
+
+  return {
+    componentId: instance.id,
+    kind,
+    active: false,
+    reach,
+    gates,
+    supplyMismatch: supplyMismatch || undefined,
+  };
 };
 
 /**
@@ -511,8 +899,10 @@ export const explainLoadPath = (
  * いる場合、同じ区間に `9 → 5 → 14` と並ぶ —— ここで区間ごと落とすと
  * 「何がこのコイルを保持しているのか」という肝心の情報が消える。
  */
-export const trimLoadEnds = (
-  explanation: LoadPathExplanation,
+const trimRuns = (
+  componentId: string,
+  supplySteps: readonly PathStep[] | undefined,
+  backSteps: readonly PathStep[] | undefined,
 ): { supply: PathStep[]; back: PathStep[] } => {
   const trim = (steps: readonly PathStep[], edge: "last" | "first") => {
     const copy = steps.map((step) => ({
@@ -521,7 +911,7 @@ export const trimLoadEnds = (
     }));
     const index = edge === "last" ? copy.length - 1 : 0;
     const step = copy[index];
-    if (!step || step.componentId !== explanation.componentId) return copy;
+    if (!step || step.componentId !== componentId) return copy;
     if (edge === "last") step.terminalLabels.pop();
     else step.terminalLabels.shift();
     if (step.terminalLabels.length === 0) copy.splice(index, 1);
@@ -529,7 +919,26 @@ export const trimLoadEnds = (
   };
 
   return {
-    supply: trim(explanation.supplyRun?.steps ?? [], "last"),
-    back: trim(explanation.returnRun?.steps ?? [], "first"),
+    supply: trim(supplySteps ?? [], "last"),
+    back: trim(backSteps ?? [], "first"),
   };
 };
+
+export const trimLoadEnds = (
+  explanation: LoadPathExplanation,
+): { supply: PathStep[]; back: PathStep[] } =>
+  trimRuns(
+    explanation.componentId,
+    explanation.supplyRun?.steps,
+    explanation.returnRun?.steps,
+  );
+
+/** 起動経路（§5.12）にも同じ整形をかける */
+export const trimStartPath = (
+  explanation: LoadPathExplanation,
+): { supply: PathStep[]; back: PathStep[] } =>
+  trimRuns(
+    explanation.componentId,
+    explanation.startPath?.supply.steps,
+    explanation.startPath?.back.steps,
+  );

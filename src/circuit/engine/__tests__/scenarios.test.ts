@@ -362,21 +362,94 @@ describe("ネット状態（design.md §5.6 の入力）", () => {
 
   it("押下中は + 側ネットと 0V 側ネットが区別できる", () => {
     const result = step(document, ["S1"]);
+    // **どの電源から届いているか**まで持つ（design.md §5.3）。
+    // 真偽値に潰すと、基準を共有していない 2 台の電源をまたいだ負荷が通電になる
     expect(stateOf(result, "RY1:14")).toEqual({
-      reachesPlus: true,
-      reachesZero: false,
+      plusFrom: new Set(["PS1"]),
+      zeroFrom: new Set(),
     });
     expect(stateOf(result, "RY1:13")).toEqual({
-      reachesPlus: false,
-      reachesZero: true,
+      plusFrom: new Set(),
+      zeroFrom: new Set(["PS1"]),
     });
   });
 
   it("開いているスイッチの先は非通電（グレー）になる", () => {
     const result = step(document, []);
     expect(stateOf(result, "RY1:14")).toEqual({
-      reachesPlus: false,
-      reachesZero: false,
+      plusFrom: new Set(),
+      zeroFrom: new Set(),
     });
+  });
+});
+
+/**
+ * 電源が複数あるときの基準（design.md §5.3）。
+ *
+ * **0V コモンの繋ぎ忘れは実務で最も多い配線ミスの 1 つ。** ネットの電位を
+ * 「+ 側に届く / 0V 側に届く」の真偽値 2 個で持つと、基準を共有していない
+ * 2 台の電源をまたいだ負荷が通電と出る —— 実機では帰り道が無いので流れない。
+ * 本来このツールが真っ先に捕まえるべき誤りなので、逆に「動きます」と
+ * 答えてはいけない。
+ */
+describe("複数電源と基準（0V コモン）", () => {
+  it("PS1 の + と PS2 の 0V をまたいだコイルは励磁しない", () => {
+    const straddle = circuit({ PS1: POWER, PS2: POWER, RY1: MY4N }, [
+      wire("PS1:plus", "RY1:14"),
+      wire("RY1:13", "PS2:zero"),
+    ]);
+    const result = step(straddle, []);
+
+    expect(energized(result)).toEqual([]);
+    // 短絡でもない。ただ帰り道が無いだけ
+    expect(result.warnings.map((w) => w.code)).not.toContain(
+      "power-short-circuit",
+    );
+  });
+
+  it("0V どうしを繋げば励磁する（コモンを取れば 1 つの基準系になる）", () => {
+    const common = circuit({ PS1: POWER, PS2: POWER, RY1: MY4N }, [
+      wire("PS1:plus", "RY1:14"),
+      wire("RY1:13", "PS2:zero"),
+      wire("PS2:zero", "PS1:zero"),
+    ]);
+
+    expect(energized(step(common, []))).toEqual(["RY1"]);
+  });
+
+  it("またいだランプも点灯しない", () => {
+    const straddle = circuit({ PS1: POWER, PS2: POWER, L1: LAMP }, [
+      wire("PS1:plus", "L1:1"),
+      wire("L1:2", "PS2:zero"),
+    ]);
+
+    expect(lit(step(straddle, []))).toEqual([]);
+  });
+
+  it("別々の電源の + と 0V が同じネットに乗っても短絡ではない", () => {
+    /*
+     * 電源を直列に繋いだ形（PS1 の 0V ＝ PS2 の +）。実機では 48V を作る
+     * 正しい配線で、短絡ではない。真偽値 2 個のモデルではここが誤検出になる。
+     */
+    const series = circuit({ PS1: POWER, PS2: POWER }, [
+      wire("PS1:zero", "PS2:plus"),
+    ]);
+    const result = step(series, []);
+
+    expect(result.warnings.map((w) => w.code)).not.toContain(
+      "power-short-circuit",
+    );
+  });
+
+  it("同じ電源の + と 0V を直結したら今までどおり短絡", () => {
+    const shorted = circuit({ PS1: POWER, PS2: POWER }, [
+      wire("PS1:plus", "PS1:zero"),
+    ]);
+    const result = step(shorted, []);
+
+    const short = result.warnings.find((w) => w.code === "power-short-circuit");
+    expect(short?.severity).toBe("error");
+    // 巻き込まれていない PS2 は警告されない
+    expect(short?.componentId).toBe("PS1");
   });
 });
