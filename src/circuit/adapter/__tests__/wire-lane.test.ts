@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LANE_STEP,
+  STRAIGHT_LANE_STEP,
   buildWireLanes,
   laneShift,
   straightRunPath,
@@ -70,6 +71,11 @@ describe("laneShift", () => {
     expect(laneShift(2)).toBe(-LANE_STEP);
     expect(laneShift(3)).toBe(LANE_STEP * 2);
     expect(laneShift(4)).toBe(-LANE_STEP * 2);
+  });
+
+  it("間隔を指定できる（迂回した走行は幹線より広く取る）", () => {
+    expect(laneShift(1, STRAIGHT_LANE_STEP)).toBe(STRAIGHT_LANE_STEP);
+    expect(laneShift(2, STRAIGHT_LANE_STEP)).toBe(-STRAIGHT_LANE_STEP);
   });
 });
 
@@ -161,7 +167,10 @@ describe("buildWireLanes", () => {
     const lanes = buildWireLanes(document, componentRegistry);
     const shifts = [lanes.get("w1") ?? 0, lanes.get("w2") ?? 0];
     expect(new Set(shifts).size).toBe(2);
-    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(LANE_STEP);
+    // 画面を横断する走行は幹線より広く離す（発光が触れて 1 本に見えないよう）
+    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(
+      STRAIGHT_LANE_STEP,
+    );
   });
 
   it("相手に背を向けて出る配線は対象外", () => {
@@ -220,7 +229,9 @@ describe("buildWireLanes", () => {
     const lanes = buildWireLanes(document, componentRegistry);
     const shifts = [lanes.get("w1") ?? 0, lanes.get("w2") ?? 0];
     expect(new Set(shifts).size).toBe(2);
-    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(LANE_STEP);
+    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(
+      STRAIGHT_LANE_STEP,
+    );
   });
 
   it("真っ直ぐでも 1 本きりなら動かさない", () => {

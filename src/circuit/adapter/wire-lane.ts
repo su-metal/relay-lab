@@ -80,13 +80,24 @@ const CORNER_RADIUS = 5;
 const SPAN_EPSILON = 0.5;
 
 /**
+ * 迂回させた走行どうしの間隔。**幹線（`LANE_STEP`）より広く取る。**
+ *
+ * `LANE_STEP` は「部品と部品の間の短い幹線をずらす量」として決めた値で、
+ * 画面を横断する長い走行には狭い —— 通電中の線は幅 3.5px に発光 4px が乗るので、
+ * 10px 離しただけでは**隣り合うレーンの光が触れて 1 本に見える。** 短い幹線なら
+ * 前後の折れで区別が付くが、長い走行は延々と平行に並ぶぶん間隔だけが頼りになる。
+ */
+export const STRAIGHT_LANE_STEP = 16;
+
+/**
  * 真っ直ぐな配線を逃がせる上限。
  *
  * 幹線をずらす場合と違って経路が破綻する限界は無いが、**離しすぎると
  * 線が部品の並びから浮いて、どの端子から出ているのか読めなくなる。**
- * 3 レーンぶん（±30px）まで。それ以上混んだ束では一部が同じ道に残る。
+ * ±2 レーン（±32px）まで＝ 5 本までは確実に離れる。
+ * それ以上混んだ束では一部が同じ道に残る。
  */
-const STRAIGHT_ROOM = LANE_STEP * 3;
+const STRAIGHT_ROOM = STRAIGHT_LANE_STEP * 2;
 
 /** 迂回の折れ 2 つが収まる最小の走行長。これを下回るなら曲げない */
 const MIN_JOG_RUN = 24;
@@ -112,6 +123,8 @@ type Trunk = {
   end: number;
   /** ずらせる上限。これを超えると経路が折り返して図が破綻する */
   room: number;
+  /** レーン 1 本ぶんの間隔。迂回させる走行だけ広く取る（`STRAIGHT_LANE_STEP`） */
+  step: number;
 };
 
 /** 端子 1 個のキャンバス座標と、配線が出ていく辺 */
@@ -205,6 +218,7 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       start: Math.min(fromGap[axis], toGap[axis]),
       end: Math.max(fromGap[axis], toGap[axis]),
       room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
+      step: STRAIGHT_LANE_STEP,
     };
   }
 
@@ -225,6 +239,7 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       0,
       Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
     ),
+    step: LANE_STEP,
   };
 };
 
@@ -355,9 +370,11 @@ export const straightRunPath = ({
  *
  * 0, +1, -1, +2, -2 … と**中央から交互に**振る。片側へ積んでいくと束全体が
  * 元の位置から離れていき、部品との位置関係が読み取りにくくなる。
+ *
+ * @param step レーン 1 本ぶんの間隔。既定は幹線用（`LANE_STEP`）
  */
-export const laneShift = (lane: number): number =>
-  lane === 0 ? 0 : Math.ceil(lane / 2) * LANE_STEP * (lane % 2 === 1 ? 1 : -1);
+export const laneShift = (lane: number, step: number = LANE_STEP): number =>
+  lane === 0 ? 0 : Math.ceil(lane / 2) * step * (lane % 2 === 1 ? 1 : -1);
 
 const overlaps = (a: Trunk, b: Trunk): boolean =>
   a.start - SPAN_MARGIN <= b.end && b.start - SPAN_MARGIN <= a.end;
@@ -380,6 +397,13 @@ const assignCluster = (
     (a, b) => a.start - b.start || (a.id < b.id ? -1 : 1),
   );
 
+  /*
+   * 間隔は**束の中でいちばん広いものに揃える。** 幹線と迂回した走行が同じ道に
+   * 混ざったとき、レーンごとに違う間隔で振ると別々のレーンが近い位置に
+   * 落ちうる（幹線のレーン 3 が +20、走行のレーン 1 が +16 など）。
+   */
+  const step = Math.max(...ordered.map((trunk) => trunk.step));
+
   for (const trunk of ordered) {
     let lane = 0;
     while (
@@ -391,7 +415,7 @@ const assignCluster = (
 
     // 部品が近すぎてずらす余地が無いときは動かさない。ここで無理に押し込むと
     // 経路が折り返して、重なり以上に読みにくい線になる（design.md §8.7）
-    const shift = laneShift(lane);
+    const shift = laneShift(lane, step);
     const clamped = Math.max(-trunk.room, Math.min(trunk.room, shift));
     if (clamped !== 0) shifts.set(trunk.id, clamped);
   }
