@@ -115,8 +115,12 @@
  * **警告色（赤）にはしない。** 配線ミスではなく、先行優先回路では正常な
  * 最終状態だから。読んでほしいのは「壊れている」ではなく
  * 「今この接点は効いていない」なので、注意を引く手前の色で止める。
+ *
+ * シミュレーション中は常に置いて `visibility` で見せ消しする（SwitchBody 参照）。
+ * `display: none` にすると行が畳まれて操作ボタンが動いてしまう。
  */
 .cutOffCaption {
+  visibility: hidden;
   padding: 1px 7px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -125,6 +129,10 @@
   color: var(--text-muted);
   background: var(--panel);
   white-space: nowrap;
+}
+
+.cutOffCaption[data-visible="true"] {
+  visibility: visible;
 }
 
 /* 励磁中のキャプション。接点の切替そのものは端子と配線の色で読む */
@@ -164,8 +172,13 @@
 /*
  * 押しボタンの操作ボタン（シミュレーション中のみ表示）。
  * `nodrag` と併用してノードドラッグと競合させない。
+ *
+ * 幅は最長のラベル（"押下中"）で固定する。文字数に任せると
+ * ON / OFF・押す / 押下中 の切り替えでボタンの縁が伸縮し、
+ * 連打しているうちにカーソルの下からボタンが逃げる。
  */
 .pressButton {
+  min-width: 72px;
   padding: 4px 14px;
   border: 1px solid var(--border);
   border-radius: 999px;

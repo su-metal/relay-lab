@@ -353,7 +353,15 @@ function LoadPathSection({
         */}
         {start && (
           <section className={styles.section}>
-            <h3 className={styles.heading}>起動した経路（今は切れています）</h3>
+            <h3 className={styles.heading}>
+              {/*
+                押しボタンで起動した場合は「切れている」だけでは足りない。
+                読み手の問いは「どのボタンで動いたのか」なので、見出しで名指す
+              */}
+              {start.trigger
+                ? `起動した経路（${start.trigger.label} を押している間だけ通ります）`
+                : "起動した経路（今は切れています）"}
+            </h3>
             <ol className={`${styles.path} ${styles.pathBroken}`}>
               {startSteps.supply.map((step, index) => (
                 <PathRow key={`start-${index}`} step={step} />
@@ -370,15 +378,29 @@ function LoadPathSection({
                 <PathRow key={`startback-${index}`} step={step} />
               ))}
             </ol>
-            <p className={styles.hint}>
-              {/*
-                同じ部品の接点はまとめて「RY1 の 9–1・10–2」と書く。
-                部品名を接点の数だけ繰り返すと、**どこが切れたのかより
-                部品名のほうが目立つ**
-              */}
-              {verb}した時点で {describeBreaks(start.breaks)}{" "}
-              が開き、この経路は切れました。
-            </p>
+            {/*
+              同じ部品の接点はまとめて「RY1 の 9–1・10–2」と書く。
+              部品名を接点の数だけ繰り返すと、**どこが切れたのかより
+              部品名のほうが目立つ**
+            */}
+            {start.trigger ? (
+              <p className={styles.hint}>
+                {start.trigger.label} を離した今この道は切れていますが、上の保持
+                経路が引き継いでいるため {verb}したままになります。
+                {start.breaks.length > 0 && (
+                  <>
+                    {" "}
+                    {verb}した時点で {describeBreaks(start.breaks)}{" "}
+                    も開いています。
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className={styles.hint}>
+                {verb}した時点で {describeBreaks(start.breaks)}{" "}
+                が開き、この経路は切れました。
+              </p>
+            )}
           </section>
         )}
 
@@ -449,7 +471,19 @@ function LoadPathSection({
         )}
       </ul>
 
-      {explanation.gates && explanation.gates.length > 0 ? (
+      {/*
+        0V コモンの繋ぎ忘れ（design.md §5.3）。**接点の話に代えて出す。**
+        両端とも「届いています」と出ているのに動かない状態は、接点をいくら
+        探しても答えが出ない —— 足りないのは接点ではなく基準。ここで
+        「接点を閉じても届きません」と続けると、無い接点を探させることになる。
+      */}
+      {explanation.supplyMismatch ? (
+        <p className={styles.hint}>
+          両端は電源に届いていますが、届いている先が<strong>別々の電源</strong>
+          です。2 台の 0V どうしがつながっていないため電流の帰り道がありません。
+          0V を共通（コモン）にしてください。
+        </p>
+      ) : explanation.gates && explanation.gates.length > 0 ? (
         <>
           <p className={styles.hint}>閉じれば電源に届く接点：</p>
           <ul className={styles.reachList}>

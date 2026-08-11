@@ -29,7 +29,13 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { buildNets, computeNetStates } from "@/circuit/engine";
+import {
+  buildNets,
+  computeNetStates,
+  isShorted,
+  reachesPlus,
+  reachesZero,
+} from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
@@ -94,7 +100,7 @@ const stateOf = (nets: Nets, key: string): NetState | undefined => {
 
 /** どちらかの電源に届いているか（黄＝制御線の判定に使う） */
 const reachesPower = (state: NetState | undefined): boolean =>
-  state !== undefined && (state.reachesPlus || state.reachesZero);
+  reachesPlus(state) || reachesZero(state);
 
 /**
  * 端子 1 個の役割を決める。
@@ -113,9 +119,9 @@ const roleAt = (
   key: string,
 ): WireRole => {
   const atRest = stateOf(rest, key);
-  if (atRest?.reachesPlus && atRest.reachesZero) return "short";
-  if (atRest?.reachesPlus) return "plus";
-  if (atRest?.reachesZero) return "zero";
+  if (isShorted(atRest)) return "short";
+  if (reachesPlus(atRest)) return "plus";
+  if (reachesZero(atRest)) return "zero";
   if (reachesPower(stateOf(switched, key))) return "control";
   if (reachesPower(stateOf(operated, key))) return "control";
   return "isolated";

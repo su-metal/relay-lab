@@ -350,6 +350,118 @@ export const orientedBridgesOnPath = (
   return path.reverse();
 };
 
+/**
+ * 並列に並んだ枝の束を、入口から出口へ向き付ける（design.md §5.10）。
+ *
+ * **橋だけでは自己保持回路の一番肝心な線に向きが出ない。** 自己保持は
+ * 「保持接点を起動スイッチと**並列に**入れる」形なので、+ 側と接点の合流点の
+ * 間に必ず閉路ができ、そこに含まれる線は 1 本も橋にならない。結果、
+ * 保持接点まわりの 3 本ほどがまとめて向きを失う。
+ *
+ * だが**並列だからといって向きが決まらないわけではない。** 決まらないのは
+ * 「どちらの枝を通るか」であって、枝の中の向きは別の話 —— 入口と出口の間に
+ * 並んだ枝は、どれも入口から出口へ流れる。
+ *
+ * 向きを付けてよいのは、区間が次の 2 つを満たすときだけ。
+ *
+ * 1. **入口・出口以外の端子の次数がすべて 2。** 途中で枝分かれせず、外へ出る橋も
+ *    無い、という意味。外へ橋が出ていると、そこから電流が抜けたり別の電源から
+ *    入ったりして、区間の中だけでは向きが決まらなくなる
+ * 2. **入口から出る枝が全部、出口へ着く。** 入口へ戻ってくる環は電流が流れないので
+ *    向きを持たない
+ *
+ * この 2 つが揃えば各枝は単純な直列の鎖になり、入口のほうが出口より必ず電位が
+ * 高いので、向きは入口 → 出口で確定する。ホイートストンブリッジのように
+ * **本当に向きが決まらない形は次数 3 以上の端子を持つので、ここで弾かれる。**
+ *
+ * **1 本でも条件を外したら区間ごと諦める。** 片方の枝にだけ矢印が出ると、
+ * 出ていない枝が「流れていない」に見える —— 塗り漏れが誤読に化ける。
+ */
+const orientParallelBundle = (
+  graph: PathGraph,
+  bridges: ReadonlySet<number>,
+  componentOf: ReadonlyMap<string, number>,
+  entry: string,
+  exit: string,
+): OrientedEdge[] => {
+  if (entry === exit) return [];
+  const component = componentOf.get(entry);
+  if (component === undefined || componentOf.get(exit) !== component) return [];
+
+  for (const [node, id] of componentOf) {
+    if (id !== component) continue;
+    if (node === entry || node === exit) continue;
+    if ((graph.adjacency.get(node) ?? []).length !== 2) return [];
+  }
+
+  const oriented: OrientedEdge[] = [];
+  const walked = new Set<number>();
+
+  for (const first of graph.adjacency.get(entry) ?? []) {
+    if (bridges.has(first) || walked.has(first)) continue;
+
+    let node = entry;
+    let cursor = first;
+    for (;;) {
+      const edge = graph.edges[cursor];
+      // 自己ループは向きを持たない（次の辺も選べない）
+      if (edge.a === edge.b) return [];
+      const next = edge.a === node ? edge.b : edge.a;
+      oriented.push({ index: cursor, tail: node, head: next });
+      walked.add(cursor);
+
+      if (next === exit) break;
+      if (next === entry) return [];
+
+      const incident = graph.adjacency.get(next) ?? [];
+      const forward = incident.find((index) => index !== cursor);
+      if (forward === undefined) return [];
+      node = next;
+      cursor = forward;
+    }
+  }
+
+  return oriented;
+};
+
+/**
+ * `from` → `to` の道のうち、**向きが確定する辺**を全部返す。
+ *
+ * 橋（必ず通る線）に加えて、橋と橋の間に挟まった並列区間のうち
+ * `orientParallelBundle` の条件を満たすものを足したもの。§5.10 専用で、
+ * §5.9 の塗り分けや §5.11 の経路説明は橋だけを使う —— あちらは
+ * 「切れば落ちる線」「一本道の順序」という別の問いで、並列の枝は答えにならない。
+ */
+export const orientedEdgesOnPath = (
+  graph: PathGraph,
+  bridges: ReadonlySet<number>,
+  componentOf: ReadonlyMap<string, number>,
+  from: string,
+  to: string,
+): OrientedEdge[] => {
+  const run = orientedBridgesOnPath(graph, bridges, componentOf, from, to);
+  const start = componentOf.get(from);
+  const goal = componentOf.get(to);
+  if (start === undefined || goal === undefined) return run;
+  // 橋が 1 本も無いのに成分が違う＝道が無い。並列区間を探す意味も無い
+  if (run.length === 0 && start !== goal) return run;
+
+  /*
+   * 橋の列を成分の列に読み替える。橋の `tail` はその成分の出口、
+   * `head` は次の成分の入口。始点側の入口は `from`、終点側の出口は `to`。
+   */
+  const oriented = [...run];
+  let entry = from;
+  for (const edge of run) {
+    oriented.push(
+      ...orientParallelBundle(graph, bridges, componentOf, entry, edge.tail),
+    );
+    entry = edge.head;
+  }
+  oriented.push(...orientParallelBundle(graph, bridges, componentOf, entry, to));
+  return oriented;
+};
+
 /** 向きを使わない呼び出し向け（自己保持の塗り分け・§5.9） */
 export const bridgesOnPath = (
   graph: PathGraph,

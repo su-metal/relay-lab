@@ -554,3 +554,140 @@ describe("explainLoadPath — 励磁しない理由", () => {
     });
   });
 });
+
+describe("0V コモンの繋ぎ忘れ（design.md §5.3）", () => {
+  it("両端が別々の電源に届いているときは、接点ではなく基準の問題だと言う", () => {
+    const straddle = circuit({ PS1: POWER, PS2: POWER, RY1: MY4N }, [
+      wire("PS1:plus", "RY1:14"),
+      wire("RY1:13", "PS2:zero"),
+    ]);
+    const explanation = explain(straddle, "RY1");
+
+    expect(explanation?.active).toBe(false);
+    expect(explanation?.supplyMismatch).toBe(true);
+    // 閉じれば届く接点は 1 枚も無い。足りないのは接点ではない
+    expect(explanation?.gates).toEqual([]);
+  });
+
+  it("0V を繋げば通電し、この指摘は消える", () => {
+    const common = circuit({ PS1: POWER, PS2: POWER, RY1: MY4N }, [
+      wire("PS1:plus", "RY1:14"),
+      wire("RY1:13", "PS2:zero"),
+      wire("PS2:zero", "PS1:zero"),
+    ]);
+    const explanation = explain(common, "RY1");
+
+    expect(explanation?.active).toBe(true);
+    expect(explanation?.supplyMismatch).toBeUndefined();
+  });
+
+  it("単に接点が開いているだけの回路には出さない", () => {
+    const explanation = explain(straight, "RY1");
+
+    expect(explanation?.active).toBe(false);
+    expect(explanation?.supplyMismatch).toBeUndefined();
+    expect(explanation?.gates?.length).toBe(1);
+  });
+});
+
+describe("押しボタンで起動した自己保持の起動経路（design.md §5.12）", () => {
+  /** 起動ボタンと保持接点を並列にした、最も素直な自己保持 */
+  const momentaryHold = circuit({ PS1: POWER, S1: PB_NO, RY1: MY4N }, [
+    wire("PS1:plus", "S1:1"),
+    wire("S1:2", "RY1:14"),
+    wire("PS1:plus", "RY1:9"),
+    wire("RY1:5", "RY1:14"),
+    wire("RY1:13", "PS1:zero"),
+  ]);
+
+  /** 押して離し、自己保持だけで励磁が続いている状態まで進める */
+  const held = () => {
+    const idle = simulate(momentaryHold, componentRegistry, {
+      pressedSwitches: new Set(),
+    });
+    const pressed = simulate(momentaryHold, componentRegistry, {
+      pressedSwitches: new Set(["S1"]),
+      previousEnergizedRelays: idle.energizedRelays,
+    });
+    const released = simulate(momentaryHold, componentRegistry, {
+      pressedSwitches: new Set(),
+      previousEnergizedRelays: pressed.energizedRelays,
+    });
+    return explainLoadPath(
+      momentaryHold,
+      componentRegistry,
+      released,
+      new Set(),
+      "RY1",
+    );
+  };
+
+  it("ボタンを離した後でも、どのボタンで起動したかを言える", () => {
+    const explanation = held();
+
+    expect(explanation?.active).toBe(true);
+    // 保持経路には S1 が出てこない
+    expect(traceOf(explanation?.supplyRun?.steps)).toEqual([
+      "PS1(+24V)",
+      "RY1(9→5→14)",
+    ]);
+    // 起動経路は S1 を通る。仮に押した状態で引き直して初めて出る
+    expect(explanation?.startPath?.trigger?.componentId).toBe("S1");
+    expect(traceOf(explanation?.startPath?.supply.steps)).toEqual([
+      "PS1(+24V)",
+      "S1(1→2)",
+      "RY1(14)"
+    ]);
+  });
+
+  it("仮に押したボタン自身は「切れた接点」に数えない", () => {
+    /*
+     * S1 が開いているのは離したからで、それは `trigger` がすでに言っている。
+     * ここに重ねると「接点が切れたせいで経路が死んだ」と読めてしまう。
+     */
+    expect(held()?.startPath?.breaks).toEqual([]);
+  });
+
+  it("起動に使えるボタンが 2 個あるときは出さない（どちらか決まらない）", () => {
+    const twoButtons = circuit(
+      { PS1: POWER, S1: PB_NO, S2: PB_NO, RY1: MY4N },
+      [
+        wire("PS1:plus", "S1:1"),
+        wire("S1:2", "RY1:14"),
+        wire("PS1:plus", "S2:1"),
+        wire("S2:2", "RY1:14"),
+        wire("PS1:plus", "RY1:9"),
+        wire("RY1:5", "RY1:14"),
+        wire("RY1:13", "PS1:zero"),
+      ],
+    );
+    const idle = simulate(twoButtons, componentRegistry, {
+      pressedSwitches: new Set(),
+    });
+    const pressed = simulate(twoButtons, componentRegistry, {
+      pressedSwitches: new Set(["S1"]),
+      previousEnergizedRelays: idle.energizedRelays,
+    });
+    const released = simulate(twoButtons, componentRegistry, {
+      pressedSwitches: new Set(),
+      previousEnergizedRelays: pressed.energizedRelays,
+    });
+    const explanation = explainLoadPath(
+      twoButtons,
+      componentRegistry,
+      released,
+      new Set(),
+      "RY1",
+    );
+
+    expect(explanation?.active).toBe(true);
+    expect(explanation?.startPath).toBeUndefined();
+  });
+
+  it("オルタネートで起動した経路には trigger を付けない（今も ON のまま）", () => {
+    const { explanation } = latched();
+
+    expect(explanation?.startPath?.trigger).toBeUndefined();
+    expect(explanation?.startPath?.breaks.length).toBeGreaterThan(0);
+  });
+});

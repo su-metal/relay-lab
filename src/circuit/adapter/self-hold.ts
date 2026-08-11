@@ -29,7 +29,7 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { simulate } from "@/circuit/engine";
+import { reachesPlus, simulate } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
@@ -131,7 +131,7 @@ export const buildSelfHold = (
       electrical.relay.coil.negativeTerminal,
     );
     const plusState = result.netState.get(result.netOf.get(coilPlus) ?? -1);
-    const reversed = plusState?.reachesPlus !== true;
+    const reversed = !reachesPlus(plusState);
 
     for (const [terminal, supply] of [
       [coilPlus, reversed ? ZERO_NODE : PLUS_NODE],

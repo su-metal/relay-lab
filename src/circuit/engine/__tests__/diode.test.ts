@@ -116,13 +116,14 @@ describe("逆挿し（アノードがコイルの + 側）", () => {
     ).toBe("error");
   });
 
-  it("コイル + 側のネットが短絡（+ と 0V の両方に到達）になる", () => {
+  it("コイル + 側のネットが短絡（同じ電源の + と 0V の両方に到達）になる", () => {
     const result = step(document, ["S1"]);
     const netId = result.netOf.get("RY1:14");
     expect(netId).toBeDefined();
+    // 同じ PS1 が両側に出ることが短絡の根拠。別々の電源なら短絡ではない
     expect(result.netState.get(netId as number)).toEqual({
-      reachesPlus: true,
-      reachesZero: true,
+      plusFrom: new Set(["PS1"]),
+      zeroFrom: new Set(["PS1"]),
     });
   });
 });

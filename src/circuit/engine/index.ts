@@ -14,7 +14,16 @@ export {
   stateAt,
 } from "./graph";
 export type { NetAssignment, NetLookup } from "./graph";
-export { atPlus, atZero, polarityAcross } from "./potential";
+export {
+  atPlus,
+  atZero,
+  isShorted,
+  polarityAcross,
+  reachesPlus,
+  reachesZero,
+  shortedSupplies,
+  spansSupply,
+} from "./potential";
 export type { Polarity } from "./potential";
 export { closedContactPairs, evaluateCoil } from "./relay";
 export type { CoilEvaluation, TerminalPair } from "./relay";

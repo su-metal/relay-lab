@@ -22,13 +22,21 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { conductingPairs, describeComponent, simulate } from "@/circuit/engine";
+import {
+  conductingPairs,
+  describeComponent,
+  polarityAcross,
+  reachesPlus,
+  reachesZero,
+  simulate,
+} from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
   ElectricalDefinition,
+  NetState,
   SimulationResult,
 } from "@/circuit/types";
 import { terminalKey } from "@/circuit/types";
@@ -123,8 +131,24 @@ export type StartPath = {
   /**
    * この経路のうち、**今は開いている接点。** 空でないことが
    * 「起動経路はもう生きていない」の根拠になる。
+   *
+   * `trigger` の押しボタン自身はここに入れない —— 「離したから開いている」は
+   * `trigger` がすでに言っており、2 度言うと接点が切れたせいに見える。
    */
   breaks: PathBreak[];
+  /**
+   * この経路を通すために**押していた押しボタン**（design.md §5.12）。
+   *
+   * オルタネートで起動した場合は無い（そのスイッチは今も ON のままなので、
+   * 何も押さずに経路が再現できる）。モーメンタリで起動して自己保持した回路は、
+   * 押しボタンが既に離れているぶん**現在の状態からは経路が 1 本も引けない** ——
+   * 「どのボタンで動いたのか」が最も分からない場面で何も出せなくなるので、
+   * 押しボタンを 1 個ずつ仮に押して経路が通るかを試す。
+   *
+   * **候補が 2 個以上あるときは諦める**（`startPathOf` が `null` を返す）。
+   * どちらのボタンで起動したかは状態から決まらず、片方だけ挙げると嘘になる。
+   */
+  trigger?: { componentId: string; label: string };
 };
 
 /**
@@ -175,6 +199,14 @@ export type LoadPathExplanation = {
   releases?: ReleaseAction[];
   /** 非通電: 両端がどちらの電源に届いているか */
   reach?: [TerminalReach, TerminalReach];
+  /**
+   * 非通電: **両端とも電源に届いているのに、同じ電源ではない**（design.md §5.3）。
+   *
+   * 0V コモンの繋ぎ忘れ。両端の「届いています」だけを見せると
+   * 「届いているのに動かない」という最も不可解な画面になるので、
+   * ここだけは接点ではなく基準の話だと言い切る。
+   */
+  supplyMismatch?: boolean;
   /** 非通電: 閉じれば電源に届く接点。1 枚も無ければ空配列 */
   gates?: OpenGate[];
 };
@@ -440,7 +472,7 @@ const runBetween = (
   );
 
 /**
- * 起動経路を求める（design.md §5.12）。
+ * 起動経路を 1 通りの操作状態について求める（design.md §5.12）。
  *
  * **「そのリレーが非励磁だった瞬間」を作るのは、自分の励磁だけを外した状態。**
  * 他のリレーは今の状態のまま置く —— 全部落とすと回路の別の場所まで巻き戻り、
@@ -449,14 +481,18 @@ const runBetween = (
  * `simulate()` は回さない。要るのは経路グラフ 1 枚だけで、収束の結果
  * （どのリレーが最終的に上がるか）はここでは問わない。
  *
- * @returns 起動経路が**今も生きている**（切れた接点が無い）場合は `null`。
- *   今の経路と同じものを 2 度並べても読み手の助けにならない
+ * @param assumedPressed 経路を引くときに押していたことにするスイッチ。
+ *   `pressedSwitches` と別に受け取るのは、**切れているかの判定は必ず今の
+ *   操作状態で行う**ため —— 仮に押した状態で「切れていない」と答えたら、
+ *   起動経路が生きていることになってしまう
+ * @returns 経路が引けなければ `null`
  */
-const startPathOf = (
+const startPathFrom = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   naming: Naming,
   pressedSwitches: ReadonlySet<string>,
+  assumedPressed: ReadonlySet<string>,
   energizedRelays: ReadonlySet<string>,
   componentId: string,
   coilTerminals: readonly [string, string],
@@ -466,7 +502,7 @@ const startPathOf = (
   const before = solvePathGraph(
     document,
     definitions,
-    pressedSwitches,
+    assumedPressed,
     beforePickup,
   );
 
@@ -538,8 +574,83 @@ const startPathOf = (
     }
   }
 
-  if (breaks.length === 0) return null;
   return { supply, back, breaks };
+};
+
+/**
+ * 起動経路を求める（design.md §5.12）。
+ *
+ * まず**今の操作状態のまま**引いてみる。オルタネートで起動した回路はこれで
+ * 出る —— そのスイッチは今も ON のままだから。
+ *
+ * 出なければ、**離れている押しボタンを 1 個ずつ仮に押して**引き直す。
+ * モーメンタリで起動して自己保持した回路は、今の状態からは経路が 1 本も
+ * 引けない（起動に使ったボタンがもう離れている）。だが「どのボタンで
+ * 動いたのか分からない」のはまさにその場面であり、そこで何も出せないのでは
+ * 機能の意図と逆になる。
+ *
+ * @returns 起動経路が**今も生きている**（切れた接点が無く、押していた
+ *   ボタンも無い）場合は `null` —— 今の経路と同じものを 2 度並べても
+ *   読み手の助けにならない。仮押しの候補が 2 個以上あるときも `null`（どちらで
+ *   起動したかは状態から決まらず、片方だけ挙げると嘘になる）
+ */
+const startPathOf = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  naming: Naming,
+  pressedSwitches: ReadonlySet<string>,
+  energizedRelays: ReadonlySet<string>,
+  componentId: string,
+  coilTerminals: readonly [string, string],
+): StartPath | null => {
+  const resolve = (assumed: ReadonlySet<string>) =>
+    startPathFrom(
+      document,
+      definitions,
+      naming,
+      pressedSwitches,
+      assumed,
+      energizedRelays,
+      componentId,
+      coilTerminals,
+    );
+
+  const asIs = resolve(pressedSwitches);
+  // 切れた接点があるなら、今の保持経路とは別物。そのまま出す
+  if (asIs && asIs.breaks.length > 0) return asIs;
+
+  /*
+   * 仮押しの候補は**モーメンタリで、今は離れているもの**だけ。
+   *
+   * オルタネートを候補に入れない —— 今 OFF のオルタネートを押した経路は
+   * 「起動に使った道」ではなく「これから使える道」であり、別の問い。
+   * 押しっぱなしのボタンも入れない（それは `asIs` で既に出ている）。
+   */
+  const candidates: StartPath[] = [];
+  for (const instance of document.components) {
+    if (pressedSwitches.has(instance.id)) continue;
+    const definition = definitions.get(instance.definitionId);
+    if (definition?.electrical.kind !== "switch") continue;
+    if (definition.electrical.action !== "momentary") continue;
+
+    const assumed = new Set(pressedSwitches);
+    assumed.add(instance.id);
+    const path = resolve(assumed);
+    if (!path) continue;
+
+    candidates.push({
+      ...path,
+      // このボタン自身は「離したから開いている」だけ。`trigger` が言うので重ねない
+      breaks: path.breaks.filter((broken) => broken.componentId !== instance.id),
+      trigger: {
+        componentId: instance.id,
+        label: naming.labelOf(instance.id),
+      },
+    });
+    if (candidates.length > 1) return null;
+  }
+
+  return candidates[0] ?? null;
 };
 
 /**
@@ -752,7 +863,29 @@ export const explainLoadPath = (
     );
   }
 
-  return { componentId: instance.id, kind, active: false, reach, gates };
+  /*
+   * 0V コモンの繋ぎ忘れ（design.md §5.3）。
+   *
+   * **経路グラフではなくネット状態から読む。** `@plus` / `@zero` は電源を
+   * 1 点に束ねた仮想ノードなので、そこからの到達性では「どの電源か」が
+   * 落ちる。エンジンが持つ電源ごとの到達集合だけが答えを持っている。
+   */
+  const loadStates = keys.map((key) =>
+    result.netState.get(result.netOf.get(key) ?? -1),
+  ) as [NetState | undefined, NetState | undefined];
+  const supplyMismatch =
+    polarityAcross(loadStates[0], loadStates[1]) === "none" &&
+    ((reachesPlus(loadStates[0]) && reachesZero(loadStates[1])) ||
+      (reachesZero(loadStates[0]) && reachesPlus(loadStates[1])));
+
+  return {
+    componentId: instance.id,
+    kind,
+    active: false,
+    reach,
+    gates,
+    supplyMismatch: supplyMismatch || undefined,
+  };
 };
 
 /**
