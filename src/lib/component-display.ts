@@ -210,16 +210,30 @@ export const deviceStatusOf = (
       return simulation.lit
         ? { label: "点灯中", active: true }
         : { label: "消灯", active: false };
-    case "switch":
+    case "switch": {
       // オルタネートは「押下」ではなく位置なので言い方を変える。
       // 同じ「押下中」と出すと、手を離しても状態が残ることが読めない
-      return definition.electrical.action === "maintained"
-        ? simulation.pressed
-          ? { label: "ON 位置", active: true }
-          : { label: "OFF 位置", active: false }
-        : simulation.pressed
-          ? { label: "押下中", active: true }
+      const maintained = definition.electrical.action === "maintained";
+      if (!simulation.pressed) {
+        return maintained
+          ? { label: "OFF 位置", active: false }
           : { label: "未押下", active: false };
+      }
+      /*
+       * 操作しているのに回路から切り離されている（design.md §5.12）。
+       * **`active: false` にする。** ホバーの強調（緑）は「今効いている」の
+       * 意味なので、効いていない接点に付けると嘘になる
+       */
+      if (simulation.cutOff) {
+        return {
+          label: maintained ? "ON 位置（回路から切離）" : "押下中（回路から切離）",
+          active: false,
+        };
+      }
+      return maintained
+        ? { label: "ON 位置", active: true }
+        : { label: "押下中", active: true };
+    }
     default:
       return undefined;
   }

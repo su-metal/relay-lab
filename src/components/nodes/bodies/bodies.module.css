@@ -109,6 +109,24 @@
   stroke: var(--wire-energized);
 }
 
+/*
+ * 操作しているのに回路から切り離されているスイッチ（design.md §5.12）。
+ *
+ * **警告色（赤）にはしない。** 配線ミスではなく、先行優先回路では正常な
+ * 最終状態だから。読んでほしいのは「壊れている」ではなく
+ * 「今この接点は効いていない」なので、注意を引く手前の色で止める。
+ */
+.cutOffCaption {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--panel);
+  white-space: nowrap;
+}
+
 /* 励磁中のキャプション。接点の切替そのものは端子と配線の色で読む */
 .energizedCaption {
   font-size: 14px;

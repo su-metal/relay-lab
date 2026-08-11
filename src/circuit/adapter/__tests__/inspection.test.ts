@@ -110,6 +110,7 @@ describe("inspectComponent", () => {
     const inspection = inspect("ry1", []);
 
     expect(inspection?.device).toEqual({
+      cutOff: false,
       energized: false,
       selfHeld: false,
       lit: false,

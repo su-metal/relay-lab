@@ -48,6 +48,7 @@ const circuit = (
 const POWER = "power-dc24v";
 const PB_NO = "switch-pushbutton-no";
 const PB_NC = "switch-pushbutton-nc";
+const SELECTOR = "switch-selector-no";
 const MY4N = "omron-my4n-dc24";
 const LAMP = "lamp-dc24v";
 
@@ -191,6 +192,189 @@ describe("explainLoadPath — 通電中の経路", () => {
     expect(explanation?.supplyRun?.branched).toBe(true);
     // 帰り道は 1 本しかないので絞れる
     expect(explanation?.returnRun?.branched).toBe(false);
+  });
+});
+
+/**
+ * 先行優先回路（実際に使われている回路から）。
+ *
+ * b 接点のチェーンで「まだどのリレーも動いていない間だけ通る」起動経路を作り、
+ * 上がったリレーは**チェーンより上流**から取った自分の a 接点で保持する。
+ * この形では **起動に使ったセレクタが、起動した瞬間に回路から切り離される。**
+ */
+const priority = circuit(
+  { PS1: POWER, SR: SELECTOR, RY1: MY4N, S1: SELECTOR, L1: LAMP },
+  [
+    wire("PS1:plus", "SR:1"),
+    wire("SR:2", "RY1:9"),
+    // 起動経路: b 接点 9–1 を抜けてセレクタへ、戻って b 接点 10–2 からコイルへ
+    wire("RY1:1", "S1:1"),
+    wire("S1:2", "RY1:10"),
+    wire("RY1:2", "RY1:14"),
+    // 保持経路: a 接点 9–5。チェーンより上流（SR の直後）から取る
+    wire("RY1:5", "RY1:14"),
+    wire("RY1:13", "PS1:zero"),
+    wire("L1:1", "RY1:14"),
+    wire("L1:2", "PS1:zero"),
+  ],
+);
+
+/** SR と S1 を ON にして、自己保持が成立した状態まで進める */
+const latched = () => {
+  const pressedSwitches = new Set(["SR", "S1"]);
+  const idle = simulate(priority, componentRegistry, {
+    pressedSwitches: new Set(["SR"]),
+  });
+  const result = simulate(priority, componentRegistry, {
+    pressedSwitches,
+    previousEnergizedRelays: idle.energizedRelays,
+  });
+  return {
+    result,
+    explanation: explainLoadPath(
+      priority,
+      componentRegistry,
+      result,
+      pressedSwitches,
+      "RY1",
+    ),
+  };
+};
+
+describe("起動経路（切れたきっかけの経路）", () => {
+  it("保持経路には起動に使ったスイッチが出てこない", () => {
+    const { result, explanation } = latched();
+
+    expect([...result.energizedRelays]).toEqual(["RY1"]);
+    // 9 → 5 は自分の a 接点、5 → 14 はそこからコイルへ戻す電線
+    expect(traceOf(explanation?.supplyRun?.steps)).toEqual([
+      "PS1(+24V)",
+      "SR(1→2)",
+      "RY1(9→5→14)",
+    ]);
+  });
+
+  it("起動経路には出てくる（S1 を通ってコイルへ入った道）", () => {
+    const { explanation } = latched();
+
+    expect(traceOf(explanation?.startPath?.supply.steps)).toEqual([
+      "PS1(+24V)",
+      "SR(1→2)",
+      "RY1(9→1)",
+      "S1(1→2)",
+      "RY1(10→2→14)",
+    ]);
+  });
+
+  it("どの接点が開いてその経路が切れたのかを言える", () => {
+    const { explanation } = latched();
+
+    expect(
+      explanation?.startPath?.breaks.map(
+        (broken) => `${broken.label} ${broken.terminalLabels.join("-")}`,
+      ),
+    ).toEqual(["RY1 9-1", "RY1 10-2"]);
+  });
+
+  it("起動経路が今も生きているなら出さない（同じ道を 2 度並べない）", () => {
+    /*
+     * 押している間だけ励磁する回路。保持しているのはボタンなので、
+     * 起動経路と今の経路が同じ。切れた接点も無い
+     */
+    const held = simulate(straight, componentRegistry, {
+      pressedSwitches: new Set(["S1"]),
+    });
+    const explanation = explainLoadPath(
+      straight,
+      componentRegistry,
+      held,
+      new Set(["S1"]),
+      "RY1",
+    );
+
+    expect(explanation?.active).toBe(true);
+    expect(explanation?.startPath).toBeUndefined();
+  });
+
+  it("ランプには起動経路を出さない（接点を持たないので定義できない）", () => {
+    const { explanation } = latched();
+    const lamp = explainLoadPath(
+      priority,
+      componentRegistry,
+      explanation ? latched().result : null,
+      new Set(["SR", "S1"]),
+      "L1",
+    );
+
+    expect(lamp?.active).toBe(true);
+    expect(lamp?.startPath).toBeUndefined();
+  });
+});
+
+describe("落とし方", () => {
+  it("起動に使ったスイッチを戻しても落ちないことを言う", () => {
+    const { explanation } = latched();
+    const byId = new Map(
+      (explanation?.releases ?? []).map((entry) => [entry.componentId, entry]),
+    );
+
+    // 保持は SR から直接取っているので、SR を戻せば落ちる
+    expect(byId.get("SR")).toMatchObject({
+      action: "OFF にする",
+      releases: true,
+      operated: true,
+    });
+    // **ここが誤解の芯。** 起動したのは S1 だが、S1 では落ちない
+    expect(byId.get("S1")).toMatchObject({
+      action: "OFF にする",
+      releases: false,
+      operated: true,
+    });
+  });
+
+  it("触っていないスイッチは、落とせるものだけを挙げる", () => {
+    /*
+     * 押していない b 接点の停止ボタン。**押すと**落ちるので候補に出る。
+     * 一方、押しても何も変わらないスイッチは雑音なので出さない。
+     */
+    const withStop = circuit(
+      { PS1: POWER, S1: PB_NO, S2: PB_NC, NOISE: PB_NO, RY1: MY4N },
+      [
+        wire("PS1:plus", "S2:1"),
+        wire("S2:2", "S1:1"),
+        wire("S2:2", "RY1:9"),
+        wire("S1:2", "RY1:14"),
+        wire("RY1:5", "RY1:14"),
+        wire("RY1:13", "PS1:zero"),
+      ],
+    );
+    const pushed = simulate(withStop, componentRegistry, {
+      pressedSwitches: new Set(["S1"]),
+    });
+    const held = simulate(withStop, componentRegistry, {
+      pressedSwitches: new Set(),
+      previousEnergizedRelays: pushed.energizedRelays,
+    });
+    const explanation = explainLoadPath(
+      withStop,
+      componentRegistry,
+      held,
+      new Set(),
+      "RY1",
+    );
+
+    expect(explanation?.releases?.map((entry) => entry.componentId)).toEqual([
+      "S2",
+    ]);
+    expect(explanation?.releases?.[0]).toMatchObject({
+      action: "押す",
+      releases: true,
+      operated: false,
+    });
+  });
+
+  it("非通電の負荷には落とし方を出さない", () => {
+    expect(explain(straight, "RY1")?.releases).toBeUndefined();
   });
 });
 

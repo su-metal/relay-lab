@@ -63,6 +63,16 @@ export type DeviceSimulationState = {
   lit: boolean;
   /** 押しボタンが押下中か */
   pressed: boolean;
+  /**
+   * **操作しているのに、両端がどちらの電源にも届いていないスイッチ**
+   * （design.md §5.12）。スイッチ以外は常に false。
+   *
+   * 「ON なのに配線が灰色」は、放っておくと**バグに見える。** 実際には
+   * 正しい —— スイッチを閉じることは 2 点を繋ぐだけで、電流を作らない。
+   * 先行優先回路のように「起動した瞬間に自分が回路から切り離される」
+   * 使い方では、これが正常な最終状態になる。
+   */
+  cutOff: boolean;
 };
 
 export type SimulationView = {
@@ -187,13 +197,31 @@ export const buildSimulationView = (
       );
     }
 
+    /*
+     * 操作しているのに両端が非通電のスイッチ（§5.12）。
+     *
+     * **端子の色をここで組み終わってから判定する。** 「ON なのに灰色」は
+     * まさに端子の色そのものから読み取れる矛盾であり、別の経路で導くと
+     * 画面の色と食い違いうる。
+     */
+    const operated = pressedSwitches.has(instance.id);
+    const cutOff =
+      definition.electrical.kind === "switch" &&
+      operated &&
+      definition.terminals.every(
+        (terminal) =>
+          (terminalOf.get(terminalKey(instance.id, terminal.id)) ??
+            "inactive") === "inactive",
+      );
+
     // 実行中はすべての部品にエントリを作る。存在すること自体が
     // 「シミュレーション中」の合図になり、ノード側は追加の判定を持たずに済む
     deviceOf.set(instance.id, {
       energized: result.energizedRelays.has(instance.id),
       selfHeld: selfHold.relays.has(instance.id),
       lit: result.litLamps.has(instance.id),
-      pressed: pressedSwitches.has(instance.id),
+      pressed: operated,
+      cutOff,
     });
   }
 

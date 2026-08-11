@@ -15,7 +15,11 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import { inspectComponent } from "@/circuit/adapter/inspection";
-import { explainLoadPath, trimLoadEnds } from "@/circuit/adapter/load-path";
+import {
+  explainLoadPath,
+  trimLoadEnds,
+  trimStartPath,
+} from "@/circuit/adapter/load-path";
 import { buildSelfHold } from "@/circuit/adapter/self-hold";
 import type {
   ComponentInspection,
@@ -23,6 +27,7 @@ import type {
 } from "@/circuit/adapter/inspection";
 import type {
   LoadPathExplanation,
+  PathBreak,
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
@@ -301,34 +306,115 @@ function LoadPathSection({
 
   if (explanation.active) {
     const { supply, back } = trimLoadEnds(explanation);
+    const start = explanation.startPath;
+    const startSteps = trimStartPath(explanation);
+    const releases = explanation.releases ?? [];
+    // 落ちる操作と、落ちない操作を言い分ける（design.md §5.12）
+    const releasing = releases.filter((entry) => entry.releases);
+    const ineffective = releases.filter((entry) => !entry.releases);
+
     return (
-      <section className={styles.section}>
-        <h3 className={styles.heading}>{verb}している経路</h3>
-        <ol className={styles.path}>
-          {supply.map((step, index) => (
-            <PathRow key={`supply-${index}`} step={step} />
-          ))}
-          {/* 負荷そのもの。ここで電流が仕事をしている */}
-          <li className={styles.pathLoad}>
-            <span className={styles.pathLoadName}>
-              {explanation.kind === "relay" ? "コイル" : "ランプ"}
-            </span>
-            <span className={styles.pathTerminals}>
-              {explanation.inletLabel} → {explanation.outletLabel}
-            </span>
-          </li>
-          {back.map((step, index) => (
-            <PathRow key={`back-${index}`} step={step} />
-          ))}
-        </ol>
-        {(explanation.supplyRun?.branched ||
-          explanation.returnRun?.branched) && (
-          <p className={styles.hint}>
-            途中に並列に分かれた区間があるため、一本道には絞れていません。
-            分岐した区間は配線上でも電流の向きを出しません。
-          </p>
+      <>
+        <section className={styles.section}>
+          <h3 className={styles.heading}>
+            {verb}している経路{start && "（保持）"}
+          </h3>
+          <ol className={styles.path}>
+            {supply.map((step, index) => (
+              <PathRow key={`supply-${index}`} step={step} />
+            ))}
+            {/* 負荷そのもの。ここで電流が仕事をしている */}
+            <li className={styles.pathLoad}>
+              <span className={styles.pathLoadName}>
+                {explanation.kind === "relay" ? "コイル" : "ランプ"}
+              </span>
+              <span className={styles.pathTerminals}>
+                {explanation.inletLabel} → {explanation.outletLabel}
+              </span>
+            </li>
+            {back.map((step, index) => (
+              <PathRow key={`back-${index}`} step={step} />
+            ))}
+          </ol>
+          {(explanation.supplyRun?.branched ||
+            explanation.returnRun?.branched) && (
+            <p className={styles.hint}>
+              途中に並列に分かれた区間があるため、一本道には絞れていません。
+              分岐した区間は配線上でも電流の向きを出しません。
+            </p>
+          )}
+        </section>
+
+        {/*
+          起動経路（design.md §5.12）。**今の経路と切れている場合だけ出る。**
+          自己保持を組むと、きっかけを作ったスイッチが起動した瞬間に回路から
+          外れ、画面上ではまったく無関係に見える。ここが無いと
+          「なぜあのスイッチは灰色なのに、あれで動いたのか」に答えられない
+        */}
+        {start && (
+          <section className={styles.section}>
+            <h3 className={styles.heading}>起動した経路（今は切れています）</h3>
+            <ol className={`${styles.path} ${styles.pathBroken}`}>
+              {startSteps.supply.map((step, index) => (
+                <PathRow key={`start-${index}`} step={step} />
+              ))}
+              <li className={`${styles.pathLoad} ${styles.pathLoadBroken}`}>
+                <span className={styles.pathLoadName}>
+                  {explanation.kind === "relay" ? "コイル" : "ランプ"}
+                </span>
+                <span className={styles.pathTerminals}>
+                  {explanation.inletLabel} → {explanation.outletLabel}
+                </span>
+              </li>
+              {startSteps.back.map((step, index) => (
+                <PathRow key={`startback-${index}`} step={step} />
+              ))}
+            </ol>
+            <p className={styles.hint}>
+              {/*
+                同じ部品の接点はまとめて「RY1 の 9–1・10–2」と書く。
+                部品名を接点の数だけ繰り返すと、**どこが切れたのかより
+                部品名のほうが目立つ**
+              */}
+              {verb}した時点で {describeBreaks(start.breaks)}{" "}
+              が開き、この経路は切れました。
+            </p>
+          </section>
         )}
-      </section>
+
+        {/* 落とし方（design.md §5.12）。落ちない操作こそが誤解の芯 */}
+        {releases.length > 0 && (
+          <section className={styles.section}>
+            <h3 className={styles.heading}>
+              {explanation.kind === "relay" ? "落とす" : "消す"}には
+            </h3>
+            {releasing.length > 0 ? (
+              <ul className={styles.reachList}>
+                {releasing.map((entry) => (
+                  <li key={entry.componentId} className={styles.gateRow}>
+                    <span className={styles.pathName}>{entry.label}</span>
+                    <span className={styles.pathTerminals}>を</span>
+                    <span className={styles.gateCondition}>{entry.action}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.hint}>
+                スイッチの操作では落ちません。配線を外すか、■ で停止してください。
+              </p>
+            )}
+            {ineffective.length > 0 && (
+              <p className={styles.hint}>
+                ※{" "}
+                {ineffective
+                  .map((entry) => `${entry.label} を ${entry.concessive}`)
+                  .join("、")}
+                落ちません。
+              </p>
+            )}
+          </section>
+        )}
+      </>
     );
   }
 
@@ -395,6 +481,22 @@ function LoadPathSection({
       )}
     </section>
   );
+}
+
+/** 切れた接点を「RY1 の 9–1・10–2」の形にまとめる（同じ部品は 1 度だけ名乗る） */
+function describeBreaks(breaks: readonly PathBreak[]): string {
+  const byComponent = new Map<string, { label: string; pairs: string[] }>();
+  for (const broken of breaks) {
+    const entry = byComponent.get(broken.componentId) ?? {
+      label: broken.label,
+      pairs: [],
+    };
+    entry.pairs.push(broken.terminalLabels.join("–"));
+    byComponent.set(broken.componentId, entry);
+  }
+  return [...byComponent.values()]
+    .map((entry) => `${entry.label} の ${entry.pairs.join("・")}`)
+    .join("、");
 }
 
 /** 経路の 1 区間。"S1  1 → 2" のように部品名と通る端子を並べる */
