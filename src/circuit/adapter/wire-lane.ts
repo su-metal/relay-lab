@@ -165,8 +165,8 @@ const anchorLookup = (
  * （`getDirection` は `sourcePosition` しか見ない）。ここを「横に長ければ縦の幹線」
  * のような当て推量にすると、実際の描画と違う幹線をずらして重なりが解けない。
  *
- * 相手へ**背を向けて**出る配線（回り込む形）だけは対象から外す。走行が相手側の
- * 座標に立ち、幹線の見立てが変わるため。`null` を返す。
+ * 向かい合った端子どうしで、しかも相手へ**背を向けて**出る配線（回り込む形）だけは
+ * 対象から外す。`getSmoothStepPath` が中点で動かせる形なので、従来の幹線として扱う。
  */
 const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   const fromDir = SIDE_DIRECTION[from.side];
@@ -198,32 +198,37 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
    *
    * - 向かい合っていて真っ直ぐ並ぶ ―― 幹線の長さが 0。直線が返るだけで
    *   中点を動かしても線は 1 px も動かない
-   * - 同じ辺どうし ―― `getSmoothStepPath` はそもそも中点を使わず、
-   *   **出口の高さのまま相手の真横まで走る。** 電源のレールから複数の
-   *   負荷へ渡す配線がこれで、走行が全部同じ高さに立って完全に重なる
+   * - **向かい合っていない**（同じ辺どうし・辺が直交） ―― `getSmoothStepPath` は
+   *   そもそも中点を使わず、**決まった高さをまっすぐ走る。** 電源のレールから
+   *   複数の負荷へ渡す配線がこれで、走行が全部同じ高さに立って完全に重なる
    *
    * どちらも走行そのものを幹線とみなし、直交方向へ逃がす（`straightRunPath`）。
    */
   const straightRun =
-    alongAxis &&
-    (!facing || Math.abs(fromGap[cross] - toGap[cross]) <= SPAN_EPSILON);
+    !facing || (alongAxis && Math.abs(fromGap[cross] - toGap[cross]) <= SPAN_EPSILON);
 
   if (straightRun) {
+    /*
+     * 走行が立つ高さ。**出口が相手を向いているかで、出口側と相手側が入れ替わる。**
+     *
+     * 電源を図の左に置いて「電源 → 負荷」と引けば出口側（`alongAxis`）だが、
+     * 負荷から電源へ引き戻すと相手側になる。**同じ 1 本の線でも、引いた向きで
+     * 走行の高さが変わる。** ここを片方だけ見ていると、引き方によって
+     * レーンが配られたり配られなかったりする
+     */
+    const runCoord = alongAxis ? fromGap[cross] : toGap[cross];
     const run = Math.abs(toGap[axis] - fromGap[axis]);
     return {
       id,
       // 走行が幹線そのもの。左右の端子から出る線の幹線は横に寝る
       vertical: axis === "y",
-      coord: fromGap[cross],
+      coord: runCoord,
       start: Math.min(fromGap[axis], toGap[axis]),
       end: Math.max(fromGap[axis], toGap[axis]),
       room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
       step: STRAIGHT_LANE_STEP,
     };
   }
-
-  // 同じ辺どうしで、しかも相手に背を向けて出る形。走行は相手側の座標に立つ
-  if (!facing) return null;
 
   const vertical = horizontalExit ? alongAxis : !alongAxis;
   const spanAxis = vertical ? "y" : "x";
@@ -295,9 +300,10 @@ export type StraightRunParams = {
  * 対象は 2 つ（`trunkOf` の `straightRun` と同じ条件）。
  *
  * - **真っ直ぐ向かい合った 2 端子**（右 → 左で高さも同じ）。直線が描かれる
- * - **同じ辺どうし**（右 → 右）。`getSmoothStepPath` は出口の高さのまま
- *   相手の真横まで走り、そこから折れて相手の辺へ回り込む。走行の高さは
- *   出口で決まるので、同じ端子から出る配線は全部同じ高さに重なる
+ * - **向かい合っていない 2 端子**（右 → 右、辺が直交）。`getSmoothStepPath` は
+ *   中点を使わず、決まった高さをまっすぐ走る。**その高さは、出口が相手を
+ *   向いていれば出口側・背を向けていれば相手側**（`runCoord`）。電源のレールへ
+ *   複数の負荷から引き戻す配線がまさに後者で、走行が全部 0V の高さに重なる
  *
  * **この形でない配線には `null` を返す**（呼び出し側は `getSmoothStepPath` に
  * 戻す）。判定は `trunkOf` の分岐とまったく同じ条件で行うが、渡ってくる座標は
@@ -328,33 +334,34 @@ export const straightRunPath = ({
     y: target.y + toDir.y * HANDLE_GAP,
   };
 
-  // 相手に背を向けて出る配線（回り込む形）は、走行が相手側の座標に立つので対象外
   const dir = sourceGap[axis] < targetGap[axis] ? 1 : -1;
-  if (fromDir[axis] !== dir) return null;
+  const alongAxis = fromDir[axis] === dir;
+  const facing = fromDir[axis] * toDir[axis] === -1;
 
   // 向かい合っているのに高さがずれていれば、中点をずらす従来の経路で足りる
-  const facing = fromDir[axis] * toDir[axis] === -1;
-  if (facing && Math.abs(sourceGap[cross] - targetGap[cross]) > SPAN_EPSILON) {
+  if (
+    facing &&
+    (!alongAxis ||
+      Math.abs(sourceGap[cross] - targetGap[cross]) > SPAN_EPSILON)
+  ) {
     return null;
   }
 
   if (Math.abs(targetGap[axis] - sourceGap[axis]) < MIN_JOG_RUN) return null;
 
-  /** 走行方向の位置と、**出口の高さ**から直交方向へずれた量で点を作る */
-  const at = (along: number, aside: number): Point =>
-    horizontal
-      ? { x: along, y: source[cross] + aside }
-      : { x: source[cross] + aside, y: along };
-  /** 相手の端子は出口の高さから見てどれだけずれているか */
-  const arrival = target[cross] - source[cross];
+  /** 走行方向の位置と、直交方向の座標から点を作る */
+  const at = (along: number, across: number): Point =>
+    horizontal ? { x: along, y: across } : { x: across, y: along };
+  /** 走行が立つ高さ。出口が相手を向いていなければ相手側に立つ（`trunkOf` と同じ） */
+  const runCoord = alongAxis ? sourceGap[cross] : targetGap[cross];
 
   const points: Point[] = [
-    at(source[axis], 0),
-    at(sourceGap[axis], 0),
-    at(sourceGap[axis], offset),
-    at(targetGap[axis], offset),
-    at(targetGap[axis], arrival),
-    at(target[axis], arrival),
+    source,
+    sourceGap,
+    at(sourceGap[axis], runCoord + offset),
+    at(targetGap[axis], runCoord + offset),
+    targetGap,
+    target,
   ];
 
   let path = `M ${points[0].x},${points[0].y}`;

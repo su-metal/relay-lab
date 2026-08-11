@@ -173,24 +173,60 @@ describe("buildWireLanes", () => {
     );
   });
 
-  it("相手に背を向けて出る配線は対象外", () => {
-    // 電源を右に置き、左のランプへ渡す。走行が相手側の座標に立ち、幹線の
-    // 見立てが変わるので手を出さない（回り込む形）
+  it("負荷から電源へ引き戻した配線も離す（走行は電源側の高さに立つ）", () => {
+    /*
+     * **引いた向きで走行の高さが変わる。** 負荷 → 電源と引くと、出口
+     * （ランプの右辺）は電源に背を向けているので、`getSmoothStepPath` は
+     * いったん右へ出てから**電源の高さ**まで降り、そこを左へ走る。
+     * 3 本とも 0V の高さに重なるので、ここを離せないと意味が無い。
+     */
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 300 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 700, y: 0 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 700, y: 300 } },
+        { id: "l3", definitionId: "lamp-dc24v", position: { x: 700, y: 600 } },
+      ],
+      connections: [
+        wire("w1", ["l1", "2"], ["ps", "zero"]),
+        wire("w2", ["l2", "2"], ["ps", "zero"]),
+        wire("w3", ["l3", "2"], ["ps", "zero"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    const shifts = [
+      lanes.get("w1") ?? 0,
+      lanes.get("w2") ?? 0,
+      lanes.get("w3") ?? 0,
+    ];
+    expect(new Set(shifts).size).toBe(3);
+  });
+
+  it("向かい合ったまま回り込む配線は従来の幹線として扱う", () => {
+    // 右辺 → 左辺で、相手が左にいる形。中点（centerY）で動かせるので
+    // 走行として扱わない
     const document: CircuitDocument = {
       version: 1,
       components: [
         { id: "ps", definitionId: "power-dc24v", position: { x: 600, y: 0 } },
         { id: "l1", definitionId: "lamp-dc24v", position: { x: 0, y: 0 } },
-        { id: "l2", definitionId: "lamp-dc24v", position: { x: 0, y: 100 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 0, y: 200 } },
       ],
       connections: [
-        wire("w1", ["ps", "plus"], ["l1", "2"]),
-        wire("w2", ["ps", "plus"], ["l2", "2"]),
+        wire("w1", ["ps", "plus"], ["l1", "1"]),
+        wire("w2", ["ps", "zero"], ["l2", "1"]),
       ],
       viewport: { x: 0, y: 0, zoom: 1 },
     };
 
-    expect(buildWireLanes(document, componentRegistry).size).toBe(0);
+    const lanes = buildWireLanes(document, componentRegistry);
+    for (const shift of lanes.values()) {
+      // 幹線の間隔で振られている（走行の 16px ではない）
+      expect(Math.abs(shift) % LANE_STEP).toBe(0);
+    }
   });
 
   it("真っ直ぐ向かい合う配線どうしも離す", () => {
@@ -303,16 +339,24 @@ describe("straightRunPath", () => {
     ).toBeNull();
   });
 
-  it("相手に背を向けて出る配線は対象外", () => {
-    // 右へ出るのに相手は左。走行が相手側の座標に立つ
-    expect(
-      straightRunPath({
-        ...horizontal,
-        target: { x: -200, y: 0 },
-        targetSide: "right",
-        offset: 10,
-      }),
-    ).toBeNull();
+  it("相手に背を向けて出る配線は、相手側の高さで走行を逃がす", () => {
+    /*
+     * 右へ出るのに相手は左（負荷 → 電源の引き方）。出口の高さ（y=0）ではなく
+     * **相手の高さ（y=120）** を走るので、逃がすのもそちら側。
+     */
+    const path = straightRunPath({
+      source: { x: 0, y: 0 },
+      target: { x: -300, y: 120 },
+      sourceSide: "right",
+      targetSide: "right",
+      offset: 10,
+    });
+
+    expect(path?.startsWith("M 0,0")).toBe(true);
+    expect(path?.endsWith("L -300,120")).toBe(true);
+    // 走行は相手の高さ +10。出口の高さ（0 + 10 = 10）ではない
+    expect(path).toContain(",130");
+    expect(path).not.toContain(",10Q");
   });
 
   it("同じ辺どうしなら、高さがずれていても逃がす", () => {
