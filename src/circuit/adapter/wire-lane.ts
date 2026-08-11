@@ -19,6 +19,18 @@
  * ここが返すのは「幹線をどれだけ動かすか」の px だけで、描画は
  * `components/edges/WireEdge.tsx` が `centerX` / `centerY` に足して行う。
  *
+ * ## 真っ直ぐ向かい合う配線だけは例外（`straightRunPath`）
+ *
+ * 両端の端子が同じ高さに並ぶと `getSmoothStepPath` は**直線**を返し、
+ * `centerX` / `centerY` をいくら動かしても線は 1 px も動かない。電源の 0V
+ * レールのように同じ高さの端子へ何本も渡す配線がまさにこれで、複数本が
+ * ピクセル単位で完全に重なる。**重なった線は後に描かれた 1 本しか見えない**
+ * ので、電流の向き（§5.10）も自己保持の破線（§5.9）も消える。
+ *
+ * この形だけは経路を自前で組む —— 端子から真っ直ぐ出て、レーンぶん横へ逃げ、
+ * 平行に走って、元の高さへ戻る。角の丸めは `getSmoothStepPath` と同じ規則で
+ * 付けるので、他の配線と見た目が揃う。
+ *
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
@@ -56,6 +68,40 @@ const HANDLE_GAP = 20;
 /** 角丸（`borderRadius` 既定 5）に食われるぶんの余白。幹線が潰れるまでは寄せない */
 const CORNER_SLACK = 6;
 
+/** 角の丸め半径。**React Flow の `borderRadius` 既定値と一致させること** */
+const CORNER_RADIUS = 5;
+
+/**
+ * 幹線の長さがこれ以下なら「両端が真っ直ぐ向かい合っている」とみなす。
+ *
+ * 0 と比べないのは、レーンを決めるここ（部品の位置＋端子の相対座標）と
+ * 描画側（React Flow が測った Handle の座標）で末尾の桁がずれうるため。
+ */
+const SPAN_EPSILON = 0.5;
+
+/**
+ * 迂回させた走行どうしの間隔。**幹線（`LANE_STEP`）より広く取る。**
+ *
+ * `LANE_STEP` は「部品と部品の間の短い幹線をずらす量」として決めた値で、
+ * 画面を横断する長い走行には狭い —— 通電中の線は幅 3.5px に発光 4px が乗るので、
+ * 10px 離しただけでは**隣り合うレーンの光が触れて 1 本に見える。** 短い幹線なら
+ * 前後の折れで区別が付くが、長い走行は延々と平行に並ぶぶん間隔だけが頼りになる。
+ */
+export const STRAIGHT_LANE_STEP = 16;
+
+/**
+ * 真っ直ぐな配線を逃がせる上限。
+ *
+ * 幹線をずらす場合と違って経路が破綻する限界は無いが、**離しすぎると
+ * 線が部品の並びから浮いて、どの端子から出ているのか読めなくなる。**
+ * ±2 レーン（±32px）まで＝ 5 本までは確実に離れる。
+ * それ以上混んだ束では一部が同じ道に残る。
+ */
+const STRAIGHT_ROOM = STRAIGHT_LANE_STEP * 2;
+
+/** 迂回の折れ 2 つが収まる最小の走行長。これを下回るなら曲げない */
+const MIN_JOG_RUN = 24;
+
 /** 端子の辺 → 配線が出ていく向き（`getSmoothStepPath` の `handleDirections` と同じ） */
 const SIDE_DIRECTION: Record<TerminalSide, Point> = {
   left: { x: -1, y: 0 },
@@ -77,6 +123,8 @@ type Trunk = {
   end: number;
   /** ずらせる上限。これを超えると経路が折り返して図が破綻する */
   room: number;
+  /** レーン 1 本ぶんの間隔。迂回させる走行だけ広く取る（`STRAIGHT_LANE_STEP`） */
+  step: number;
 };
 
 /** 端子 1 個のキャンバス座標と、配線が出ていく辺 */
@@ -117,8 +165,8 @@ const anchorLookup = (
  * （`getDirection` は `sourcePosition` しか見ない）。ここを「横に長ければ縦の幹線」
  * のような当て推量にすると、実際の描画と違う幹線をずらして重なりが解けない。
  *
- * 向かい合っていない辺どうし（右 → 右など）では `getSmoothStepPath` が中点を
- * 使わないため、ずらす手段が無い。`null` を返して対象から外す。
+ * 向かい合った端子どうしで、しかも相手へ**背を向けて**出る配線（回り込む形）だけは
+ * 対象から外す。`getSmoothStepPath` が中点で動かせる形なので、従来の幹線として扱う。
  */
 const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   const fromDir = SIDE_DIRECTION[from.side];
@@ -136,16 +184,56 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   // 主軸は出口の辺で決まる。左右の端子なら x、上下なら y
   const horizontalExit = from.side === "left" || from.side === "right";
   const axis = horizontalExit ? "x" : "y";
-  if (fromDir[axis] * toDir[axis] !== -1) return null;
+  const cross = horizontalExit ? "y" : "x";
 
   const forward = fromGap[axis] < toGap[axis] ? 1 : -1;
   // 出口の向きと進む向きが一致していれば主軸に直交する幹線、
   // 逆向き（back へ回り込む配線）なら主軸に沿った幹線になる
   const alongAxis = fromDir[axis] === forward;
-  const vertical = horizontalExit ? alongAxis : !alongAxis;
+  /** 端子どうしが向かい合っているか（右 → 左）。同じ辺どうし（右 → 右）は false */
+  const facing = fromDir[axis] * toDir[axis] === -1;
 
+  /*
+   * **`centerX` / `centerY` では動かせない形**（design.md §8.7）。
+   *
+   * - 向かい合っていて真っ直ぐ並ぶ ―― 幹線の長さが 0。直線が返るだけで
+   *   中点を動かしても線は 1 px も動かない
+   * - **向かい合っていない**（同じ辺どうし・辺が直交） ―― `getSmoothStepPath` は
+   *   そもそも中点を使わず、**決まった高さをまっすぐ走る。** 電源のレールから
+   *   複数の負荷へ渡す配線がこれで、走行が全部同じ高さに立って完全に重なる
+   *
+   * どちらも走行そのものを幹線とみなし、直交方向へ逃がす（`straightRunPath`）。
+   */
+  const straightRun =
+    !facing || (alongAxis && Math.abs(fromGap[cross] - toGap[cross]) <= SPAN_EPSILON);
+
+  if (straightRun) {
+    /*
+     * 走行が立つ高さ。**出口が相手を向いているかで、出口側と相手側が入れ替わる。**
+     *
+     * 電源を図の左に置いて「電源 → 負荷」と引けば出口側（`alongAxis`）だが、
+     * 負荷から電源へ引き戻すと相手側になる。**同じ 1 本の線でも、引いた向きで
+     * 走行の高さが変わる。** ここを片方だけ見ていると、引き方によって
+     * レーンが配られたり配られなかったりする
+     */
+    const runCoord = alongAxis ? fromGap[cross] : toGap[cross];
+    const run = Math.abs(toGap[axis] - fromGap[axis]);
+    return {
+      id,
+      // 走行が幹線そのもの。左右の端子から出る線の幹線は横に寝る
+      vertical: axis === "y",
+      coord: runCoord,
+      start: Math.min(fromGap[axis], toGap[axis]),
+      end: Math.max(fromGap[axis], toGap[axis]),
+      room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
+      step: STRAIGHT_LANE_STEP,
+    };
+  }
+
+  const vertical = horizontalExit ? alongAxis : !alongAxis;
   const spanAxis = vertical ? "y" : "x";
   const coordAxis = vertical ? "x" : "y";
+
   return {
     id,
     vertical,
@@ -156,7 +244,132 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       0,
       Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
     ),
+    step: LANE_STEP,
   };
+};
+
+/**
+ * 3 点 a → b → c の b で曲がる区間を、角を丸めた SVG コマンドにする。
+ *
+ * **React Flow の `getBend` と同じ規則。** 半径の決め方（隣り合う辺の
+ * 半分と `CORNER_RADIUS` の最小）まで揃えないと、自前で組んだ経路の角だけが
+ * 他の配線と違う丸みになって浮く。
+ */
+const bend = (a: Point, b: Point, c: Point): string => {
+  const length = (p: Point, q: Point) =>
+    Math.sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
+  const size = Math.min(
+    length(a, b) / 2,
+    length(b, c) / 2,
+    CORNER_RADIUS,
+  );
+  const { x, y } = b;
+
+  // 一直線に並んでいる（＝曲がらない）ならただ通過する
+  if ((a.x === x && x === c.x) || (a.y === y && y === c.y)) {
+    return `L ${x},${y}`;
+  }
+
+  if (a.y === y) {
+    const xDir = a.x < c.x ? -1 : 1;
+    const yDir = a.y < c.y ? 1 : -1;
+    return `L ${x + size * xDir},${y}Q ${x},${y} ${x},${y + size * yDir}`;
+  }
+  const xDir = a.x < c.x ? 1 : -1;
+  const yDir = a.y < c.y ? -1 : 1;
+  return `L ${x},${y + size * yDir}Q ${x},${y} ${x + size * xDir},${y}`;
+};
+
+export type StraightRunParams = {
+  source: Point;
+  target: Point;
+  sourceSide: TerminalSide;
+  targetSide: TerminalSide;
+  /** 走行に直交する向きへ逃がす量（px）。`buildWireLanes` が配る値 */
+  offset: number;
+};
+
+/**
+ * 出口の高さをそのまま走る配線を、`offset` px 横へ逃がして結ぶ経路を組む。
+ *
+ * ```
+ *   ┌──────────────┐        ← offset ぶん逃げた走行
+ *  ─┘              └─        ← 端子から真っ直ぐ出る HANDLE_GAP
+ * ```
+ *
+ * 対象は 2 つ（`trunkOf` の `straightRun` と同じ条件）。
+ *
+ * - **真っ直ぐ向かい合った 2 端子**（右 → 左で高さも同じ）。直線が描かれる
+ * - **向かい合っていない 2 端子**（右 → 右、辺が直交）。`getSmoothStepPath` は
+ *   中点を使わず、決まった高さをまっすぐ走る。**その高さは、出口が相手を
+ *   向いていれば出口側・背を向けていれば相手側**（`runCoord`）。電源のレールへ
+ *   複数の負荷から引き戻す配線がまさに後者で、走行が全部 0V の高さに重なる
+ *
+ * **この形でない配線には `null` を返す**（呼び出し側は `getSmoothStepPath` に
+ * 戻す）。判定は `trunkOf` の分岐とまったく同じ条件で行うが、渡ってくる座標は
+ * React Flow が測った実測値なので、ここでも独立に確かめる —— レーンだけ配られて
+ * 経路が元のまま、という食い違いを起こさないため。
+ */
+export const straightRunPath = ({
+  source,
+  target,
+  sourceSide,
+  targetSide,
+  offset,
+}: StraightRunParams): string | null => {
+  if (offset === 0) return null;
+
+  const fromDir = SIDE_DIRECTION[sourceSide];
+  const toDir = SIDE_DIRECTION[targetSide];
+  const horizontal = sourceSide === "left" || sourceSide === "right";
+  const axis = horizontal ? "x" : "y";
+  const cross = horizontal ? "y" : "x";
+
+  const sourceGap = {
+    x: source.x + fromDir.x * HANDLE_GAP,
+    y: source.y + fromDir.y * HANDLE_GAP,
+  };
+  const targetGap = {
+    x: target.x + toDir.x * HANDLE_GAP,
+    y: target.y + toDir.y * HANDLE_GAP,
+  };
+
+  const dir = sourceGap[axis] < targetGap[axis] ? 1 : -1;
+  const alongAxis = fromDir[axis] === dir;
+  const facing = fromDir[axis] * toDir[axis] === -1;
+
+  // 向かい合っているのに高さがずれていれば、中点をずらす従来の経路で足りる
+  if (
+    facing &&
+    (!alongAxis ||
+      Math.abs(sourceGap[cross] - targetGap[cross]) > SPAN_EPSILON)
+  ) {
+    return null;
+  }
+
+  if (Math.abs(targetGap[axis] - sourceGap[axis]) < MIN_JOG_RUN) return null;
+
+  /** 走行方向の位置と、直交方向の座標から点を作る */
+  const at = (along: number, across: number): Point =>
+    horizontal ? { x: along, y: across } : { x: across, y: along };
+  /** 走行が立つ高さ。出口が相手を向いていなければ相手側に立つ（`trunkOf` と同じ） */
+  const runCoord = alongAxis ? sourceGap[cross] : targetGap[cross];
+
+  const points: Point[] = [
+    source,
+    sourceGap,
+    at(sourceGap[axis], runCoord + offset),
+    at(targetGap[axis], runCoord + offset),
+    targetGap,
+    target,
+  ];
+
+  let path = `M ${points[0].x},${points[0].y}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    path += bend(points[index - 1], points[index], points[index + 1]);
+  }
+  const last = points[points.length - 1];
+  return `${path}L ${last.x},${last.y}`;
 };
 
 /**
@@ -164,9 +377,11 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
  *
  * 0, +1, -1, +2, -2 … と**中央から交互に**振る。片側へ積んでいくと束全体が
  * 元の位置から離れていき、部品との位置関係が読み取りにくくなる。
+ *
+ * @param step レーン 1 本ぶんの間隔。既定は幹線用（`LANE_STEP`）
  */
-export const laneShift = (lane: number): number =>
-  lane === 0 ? 0 : Math.ceil(lane / 2) * LANE_STEP * (lane % 2 === 1 ? 1 : -1);
+export const laneShift = (lane: number, step: number = LANE_STEP): number =>
+  lane === 0 ? 0 : Math.ceil(lane / 2) * step * (lane % 2 === 1 ? 1 : -1);
 
 const overlaps = (a: Trunk, b: Trunk): boolean =>
   a.start - SPAN_MARGIN <= b.end && b.start - SPAN_MARGIN <= a.end;
@@ -189,6 +404,13 @@ const assignCluster = (
     (a, b) => a.start - b.start || (a.id < b.id ? -1 : 1),
   );
 
+  /*
+   * 間隔は**束の中でいちばん広いものに揃える。** 幹線と迂回した走行が同じ道に
+   * 混ざったとき、レーンごとに違う間隔で振ると別々のレーンが近い位置に
+   * 落ちうる（幹線のレーン 3 が +20、走行のレーン 1 が +16 など）。
+   */
+  const step = Math.max(...ordered.map((trunk) => trunk.step));
+
   for (const trunk of ordered) {
     let lane = 0;
     while (
@@ -200,7 +422,7 @@ const assignCluster = (
 
     // 部品が近すぎてずらす余地が無いときは動かさない。ここで無理に押し込むと
     // 経路が折り返して、重なり以上に読みにくい線になる（design.md §8.7）
-    const shift = laneShift(lane);
+    const shift = laneShift(lane, step);
     const clamped = Math.max(-trunk.room, Math.min(trunk.room, shift));
     if (clamped !== 0) shifts.set(trunk.id, clamped);
   }

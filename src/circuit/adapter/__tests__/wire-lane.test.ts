@@ -11,7 +11,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { LANE_STEP, buildWireLanes, laneShift } from "@/circuit/adapter/wire-lane";
+import {
+  LANE_STEP,
+  STRAIGHT_LANE_STEP,
+  buildWireLanes,
+  laneShift,
+  straightRunPath,
+} from "@/circuit/adapter/wire-lane";
 import { componentRegistry } from "@/circuit/definitions";
 import type { CircuitConnection, CircuitDocument } from "@/circuit/types";
 
@@ -36,6 +42,17 @@ const circuit = (
   viewport: { x: 0, y: 0, zoom: 1 },
 });
 
+/** 部品の上端から端子までの距離。定義から引くので `visual` を変えても追随する */
+const terminalOffsetY = (definitionId: string, terminalId: string): number => {
+  const definition = componentRegistry.get(definitionId);
+  if (!definition) throw new Error(`未登録の定義: ${definitionId}`);
+  const terminal = definition.terminals.find(
+    (candidate) => candidate.id === terminalId,
+  );
+  if (!terminal) throw new Error(`未登録の端子: ${terminalId}`);
+  return terminal.position.y * definition.visual.height;
+};
+
 const wire = (
   id: string,
   from: [string, string],
@@ -54,6 +71,11 @@ describe("laneShift", () => {
     expect(laneShift(2)).toBe(-LANE_STEP);
     expect(laneShift(3)).toBe(LANE_STEP * 2);
     expect(laneShift(4)).toBe(-LANE_STEP * 2);
+  });
+
+  it("間隔を指定できる（迂回した走行は幹線より広く取る）", () => {
+    expect(laneShift(1, STRAIGHT_LANE_STEP)).toBe(STRAIGHT_LANE_STEP);
+    expect(laneShift(2, STRAIGHT_LANE_STEP)).toBe(-STRAIGHT_LANE_STEP);
   });
 });
 
@@ -128,15 +150,140 @@ describe("buildWireLanes", () => {
     expect(buildWireLanes(document, componentRegistry).size).toBe(0);
   });
 
-  it("向かい合っていない端子どうしの配線は対象外", () => {
-    // 右辺 → 右辺 の配線では smoothstep が中点を使わないので、ずらす手段が無い
+  it("同じ辺どうしの配線も、出口の高さが重なれば離す", () => {
+    /*
+     * 右辺 → 右辺。smoothstep は中点を使わず、**出口の高さのまま相手の真横まで
+     * 走って**から折れる。同じ端子から出る配線は走行が全部同じ高さに立つので、
+     * 電源のレールから複数の負荷へ渡すとピクセル単位で重なる。
+     */
     const document = circuit(
-      [0, 20],
+      [0, 100],
       [
         wire("w1", ["ps", "plus"], ["l1", "2"]),
-        wire("w2", ["ps", "zero"], ["l2", "2"]),
+        wire("w2", ["ps", "plus"], ["l2", "2"]),
       ],
     );
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    const shifts = [lanes.get("w1") ?? 0, lanes.get("w2") ?? 0];
+    expect(new Set(shifts).size).toBe(2);
+    // 画面を横断する走行は幹線より広く離す（発光が触れて 1 本に見えないよう）
+    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(
+      STRAIGHT_LANE_STEP,
+    );
+  });
+
+  it("負荷から電源へ引き戻した配線も離す（走行は電源側の高さに立つ）", () => {
+    /*
+     * **引いた向きで走行の高さが変わる。** 負荷 → 電源と引くと、出口
+     * （ランプの右辺）は電源に背を向けているので、`getSmoothStepPath` は
+     * いったん右へ出てから**電源の高さ**まで降り、そこを左へ走る。
+     * 3 本とも 0V の高さに重なるので、ここを離せないと意味が無い。
+     */
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 300 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 700, y: 0 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 700, y: 300 } },
+        { id: "l3", definitionId: "lamp-dc24v", position: { x: 700, y: 600 } },
+      ],
+      connections: [
+        wire("w1", ["l1", "2"], ["ps", "zero"]),
+        wire("w2", ["l2", "2"], ["ps", "zero"]),
+        wire("w3", ["l3", "2"], ["ps", "zero"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    const shifts = [
+      lanes.get("w1") ?? 0,
+      lanes.get("w2") ?? 0,
+      lanes.get("w3") ?? 0,
+    ];
+    expect(new Set(shifts).size).toBe(3);
+  });
+
+  it("向かい合ったまま回り込む配線は従来の幹線として扱う", () => {
+    // 右辺 → 左辺で、相手が左にいる形。中点（centerY）で動かせるので
+    // 走行として扱わない
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 600, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 0, y: 0 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 0, y: 200 } },
+      ],
+      connections: [
+        wire("w1", ["ps", "plus"], ["l1", "1"]),
+        wire("w2", ["ps", "zero"], ["l2", "1"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    for (const shift of lanes.values()) {
+      // 幹線の間隔で振られている（走行の 16px ではない）
+      expect(Math.abs(shift) % LANE_STEP).toBe(0);
+    }
+  });
+
+  it("真っ直ぐ向かい合う配線どうしも離す", () => {
+    /*
+     * 電源の + と同じ高さに、ランプの端子 1 が来る位置へ 2 台。どちらも
+     * 完全な水平線になり、`getSmoothStepPath` は直線を返す —— 幹線が無いので、
+     * 以前は 2 本がピクセル単位で重なったままだった。
+     *
+     * y は定義から逆算する。定数を書き写すと `visual` を変えたときに
+     * 「真っ直ぐ」でなくなり、テストだけが古い前提のまま通る
+     */
+    const alignedY = terminalOffsetY("power-dc24v", "plus") -
+      terminalOffsetY("lamp-dc24v", "1");
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        {
+          id: "l1",
+          definitionId: "lamp-dc24v",
+          position: { x: 600, y: alignedY },
+        },
+        {
+          id: "l2",
+          definitionId: "lamp-dc24v",
+          position: { x: 900, y: alignedY },
+        },
+      ],
+      connections: [
+        wire("w1", ["ps", "plus"], ["l1", "1"]),
+        wire("w2", ["ps", "plus"], ["l2", "1"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    const shifts = [lanes.get("w1") ?? 0, lanes.get("w2") ?? 0];
+    expect(new Set(shifts).size).toBe(2);
+    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(
+      STRAIGHT_LANE_STEP,
+    );
+  });
+
+  it("真っ直ぐでも 1 本きりなら動かさない", () => {
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 600, y: -32 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 600, y: 400 } },
+      ],
+      connections: [
+        wire("w1", ["ps", "plus"], ["l1", "1"]),
+        wire("w2", ["ps", "zero"], ["l2", "1"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
 
     expect(buildWireLanes(document, componentRegistry).size).toBe(0);
   });
@@ -160,5 +307,107 @@ describe("buildWireLanes", () => {
     expect(() => buildWireLanes(document, componentRegistry)).not.toThrow();
     expect(buildWireLanes(document, componentRegistry).has("w2")).toBe(false);
     expect(buildWireLanes(document, componentRegistry).has("w3")).toBe(false);
+  });
+});
+
+/**
+ * 真っ直ぐな配線を逃がす経路（design.md §8.7）。
+ *
+ * `buildWireLanes` がレーンを配っても、経路がそれを実現しなければ線は動かない。
+ * **ここが `null` を返す条件と `trunkOf` の分岐は一致していなければならない**
+ * ―― ずれると「レーンは配られたのに線は直線のまま」になる。
+ */
+describe("straightRunPath", () => {
+  const horizontal = {
+    source: { x: 0, y: 0 },
+    target: { x: 200, y: 0 },
+    sourceSide: "right",
+    targetSide: "left",
+  } as const;
+
+  it("逃がす量が 0 なら経路を作らない（smoothstep に任せる）", () => {
+    expect(straightRunPath({ ...horizontal, offset: 0 })).toBeNull();
+  });
+
+  it("向かい合っていて高さがずれていれば対象外（中点をずらす経路で足りる）", () => {
+    expect(
+      straightRunPath({
+        ...horizontal,
+        target: { x: 200, y: 40 },
+        offset: 10,
+      }),
+    ).toBeNull();
+  });
+
+  it("相手に背を向けて出る配線は、相手側の高さで走行を逃がす", () => {
+    /*
+     * 右へ出るのに相手は左（負荷 → 電源の引き方）。出口の高さ（y=0）ではなく
+     * **相手の高さ（y=120）** を走るので、逃がすのもそちら側。
+     */
+    const path = straightRunPath({
+      source: { x: 0, y: 0 },
+      target: { x: -300, y: 120 },
+      sourceSide: "right",
+      targetSide: "right",
+      offset: 10,
+    });
+
+    expect(path?.startsWith("M 0,0")).toBe(true);
+    expect(path?.endsWith("L -300,120")).toBe(true);
+    // 走行は相手の高さ +10。出口の高さ（0 + 10 = 10）ではない
+    expect(path).toContain(",130");
+    expect(path).not.toContain(",10Q");
+  });
+
+  it("同じ辺どうしなら、高さがずれていても逃がす", () => {
+    /*
+     * 右辺 → 右辺。出口の高さ（y=0）のまま相手の真横（x=220）まで走り、
+     * そこから折れて相手の右辺へ入る。逃がすのは走行の高さ
+     */
+    const path = straightRunPath({
+      ...horizontal,
+      target: { x: 200, y: 120 },
+      targetSide: "right",
+      offset: 10,
+    });
+
+    expect(path?.startsWith("M 0,0")).toBe(true);
+    expect(path?.endsWith("L 200,120")).toBe(true);
+    // 逃げた走行（y=10）は、相手の右横（x=220）まで伸びる
+    expect(path).toContain("25,10");
+    expect(path).toContain("215,10");
+  });
+
+  it("端子から出る区間しか無い短い配線は曲げない", () => {
+    expect(
+      straightRunPath({ ...horizontal, target: { x: 50, y: 0 }, offset: 10 }),
+    ).toBeNull();
+  });
+
+  it("端子から出て、逃がした高さを走り、元の高さへ戻る", () => {
+    const path = straightRunPath({ ...horizontal, offset: 10 });
+
+    // 端子そのものは動かさない。動かすと配線が端子から浮く
+    expect(path?.startsWith("M 0,0")).toBe(true);
+    expect(path?.endsWith("L 200,0")).toBe(true);
+    // 逃がした高さ（y=10）を走っている
+    expect(path).toContain("25,10");
+    expect(path).toContain("175,10");
+  });
+
+  it("上下の端子でも同じ形になる（走行が縦になるだけ）", () => {
+    const path = straightRunPath({
+      source: { x: 0, y: 0 },
+      target: { x: 0, y: 200 },
+      sourceSide: "bottom",
+      targetSide: "top",
+      offset: -10,
+    });
+
+    expect(path?.startsWith("M 0,0")).toBe(true);
+    expect(path?.endsWith("L 0,200")).toBe(true);
+    // 逃がすのは x 側。符号もそのまま効く
+    expect(path).toContain("-10,25");
+    expect(path).toContain("-10,175");
   });
 });

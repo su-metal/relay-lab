@@ -71,11 +71,15 @@
 .flow {
   fill: none;
   stroke: var(--canvas-bg);
-  stroke-width: 2.4;
+  /*
+   * **本体（3.5px）より太くする。** 細いと切れ目の上下に元の色が細く残り、
+   * 「п」「u」のような潰れた形に見える。切り抜くのだから覆いきる。
+   */
+  stroke-width: 4;
   /* 切れ目を短く、間隔を長く。線が「点線になった」ではなく「流れている」と読ませる */
   stroke-dasharray: 3 13;
-  stroke-linecap: round;
-  opacity: 0.85;
+  /* 端は角のまま。round にすると切れ目が両端で丸く痩せ、幅を覆いきれない */
+  stroke-linecap: butt;
   /* 掴む・選ぶ当たり判定は本体の interaction path が持つ */
   pointer-events: none;
   animation: currentFlow 0.75s linear infinite;

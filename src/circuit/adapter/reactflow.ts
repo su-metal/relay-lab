@@ -256,6 +256,14 @@ export type WireEdgeData = {
    * 1 本に決まらず、`current-flow.ts` がそもそも返さない。
    */
   flow?: FlowDirection;
+  /**
+   * 向きを**線そのもの**で表す線か（design.md §5.10）。
+   *
+   * 自己保持の紫（§5.9）は線自身が流れる破線なので、そこへ切れ目の
+   * オーバーレイを重ねると**周期の違う破線が 2 つ重なって模様が壊れる。**
+   * この線では向きを `animation-direction` で線に与え、オーバーレイは出さない。
+   */
+  flowOnStroke?: boolean;
 };
 
 export type WireEdge = Edge<WireEdgeData, typeof WIRE_EDGE_TYPE>;
