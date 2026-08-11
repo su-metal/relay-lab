@@ -144,15 +144,42 @@ describe("buildWireLanes", () => {
     expect(buildWireLanes(document, componentRegistry).size).toBe(0);
   });
 
-  it("向かい合っていない端子どうしの配線は対象外", () => {
-    // 右辺 → 右辺 の配線では smoothstep が中点を使わないので、ずらす手段が無い
+  it("同じ辺どうしの配線も、出口の高さが重なれば離す", () => {
+    /*
+     * 右辺 → 右辺。smoothstep は中点を使わず、**出口の高さのまま相手の真横まで
+     * 走って**から折れる。同じ端子から出る配線は走行が全部同じ高さに立つので、
+     * 電源のレールから複数の負荷へ渡すとピクセル単位で重なる。
+     */
     const document = circuit(
-      [0, 20],
+      [0, 100],
       [
         wire("w1", ["ps", "plus"], ["l1", "2"]),
-        wire("w2", ["ps", "zero"], ["l2", "2"]),
+        wire("w2", ["ps", "plus"], ["l2", "2"]),
       ],
     );
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    const shifts = [lanes.get("w1") ?? 0, lanes.get("w2") ?? 0];
+    expect(new Set(shifts).size).toBe(2);
+    expect(Math.abs(shifts[0] - shifts[1])).toBeGreaterThanOrEqual(LANE_STEP);
+  });
+
+  it("相手に背を向けて出る配線は対象外", () => {
+    // 電源を右に置き、左のランプへ渡す。走行が相手側の座標に立ち、幹線の
+    // 見立てが変わるので手を出さない（回り込む形）
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 600, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 0, y: 0 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 0, y: 100 } },
+      ],
+      connections: [
+        wire("w1", ["ps", "plus"], ["l1", "2"]),
+        wire("w2", ["ps", "plus"], ["l2", "2"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
 
     expect(buildWireLanes(document, componentRegistry).size).toBe(0);
   });
@@ -255,7 +282,7 @@ describe("straightRunPath", () => {
     expect(straightRunPath({ ...horizontal, offset: 0 })).toBeNull();
   });
 
-  it("端子が真っ直ぐ並んでいなければ対象外", () => {
+  it("向かい合っていて高さがずれていれば対象外（中点をずらす経路で足りる）", () => {
     expect(
       straightRunPath({
         ...horizontal,
@@ -265,11 +292,35 @@ describe("straightRunPath", () => {
     ).toBeNull();
   });
 
-  it("向かい合っていない端子どうしは対象外", () => {
-    // 右辺 → 右辺。smoothstep は回り込む経路を描くので直線ではない
+  it("相手に背を向けて出る配線は対象外", () => {
+    // 右へ出るのに相手は左。走行が相手側の座標に立つ
     expect(
-      straightRunPath({ ...horizontal, targetSide: "right", offset: 10 }),
+      straightRunPath({
+        ...horizontal,
+        target: { x: -200, y: 0 },
+        targetSide: "right",
+        offset: 10,
+      }),
     ).toBeNull();
+  });
+
+  it("同じ辺どうしなら、高さがずれていても逃がす", () => {
+    /*
+     * 右辺 → 右辺。出口の高さ（y=0）のまま相手の真横（x=220）まで走り、
+     * そこから折れて相手の右辺へ入る。逃がすのは走行の高さ
+     */
+    const path = straightRunPath({
+      ...horizontal,
+      target: { x: 200, y: 120 },
+      targetSide: "right",
+      offset: 10,
+    });
+
+    expect(path?.startsWith("M 0,0")).toBe(true);
+    expect(path?.endsWith("L 200,120")).toBe(true);
+    // 逃げた走行（y=10）は、相手の右横（x=220）まで伸びる
+    expect(path).toContain("25,10");
+    expect(path).toContain("215,10");
   });
 
   it("端子から出る区間しか無い短い配線は曲げない", () => {

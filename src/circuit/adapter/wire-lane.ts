@@ -152,8 +152,8 @@ const anchorLookup = (
  * （`getDirection` は `sourcePosition` しか見ない）。ここを「横に長ければ縦の幹線」
  * のような当て推量にすると、実際の描画と違う幹線をずらして重なりが解けない。
  *
- * 向かい合っていない辺どうし（右 → 右など）では `getSmoothStepPath` が中点を
- * 使わないため、ずらす手段が無い。`null` を返して対象から外す。
+ * 相手へ**背を向けて**出る配線（回り込む形）だけは対象から外す。走行が相手側の
+ * 座標に立ち、幹線の見立てが変わるため。`null` を返す。
  */
 const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   const fromDir = SIDE_DIRECTION[from.side];
@@ -171,37 +171,49 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   // 主軸は出口の辺で決まる。左右の端子なら x、上下なら y
   const horizontalExit = from.side === "left" || from.side === "right";
   const axis = horizontalExit ? "x" : "y";
-  if (fromDir[axis] * toDir[axis] !== -1) return null;
+  const cross = horizontalExit ? "y" : "x";
 
   const forward = fromGap[axis] < toGap[axis] ? 1 : -1;
   // 出口の向きと進む向きが一致していれば主軸に直交する幹線、
   // 逆向き（back へ回り込む配線）なら主軸に沿った幹線になる
   const alongAxis = fromDir[axis] === forward;
-  const vertical = horizontalExit ? alongAxis : !alongAxis;
-
-  const spanAxis = vertical ? "y" : "x";
-  const coordAxis = vertical ? "x" : "y";
+  /** 端子どうしが向かい合っているか（右 → 左）。同じ辺どうし（右 → 右）は false */
+  const facing = fromDir[axis] * toDir[axis] === -1;
 
   /*
-   * 幹線の長さが 0 —— 両端の端子が真っ直ぐ向かい合っており、描かれるのは
-   * 直線 1 本。`centerX` / `centerY` を動かしても線は動かないので、
-   * **走行そのものを幹線とみなして直交方向へ逃がす**（`straightRunPath`）。
-   * 幹線の向きも入れ替わる（横に走る線の幹線は横）。
+   * **`centerX` / `centerY` では動かせない形**（design.md §8.7）。
+   *
+   * - 向かい合っていて真っ直ぐ並ぶ ―― 幹線の長さが 0。直線が返るだけで
+   *   中点を動かしても線は 1 px も動かない
+   * - 同じ辺どうし ―― `getSmoothStepPath` はそもそも中点を使わず、
+   *   **出口の高さのまま相手の真横まで走る。** 電源のレールから複数の
+   *   負荷へ渡す配線がこれで、走行が全部同じ高さに立って完全に重なる
+   *
+   * どちらも走行そのものを幹線とみなし、直交方向へ逃がす（`straightRunPath`）。
    */
-  if (
+  const straightRun =
     alongAxis &&
-    Math.abs(fromGap[spanAxis] - toGap[spanAxis]) <= SPAN_EPSILON
-  ) {
-    const run = Math.abs(toGap[coordAxis] - fromGap[coordAxis]);
+    (!facing || Math.abs(fromGap[cross] - toGap[cross]) <= SPAN_EPSILON);
+
+  if (straightRun) {
+    const run = Math.abs(toGap[axis] - fromGap[axis]);
     return {
       id,
-      vertical: !vertical,
-      coord: fromGap[spanAxis],
-      start: Math.min(fromGap[coordAxis], toGap[coordAxis]),
-      end: Math.max(fromGap[coordAxis], toGap[coordAxis]),
+      // 走行が幹線そのもの。左右の端子から出る線の幹線は横に寝る
+      vertical: axis === "y",
+      coord: fromGap[cross],
+      start: Math.min(fromGap[axis], toGap[axis]),
+      end: Math.max(fromGap[axis], toGap[axis]),
       room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
     };
   }
+
+  // 同じ辺どうしで、しかも相手に背を向けて出る形。走行は相手側の座標に立つ
+  if (!facing) return null;
+
+  const vertical = horizontalExit ? alongAxis : !alongAxis;
+  const spanAxis = vertical ? "y" : "x";
+  const coordAxis = vertical ? "x" : "y";
 
   return {
     id,
@@ -258,17 +270,24 @@ export type StraightRunParams = {
 };
 
 /**
- * 真っ直ぐ向かい合った 2 端子を、`offset` px 横へ逃がして結ぶ経路を組む。
+ * 出口の高さをそのまま走る配線を、`offset` px 横へ逃がして結ぶ経路を組む。
  *
  * ```
  *   ┌──────────────┐        ← offset ぶん逃げた走行
  *  ─┘              └─        ← 端子から真っ直ぐ出る HANDLE_GAP
  * ```
  *
+ * 対象は 2 つ（`trunkOf` の `straightRun` と同じ条件）。
+ *
+ * - **真っ直ぐ向かい合った 2 端子**（右 → 左で高さも同じ）。直線が描かれる
+ * - **同じ辺どうし**（右 → 右）。`getSmoothStepPath` は出口の高さのまま
+ *   相手の真横まで走り、そこから折れて相手の辺へ回り込む。走行の高さは
+ *   出口で決まるので、同じ端子から出る配線は全部同じ高さに重なる
+ *
  * **この形でない配線には `null` を返す**（呼び出し側は `getSmoothStepPath` に
  * 戻す）。判定は `trunkOf` の分岐とまったく同じ条件で行うが、渡ってくる座標は
  * React Flow が測った実測値なので、ここでも独立に確かめる —— レーンだけ配られて
- * 経路が直線のまま、という食い違いを起こさないため。
+ * 経路が元のまま、という食い違いを起こさないため。
  */
 export const straightRunPath = ({
   source,
@@ -285,29 +304,42 @@ export const straightRunPath = ({
   const axis = horizontal ? "x" : "y";
   const cross = horizontal ? "y" : "x";
 
-  // 真っ直ぐ並んでいない／向かい合っていない／回り込んでいる配線は対象外
-  if (Math.abs(source[cross] - target[cross]) > SPAN_EPSILON) return null;
-  if (fromDir[axis] * toDir[axis] !== -1) return null;
-  const dir = target[axis] > source[axis] ? 1 : -1;
+  const sourceGap = {
+    x: source.x + fromDir.x * HANDLE_GAP,
+    y: source.y + fromDir.y * HANDLE_GAP,
+  };
+  const targetGap = {
+    x: target.x + toDir.x * HANDLE_GAP,
+    y: target.y + toDir.y * HANDLE_GAP,
+  };
+
+  // 相手に背を向けて出る配線（回り込む形）は、走行が相手側の座標に立つので対象外
+  const dir = sourceGap[axis] < targetGap[axis] ? 1 : -1;
   if (fromDir[axis] !== dir) return null;
 
-  if (Math.abs(target[axis] - source[axis]) - HANDLE_GAP * 2 < MIN_JOG_RUN) {
+  // 向かい合っているのに高さがずれていれば、中点をずらす従来の経路で足りる
+  const facing = fromDir[axis] * toDir[axis] === -1;
+  if (facing && Math.abs(sourceGap[cross] - targetGap[cross]) > SPAN_EPSILON) {
     return null;
   }
 
-  /** 走行方向の位置と、走行から直交方向へずれた量から点を作る */
+  if (Math.abs(targetGap[axis] - sourceGap[axis]) < MIN_JOG_RUN) return null;
+
+  /** 走行方向の位置と、**出口の高さ**から直交方向へずれた量で点を作る */
   const at = (along: number, aside: number): Point =>
     horizontal
-      ? { x: along, y: source.y + aside }
-      : { x: source.x + aside, y: along };
+      ? { x: along, y: source[cross] + aside }
+      : { x: source[cross] + aside, y: along };
+  /** 相手の端子は出口の高さから見てどれだけずれているか */
+  const arrival = target[cross] - source[cross];
 
   const points: Point[] = [
     at(source[axis], 0),
-    at(source[axis] + dir * HANDLE_GAP, 0),
-    at(source[axis] + dir * HANDLE_GAP, offset),
-    at(target[axis] - dir * HANDLE_GAP, offset),
-    at(target[axis] - dir * HANDLE_GAP, 0),
-    at(target[axis], 0),
+    at(sourceGap[axis], 0),
+    at(sourceGap[axis], offset),
+    at(targetGap[axis], offset),
+    at(targetGap[axis], arrival),
+    at(target[axis], arrival),
   ];
 
   let path = `M ${points[0].x},${points[0].y}`;
