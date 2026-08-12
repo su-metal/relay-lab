@@ -15,6 +15,7 @@ import type {
   SimulationInput,
   SimulationResult,
   SimulationStatus,
+  TimerState,
   Warning,
 } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
@@ -28,6 +29,12 @@ import {
 } from "./graph";
 import { polarityAcross } from "./potential";
 import { evaluateCoil } from "./relay";
+import {
+  advanceTimer,
+  presetMsOf,
+  timerNextEventAtMs,
+  timerOutputOn,
+} from "./timer";
 import {
   describeComponent,
   detectDiodeOrientation,
@@ -47,17 +54,32 @@ const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => {
 };
 
 type RelayEvaluation = {
+  /**
+   * **接点が切り替わっている**部品。遅延なしのリレーはコイルの励磁と一致するが、
+   * タイマーは限時のぶんずれる（design.md §5.13）。`buildNets()` が見るのはこちら
+   */
   energized: Set<string>;
+  /** タイマーの実行時状態。次回の `previousTimers` になる */
+  timers: Map<string, TimerState>;
   warnings: Warning[];
 };
 
-/** 全リレーのコイルを一斉に評価する。接点の状態は評価中に変えない（同時性の担保） */
+/**
+ * 全リレーのコイルを一斉に評価する。接点の状態は評価中に変えない（同時性の担保）。
+ *
+ * タイマー（`delay` を持つリレー）は、コイルの励磁をそのまま接点に流さず
+ * `timer.ts` を通す。**`previousTimers` は 1 回の `simulate()` の中で固定** ——
+ * 収束の反復ごとに更新すると `changedAtMs` が毎回打ち直されて時間が進まない。
+ */
 const evaluateRelays = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   lookup: NetLookup,
+  nowMs: number,
+  previousTimers: ReadonlyMap<string, TimerState>,
 ): RelayEvaluation => {
   const energized = new Set<string>();
+  const timers = new Map<string, TimerState>();
   const warnings: Warning[] = [];
 
   for (const instance of document.components) {
@@ -73,7 +95,20 @@ const evaluateRelays = (
       stateAt(lookup, instance.id, coil.negativeTerminal),
     );
 
-    if (evaluation.energized) energized.add(instance.id);
+    if (electrical.delay) {
+      const state = advanceTimer(
+        previousTimers.get(instance.id),
+        evaluation.energized,
+        nowMs,
+      );
+      timers.set(instance.id, state);
+      const preset = presetMsOf(electrical.delay, instance.presetMs);
+      if (timerOutputOn(electrical.delay, state, preset, nowMs)) {
+        energized.add(instance.id);
+      }
+    } else if (evaluation.energized) {
+      energized.add(instance.id);
+    }
 
     if (evaluation.reversed) {
       const name = describeComponent(instance, definition);
@@ -90,7 +125,7 @@ const evaluateRelays = (
     }
   }
 
-  return { energized, warnings };
+  return { energized, timers, warnings };
 };
 
 /**
@@ -124,17 +159,55 @@ const collectLitLamps = (
 
 /** 1 回の反復で得られた状態のスナップショット */
 type Iteration = {
-  /** このグラフを組み立てるのに使った励磁状態 */
+  /** このグラフを組み立てるのに使った切替状態 */
   energized: ReadonlySet<string>;
   nets: NetAssignment;
   netState: Map<number, NetState>;
   coilWarnings: Warning[];
+  timers: Map<string, TimerState>;
+};
+
+/**
+ * カウント中のタイマーのうち、次に接点が変わる最も早い時刻（design.md §5.13）。
+ *
+ * ストアが「まだ時計を進める必要があるか」を判断する唯一の手がかり。
+ * タイマーが 1 個も無い回路では `undefined` になり、再計算のループは回らない。
+ */
+const nextEventOf = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  timers: ReadonlyMap<string, TimerState>,
+  nowMs: number,
+): number | undefined => {
+  let earliest: number | undefined;
+
+  for (const instance of document.components) {
+    const electrical = definitions.get(instance.definitionId)?.electrical;
+    if (electrical?.kind !== "relay" || !electrical.delay) continue;
+    const state = timers.get(instance.id);
+    if (!state) continue;
+
+    const at = timerNextEventAtMs(
+      electrical.delay,
+      state,
+      presetMsOf(electrical.delay, instance.presetMs),
+      nowMs,
+    );
+    if (at !== undefined && (earliest === undefined || at < earliest)) {
+      earliest = at;
+    }
+  }
+
+  return earliest;
 };
 
 /**
  * 回路を解く。
  *
  * @param input.previousEnergizedRelays 直前の励磁状態。自己保持回路の再現に必須
+ * @param input.previousTimers 直前のタイマー状態。**渡し忘れると時間が進まない**
+ *   （毎回「今この瞬間に入力が入った」ところからやり直すため・design.md §5.13）
+ * @param input.nowMs 開始からの経過ミリ秒。省略時は 0
  */
 export const simulate = (
   document: CircuitDocument,
@@ -148,6 +221,14 @@ export const simulate = (
   );
   const history: string[] = [];
 
+  const nowMs = input.nowMs ?? 0;
+  /*
+   * **収束ループの中では固定する。** 反復のたびに更新すると、途中経過で
+   * `changedAtMs` が打ち直されて経過時間が常に 0 になり、設定時間へ到達しない。
+   * 時間が進むのは `simulate()` の呼び出しをまたいだときだけ。
+   */
+  const previousTimers = input.previousTimers ?? new Map<string, TimerState>();
+
   let status: SimulationStatus = "not-converged";
   let iterations = 0;
   let last: Iteration | undefined;
@@ -158,9 +239,21 @@ export const simulate = (
     const nets = buildNets(document, definitions, input, energized);
     const netState = computeNetStates(document, definitions, nets);
     const lookup: NetLookup = { netOf: nets.netOf, netState };
-    const relays = evaluateRelays(document, definitions, lookup);
+    const relays = evaluateRelays(
+      document,
+      definitions,
+      lookup,
+      nowMs,
+      previousTimers,
+    );
 
-    last = { energized, nets, netState, coilWarnings: relays.warnings };
+    last = {
+      energized,
+      nets,
+      netState,
+      coilWarnings: relays.warnings,
+      timers: relays.timers,
+    };
 
     if (sameSet(relays.energized, energized)) {
       status = "stable";
@@ -194,6 +287,8 @@ export const simulate = (
 
   return {
     energizedRelays: last.energized,
+    timers: last.timers,
+    nextEventAtMs: nextEventOf(document, definitions, last.timers, nowMs),
     litLamps: collectLitLamps(document, definitions, lookup),
     netOf: last.nets.netOf,
     netState: last.netState,

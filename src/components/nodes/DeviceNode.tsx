@@ -33,6 +33,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
     simulation,
     terminalStates,
     terminalConnections,
+    presetMs,
   } = data;
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
@@ -123,6 +124,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
             definition={definition}
             componentId={id}
             simulation={simulation}
+            presetMs={presetMs}
           />
           {/*
             図記号へのホバーで出す主要ステータスの吹き出し。

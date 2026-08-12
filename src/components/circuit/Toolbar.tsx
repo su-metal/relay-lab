@@ -91,6 +91,10 @@ export function Toolbar({
 
   const running = useSimulationStore((state) => state.running);
   const status = useSimulationStore((state) => state.result?.status);
+  const nowMs = useSimulationStore((state) => state.nowMs);
+  const hasTimers = useSimulationStore(
+    (state) => (state.result?.timers.size ?? 0) > 0,
+  );
   const start = useSimulationStore((state) => state.start);
   const stop = useSimulationStore((state) => state.stop);
 
@@ -151,6 +155,17 @@ export function Toolbar({
           <span className={styles.status} data-status={status ?? "stable"}>
             {STATUS_LABEL[status ?? "stable"]}
           </span>
+        )}
+        {/*
+          経過時間（design.md §5.13）。**タイマーを置いた回路でだけ出す。**
+          時間の概念が要らない回路にまで秒数を出すと、「時間で何かが変わる
+          回路なのか」という誤った期待を持たせる。
+
+          判定に `nextEventAtMs`（カウント中か）を使わないのは、計り終わるたびに
+          表示が消えてちらつくため。**タイマーが置いてあるか**で決める。
+        */}
+        {running && hasTimers && (
+          <span className={styles.elapsed}>{(nowMs / 1000).toFixed(1)} 秒</span>
         )}
       </div>
 

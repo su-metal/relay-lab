@@ -66,6 +66,12 @@ export type DeviceNodeData = {
   /** インスタンスのラベル（"RY1"）。未設定なら型番を出す */
   label?: string;
   /**
+   * タイマーの設定時間（ms）。**停止中でもノードに出す**ので、
+   * シミュレーション状態（`simulation`）とは別に渡す（design.md §5.13）。
+   * タイマー以外は持たない
+   */
+  presetMs?: number;
+  /**
    * シミュレーション中の部品の状態。**停止中は `undefined`。**
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
    */
@@ -180,6 +186,7 @@ export const toDeviceNode = (
     terminals: layoutTerminals(definition, instance.flipped === true),
     flipped: instance.flipped === true,
     label: instance.label,
+    presetMs: instance.presetMs,
     simulation: view.deviceOf.get(instance.id),
     terminalStates: terminalStatesOf(
       view,

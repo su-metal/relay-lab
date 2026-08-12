@@ -23,9 +23,11 @@
  */
 
 import {
+  coilEnergized,
   conductingPairs,
   describeComponent,
   polarityAcross,
+  presetMsOf,
   reachesPlus,
   reachesZero,
   simulate,
@@ -346,12 +348,33 @@ const gateCandidatesOf = (
   const { electrical } = definition;
 
   if (electrical.kind === "relay") {
+    /*
+     * タイマーは「励磁すると閉じます」では足りない（design.md §5.13）——
+     * 入力を入れてもすぐには閉じないので、そのまま読むと「入れたのに閉じない」
+     * という次の疑問を生む。**待ち時間まで言い切る。**
+     * 見るのは `delay` の有無だけで、型番は見ない（設計原則 2）。
+     */
+    const delay = electrical.delay;
+    const seconds = delay
+      ? `${(presetMsOf(delay, instance.presetMs) / 1000).toFixed(1)} 秒`
+      : "";
+    const onCondition = !delay
+      ? `${label} が励磁すると閉じます`
+      : delay.mode === "on-delay"
+        ? `${label} に入力が入って ${seconds}後に閉じます`
+        : `${label} に入力が入ると閉じます`;
+    const offCondition = !delay
+      ? `${label} が非励磁に戻ると閉じます`
+      : delay.mode === "on-delay"
+        ? `${label} の入力が切れると閉じます`
+        : `${label} の入力が切れて ${seconds}後に閉じます`;
+
     return electrical.relay.contacts.flatMap<GateCandidate>((contact) => {
       const pairs: GateCandidate[] = [
         {
           a: contact.commonTerminal,
           b: contact.noTerminal,
-          condition: `${label} が励磁すると閉じます`,
+          condition: onCondition,
         },
       ];
       // NC 端子が実機に無い a 接点（G7L など）に b 接点を作らない（design.md §4.8）
@@ -359,7 +382,7 @@ const gateCandidatesOf = (
         pairs.push({
           a: contact.commonTerminal,
           b: contact.ncTerminal,
-          condition: `${label} が非励磁に戻ると閉じます`,
+          condition: offCondition,
         });
       }
       return pairs;
@@ -674,6 +697,9 @@ const releaseActionsOf = (
   pressedSwitches: ReadonlySet<string>,
   componentId: string,
   kind: "relay" | "lamp",
+  /** 対象の負荷の電気的定義。コイルと接点を見分けるために要る（§5.13） */
+  loadElectrical: ElectricalDefinition,
+  nowMs: number,
 ): ReleaseAction[] => {
   const actions: ReleaseAction[] = [];
 
@@ -686,13 +712,19 @@ const releaseActionsOf = (
     if (operated) flipped.delete(instance.id);
     else flipped.add(instance.id);
 
+    /*
+     * タイマーの状態も引き継ぐ（design.md §5.13）。渡さないと「入力を切ったら
+     * どうなるか」の問いに対して、計り直しからやり直した答えが返る。
+     */
     const whatIf = simulate(document, definitions, {
       pressedSwitches: flipped,
       previousEnergizedRelays: result.energizedRelays,
+      previousTimers: result.timers,
+      nowMs,
     });
     const stillOn =
       kind === "relay"
-        ? whatIf.energizedRelays.has(componentId)
+        ? coilEnergized(whatIf, componentId, loadElectrical)
         : whatIf.litLamps.has(componentId);
 
     const label = naming.labelOf(instance.id);
@@ -736,6 +768,8 @@ export const explainLoadPath = (
   result: SimulationResult | null,
   pressedSwitches: ReadonlySet<string>,
   componentId: string | undefined,
+  /** `result` を解いた時刻。タイマーを含む「落とし方」の再計算に使う（§5.13） */
+  nowMs = 0,
 ): LoadPathExplanation | null => {
   if (!result || !componentId) return null;
 
@@ -751,9 +785,14 @@ export const explainLoadPath = (
   if (!terminals) return null;
   const kind = electrical.kind === "relay" ? "relay" : "lamp";
 
+  /*
+   * **コイルの側で見る**（design.md §5.13）。ここを `energizedRelays`
+   * （接点が切り替わっているか）で判定すると、計測中のタイマーが
+   * 「通電していません」の側へ落ち、届いているはずの電源を探し始める。
+   */
   const active =
     kind === "relay"
-      ? result.energizedRelays.has(instance.id)
+      ? coilEnergized(result, instance.id, electrical)
       : result.litLamps.has(instance.id);
 
   const naming = buildNaming(document, definitions);
@@ -809,6 +848,8 @@ export const explainLoadPath = (
         pressedSwitches,
         instance.id,
         kind,
+        electrical,
+        nowMs,
       ),
     };
   }

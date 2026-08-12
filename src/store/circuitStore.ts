@@ -19,6 +19,8 @@ import {
   hasTerminalPair,
   isSameTerminalPair,
 } from "@/circuit/adapter/reactflow";
+import { getComponentDefinition } from "@/circuit/definitions";
+import { presetMsOf } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentCategory,
@@ -57,6 +59,8 @@ const LABEL_PREFIX: Record<ComponentCategory, string> = {
   lamp: "L",
   diode: "D",
   terminal: "TB",
+  // 実務の図面ではタイマーは T / TR。リレーの RY と読み違えないよう分ける
+  timer: "T",
 };
 
 /** 同じ接頭辞の最大番号 + 1 を返す（RY1 が居れば RY2） */
@@ -128,6 +132,15 @@ export type CircuitStore = {
    * 配線の取り回しが大きく動くので、ラベル編集と違って「1 手戻したい操作」になる。
    */
   flipComponents: (componentIds: readonly string[]) => void;
+
+  /**
+   * タイマーの設定時間を変える（design.md §5.13）。
+   *
+   * ラベルの変更（`setComponentLabel`）と違い **Undo の対象にする** ——
+   * 設定時間は回路の動きそのものを変えるので、間違えたときに戻せないと困る。
+   * 範囲外の値は定義の上下限へ丸める（判定はエンジンの `presetMsOf`）。
+   */
+  setComponentPreset: (componentId: string, presetMs: number) => void;
 
   /**
    * インスタンスの `definitionId` だけを差し替える（同じ ID・位置・ラベルは維持）。
@@ -391,6 +404,29 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           ),
         },
       }));
+    },
+
+    setComponentPreset: (componentId, presetMs) => {
+      if (!Number.isFinite(presetMs)) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          // タイマー以外には設定時間が無い。書き込むと誰も読まない値が残る
+          if (electrical?.kind !== "relay" || !electrical.delay) return component;
+
+          const next = presetMsOf(electrical.delay, presetMs);
+          if (component.presetMs === next) return component;
+          changed = true;
+          return { ...component, presetMs: next };
+        });
+        // 同じ値への設定・タイマー以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
     },
 
     flipComponents: (componentIds) => {

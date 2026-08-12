@@ -16,4 +16,10 @@ export type BodyProps = {
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
    */
   simulation?: DeviceSimulationState;
+  /**
+   * タイマーの設定時間（ms）。インスタンスごとの値なので `definition` からは
+   * 読めず、**停止中も出したい**ので `simulation` にも載せられない
+   * （design.md §5.13）。タイマー以外では `undefined`。
+   */
+  presetMs?: number;
 };

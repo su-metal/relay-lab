@@ -35,6 +35,7 @@ import {
   selectorSwitchNo,
 } from "./switches";
 import { genericTerminalBlock } from "./terminals";
+import { offDelayTimer, onDelayTimer } from "./timers";
 
 /** パレットの表示順もこの並びに従う */
 export const componentDefinitions: readonly ComponentDefinition[] = [
@@ -48,6 +49,8 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   omronMy4nD2Dc24,
   omronG7l1aBDc24,
   omronG7l2aBDc24,
+  onDelayTimer,
+  offDelayTimer,
   dc24vLamp,
   genericDiode,
   genericTerminalBlock,
@@ -101,11 +104,13 @@ export {
   dc24vPowerSupply,
   genericDiode,
   genericTerminalBlock,
+  offDelayTimer,
   omronG7l1aBDc24,
   omronG7l2aBDc24,
   omronMy2nDc24,
   omronMy4nD2Dc24,
   omronMy4nDc24,
+  onDelayTimer,
   pushbuttonNc,
   pushbuttonNo,
   selectorSwitchNc,

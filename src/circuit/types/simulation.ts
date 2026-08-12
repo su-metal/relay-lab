@@ -16,6 +16,43 @@ export type SimulationInput = {
    * 省略時は全リレー非励磁から始める（新規回路・リセット時）。
    */
   previousEnergizedRelays?: ReadonlySet<string>;
+  /**
+   * シミュレーション開始からの経過ミリ秒（design.md §5.13）。省略時は 0。
+   *
+   * **時刻は入力として受け取る。** エンジンが `performance.now()` を呼ぶと
+   * 純粋関数でなくなり（CLAUDE.md 設計原則 1）、テストが実時間に縛られる。
+   * 時計を持つのは `simulationStore` だけ。
+   */
+  nowMs?: number;
+  /**
+   * 直前のタイマー状態（前回の `SimulationResult.timers`）。
+   *
+   * `previousEnergizedRelays` と同じ役割で、**渡し忘れると時間が進まない** ——
+   * 毎回「今この瞬間に入力が入った」ところからやり直すので、
+   * オンディレイの接点が永久に動かない。
+   */
+  previousTimers?: ReadonlyMap<string, TimerState>;
+};
+
+/**
+ * タイマー 1 個の実行時状態（design.md §5.13）。
+ *
+ * **接点が動いているか（出力）は持たない。** `coilOn` と経過時間と設定時間から
+ * 必ず導けるものを別に持つと、片方だけ更新されてずれる。導出は
+ * `engine/timer.ts` の `timerOutputOn()` 1 箇所に置く。
+ */
+export type TimerState = {
+  /** コイルに電圧がかかっているか（今この瞬間） */
+  coilOn: boolean;
+  /**
+   * `coilOn` が今の値になった時刻（ms）。**`null` は「開始からずっとこの値」。**
+   *
+   * 0 で初期化してはいけない。オフディレイの出力は「入力が切れてから
+   * 設定時間だけ保つ」なので、0 だと**開始直後にまだ一度も入力していない
+   * タイマーの接点が動いてしまう。** `null` を経過時間 ∞ と読むことで、
+   * 「切れてからずっと経っている＝とっくに復帰済み」が自然に出る。
+   */
+  changedAtMs: number | null;
 };
 
 /**
@@ -78,7 +115,14 @@ export type Warning = {
 export type SimulationStatus = "stable" | "oscillating" | "not-converged";
 
 export type SimulationResult = {
-  /** 励磁中のリレーの componentId */
+  /**
+   * **接点が切り替わっている**部品の componentId。
+   *
+   * 遅延なしのリレーではコイルの励磁と一致するが、タイマーでは
+   * ずれる（オンディレイは設定時間ぶん遅れて入る）。`buildNets()` が
+   * 見るのはこちら —— 名前は履歴的に「励磁」だが、意味は接点の側にある。
+   * タイマーのコイルの状態は `timers` を見ること（design.md §5.13）。
+   */
   energizedRelays: ReadonlySet<string>;
   /** 点灯中のランプの componentId */
   litLamps: ReadonlySet<string>;
@@ -90,4 +134,15 @@ export type SimulationResult = {
   status: SimulationStatus;
   /** 収束までに要した反復回数 */
   iterations: number;
+  /** タイマーのインスタンス ID → 実行時状態。次回の `previousTimers` になる */
+  timers: ReadonlyMap<string, TimerState>;
+  /**
+   * 次にタイマーの接点が変わる時刻（ms）。カウント中のタイマーが 1 個も
+   * 無ければ `undefined`。
+   *
+   * **ストアが「まだ時計を進める必要があるか」を判断する唯一の手がかり。**
+   * これが無いと、タイマーを 1 個も置いていない回路でも延々と再計算を
+   * 回し続けることになる。
+   */
+  nextEventAtMs?: number;
 };
