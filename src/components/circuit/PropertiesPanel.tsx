@@ -31,6 +31,7 @@ import type {
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
+import { presetMsOf } from "@/circuit/engine";
 import type { ComponentDefinition, ElectricalDefinition } from "@/circuit/types";
 import {
   CATEGORY_LABELS,
@@ -52,6 +53,9 @@ export function PropertiesPanel() {
   const selectedComponentIds = useCircuitStore(
     (state) => state.selectedComponentIds,
   );
+  const setComponentPreset = useCircuitStore(
+    (state) => state.setComponentPreset,
+  );
   const setComponentLabel = useCircuitStore(
     (state) => state.setComponentLabel,
   );
@@ -62,6 +66,7 @@ export function PropertiesPanel() {
 
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
+  const nowMs = useSimulationStore((state) => state.nowMs);
 
   /**
    * 自己保持の検出（design.md §5.9）。**選択部品とは無関係**なので、
@@ -83,8 +88,9 @@ export function PropertiesPanel() {
         pressedSwitches,
         selectedId,
         selfHold,
+        nowMs,
       ),
-    [document, result, pressedSwitches, selectedId, selfHold],
+    [document, result, pressedSwitches, selectedId, selfHold, nowMs],
   );
 
   /**
@@ -102,8 +108,9 @@ export function PropertiesPanel() {
         result,
         pressedSwitches,
         selectedId,
+        nowMs,
       ),
-    [document, result, pressedSwitches, selectedId],
+    [document, result, pressedSwitches, selectedId, nowMs],
   );
 
   return (
@@ -129,6 +136,9 @@ export function PropertiesPanel() {
           onReplace={(definition) =>
             replaceComponentDefinition(inspection.instance.id, definition)
           }
+          onPresetChange={(presetMs) =>
+            setComponentPreset(inspection.instance.id, presetMs)
+          }
         />
       )}
     </aside>
@@ -142,6 +152,8 @@ type DetailsProps = {
   onLabelChange: (label: string) => void;
   onFlip: () => void;
   onReplace: (definition: ComponentDefinition) => void;
+  /** タイマーの設定時間（ms）。タイマー以外では呼ばれない */
+  onPresetChange: (presetMs: number) => void;
 };
 
 function ComponentDetails({
@@ -150,9 +162,15 @@ function ComponentDetails({
   onLabelChange,
   onFlip,
   onReplace,
+  onPresetChange,
 }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
+  // タイマーの限時設定（design.md §5.13）。持たない部品では欄ごと出さない
+  const delay =
+    definition.electrical.kind === "relay"
+      ? definition.electrical.delay
+      : undefined;
   // 交換候補は同じカテゴリ内だけ（design.md §8.3）。カテゴリを跨ぐと
   // ElectricalDefinition.kind ごと変わり、部品交換ではなく作り直しになる
   const replaceCandidates = componentDefinitions.filter(
@@ -178,6 +196,41 @@ function ComponentDetails({
             onBlur={(event) => onLabelChange(event.target.value.trim())}
           />
         </label>
+
+        {/*
+          タイマーの設定時間（design.md §5.13）。**秒で入力させる。**
+          内部は ms だが、実機のダイヤルは秒（や分）なので、
+          「3000」と打たせると単位を取り違える。
+
+          ラベルと違い Undo の対象にしている —— 設定時間は回路の動きそのものを
+          変えるので、間違えたときに戻せないと困る（`circuitStore` 参照）。
+        */}
+        {delay && (
+          <label className={styles.labelField}>
+            <span className={styles.fieldName}>
+              {delay.mode === "off-delay" ? "限時復帰" : "限時動作"}
+            </span>
+            <span className={styles.presetField}>
+              <input
+                className={styles.presetInput}
+                type="number"
+                inputMode="decimal"
+                step={0.1}
+                min={delay.minPresetMs / 1000}
+                max={delay.maxPresetMs / 1000}
+                value={presetMsOf(delay, instance.presetMs) / 1000}
+                onChange={(event) => {
+                  const seconds = Number(event.target.value);
+                  // 入力途中の空欄・記号だけの状態では書き込まない。
+                  // 範囲外は circuitStore が上下限へ丸める
+                  if (!Number.isFinite(seconds)) return;
+                  onPresetChange(Math.round(seconds * 1000));
+                }}
+              />
+              <span className={styles.presetUnit}>秒</span>
+            </span>
+          </label>
+        )}
 
         {/*
           左右反転（design.md §8.1）。端子の出る辺が入れ替わるので、

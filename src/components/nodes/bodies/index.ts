@@ -17,6 +17,7 @@ import { PowerSupplyBody } from "./PowerSupplyBody";
 import { RelayBody } from "./RelayBody";
 import { SwitchBody } from "./SwitchBody";
 import { TerminalBlockBody } from "./TerminalBlockBody";
+import { TimerBody } from "./TimerBody";
 import type { BodyProps } from "./types";
 
 const BODIES: Record<ComponentCategory, ComponentType<BodyProps>> = {
@@ -26,6 +27,7 @@ const BODIES: Record<ComponentCategory, ComponentType<BodyProps>> = {
   lamp: LampBody,
   diode: DiodeBody,
   terminal: TerminalBlockBody,
+  timer: TimerBody,
 };
 
 export const bodyForCategory = (

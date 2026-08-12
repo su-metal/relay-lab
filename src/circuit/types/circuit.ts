@@ -24,6 +24,16 @@ export type CircuitComponentInstance = {
    * まったく同じものを指す。エンジンはこのフィールドを読まない。
    */
   flipped?: boolean;
+  /**
+   * タイマーの設定時間（ms）。省略時は定義の `defaultPresetMs`（design.md §5.13）。
+   *
+   * **定義ではなくインスタンスに持つ。** 実機のタイマーはダイヤルで
+   * 設定するものであり、定義に固定すると「3 秒の T1 と 10 秒の T2」を
+   * 同じ型番で置けなくなる。
+   *
+   * `delay` を持たない部品では意味を持たない（読み手も書き手もいない）。
+   */
+  presetMs?: number;
 };
 
 export type CircuitDocument = {

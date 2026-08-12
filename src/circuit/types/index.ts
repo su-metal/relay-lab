@@ -14,6 +14,7 @@ export type {
   ElectricalDefinition,
   RelayContact,
   RelayDefinition,
+  TimerDelay,
 } from "./component";
 
 export type { CircuitConnection, TerminalRef } from "./connection";
@@ -26,6 +27,7 @@ export type {
   SimulationInput,
   SimulationResult,
   SimulationStatus,
+  TimerState,
   Warning,
   WarningCode,
   WarningSeverity,

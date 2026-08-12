@@ -211,3 +211,75 @@ describe("parseDocument の要素検証", () => {
     expect(result.document.viewport).toEqual({ x: 0, y: 0, zoom: 1 });
   });
 });
+
+describe("タイマーの設定時間（design.md §5.13）", () => {
+  /** 押しボタン → オンディレイタイマー。設定時間だけを差し替えて検証する */
+  const withTimer = (presetMs?: unknown): unknown => ({
+    version: 1,
+    components: [
+      {
+        id: "cmp-timer",
+        definitionId: "timer-on-delay",
+        label: "T1",
+        position: { x: 0, y: 0 },
+        ...(presetMs === undefined ? {} : { presetMs }),
+      },
+    ],
+    connections: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+
+  it("設定時間を保存して読み戻す", () => {
+    const result = roundTrip(withTimer(1500));
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.presetMs).toBe(1500);
+  });
+
+  it("範囲外は上下限へ丸める（部品ごと捨てない）", () => {
+    const tooLong = roundTrip(withTimer(999_999_999));
+    expect(tooLong.status).toBe("loaded");
+    if (tooLong.status !== "loaded") return;
+    expect(tooLong.document.components[0]?.presetMs).toBe(600_000);
+
+    const tooShort = roundTrip(withTimer(0));
+    expect(tooShort.status).toBe("loaded");
+    if (tooShort.status !== "loaded") return;
+    expect(tooShort.document.components[0]?.presetMs).toBe(100);
+  });
+
+  it("数値でなければ持たない（定義の既定値へ倒れる）", () => {
+    const result = roundTrip(withTimer("3秒"));
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.presetMs).toBeUndefined();
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("タイマー以外に付いていても落とす（誰も読まない値を残さない）", () => {
+    const result = roundTrip({
+      ...document,
+      components: document.components.map((component) => ({
+        ...component,
+        presetMs: 5000,
+      })),
+    });
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    for (const component of result.document.components) {
+      expect(component.presetMs).toBeUndefined();
+    }
+  });
+
+  it("presetMs を持たない旧データはそのまま読める（後方互換）", () => {
+    const result = roundTrip(withTimer());
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components).toHaveLength(1);
+    expect(result.document.components[0]?.presetMs).toBeUndefined();
+  });
+});

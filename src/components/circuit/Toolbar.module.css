@@ -130,6 +130,20 @@
   white-space: nowrap;
 }
 
+/*
+ * 経過時間（design.md §5.13）。タイマーを置いた回路でだけ出る。
+ * **`tabular-nums` は必須** —— 50ms ごとに書き換わるので、字幅が揃っていないと
+ * 数字が横に踊って読めない。収束状態のバッジとは違い枠は付けない
+ * （状態の判定ではなく、ただの目盛りなので目立たせない）。
+ */
+.elapsed {
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .status[data-status="oscillating"] {
   border-color: var(--warn-border);
   color: var(--warn-text);

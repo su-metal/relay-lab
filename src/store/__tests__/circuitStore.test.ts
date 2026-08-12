@@ -18,6 +18,7 @@ import {
   omronMy4nDc24,
   pushbuttonNc,
   pushbuttonNo,
+  onDelayTimer,
 } from "@/circuit/definitions";
 import type { CircuitDocument } from "@/circuit/types";
 import { useCircuitStore } from "@/store/circuitStore";
@@ -542,5 +543,52 @@ describe("replaceDocument", () => {
     expect(store().past).toHaveLength(0);
     expect(store().future).toHaveLength(0);
     expect(store().selectedComponentIds).toEqual([]);
+  });
+});
+
+describe("タイマーの設定時間（design.md §5.13）", () => {
+  const addTimer = (): string =>
+    store().addComponent(onDelayTimer, { x: 0, y: 0 });
+
+  it("設定を変えられ、Undo で戻せる", () => {
+    const id = addTimer();
+    store().setComponentPreset(id, 1500);
+
+    const changed = () =>
+      store().document.components.find((c) => c.id === id)?.presetMs;
+    expect(changed()).toBe(1500);
+
+    // 設定時間は回路の動きを変えるので、ラベルと違い履歴に載せる
+    store().undo();
+    expect(changed()).toBeUndefined();
+
+    store().redo();
+    expect(changed()).toBe(1500);
+  });
+
+  it("範囲外は上下限へ丸める", () => {
+    const id = addTimer();
+    const preset = () =>
+      store().document.components.find((c) => c.id === id)?.presetMs;
+
+    store().setComponentPreset(id, 0);
+    expect(preset()).toBe(100);
+
+    store().setComponentPreset(id, 10_000_000);
+    expect(preset()).toBe(600_000);
+  });
+
+  it("同じ値・タイマー以外への設定は履歴を汚さない", () => {
+    const timerId = addTimer();
+    store().setComponentPreset(timerId, 1500);
+    const lampId = store().addComponent(dc24vLamp, { x: 0, y: 0 });
+
+    const before = store().document;
+    // 同じ値
+    store().setComponentPreset(timerId, 1500);
+    expect(store().document).toBe(before);
+    // タイマー以外
+    store().setComponentPreset(lampId, 1500);
+    expect(store().document).toBe(before);
   });
 });

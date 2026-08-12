@@ -27,6 +27,15 @@ export {
 export type { Polarity } from "./potential";
 export { closedContactPairs, evaluateCoil } from "./relay";
 export type { CoilEvaluation, TerminalPair } from "./relay";
+export {
+  advanceTimer,
+  coilEnergized,
+  elapsedMs,
+  initialTimerState,
+  presetMsOf,
+  timerNextEventAtMs,
+  timerOutputOn,
+} from "./timer";
 export { collectDiodeEdges, inspectDiodes, spreadThroughDiodes } from "./diode";
 export type {
   DiodeBias,

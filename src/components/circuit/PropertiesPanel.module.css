@@ -77,6 +77,39 @@
   border-color: var(--accent);
 }
 
+/*
+ * タイマーの設定時間（design.md §5.13）。
+ * **単位を入力欄の外に固定で置く。** 欄の中に「秒」を含めさせると、
+ * 数値として読めない文字列が混ざる。
+ */
+.presetField {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.presetInput {
+  width: 5.5em;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel);
+  font-variant-numeric: tabular-nums;
+}
+
+.presetInput:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+.presetUnit {
+  color: var(--text-muted);
+}
+
 /* 部品への操作（左右反転）。名前欄と仕様表の間に置く */
 .actions {
   display: flex;

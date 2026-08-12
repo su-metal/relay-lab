@@ -92,6 +92,8 @@ src/
         types.ts                 # BodyProps
         bodies.module.css
         RelayBody.tsx
+        TimerBody.tsx            # タイマー（限時接点＋残り時間・§5.13）
+        ContactDiagram.tsx       # 接点の図記号。RelayBody / TimerBody で共有（§8.11）
         SwitchBody.tsx
         PowerSupplyBody.tsx
         LampBody.tsx
@@ -105,6 +107,7 @@ src/
       simulate.ts                # 収束ループ（エントリポイント）
       graph.ts                   # Union-Find とネット構築
       relay.ts                   # コイル判定・接点内部接続の生成
+      timer.ts                   # 限時の状態遷移とコイル／接点の見分け（§5.13）
       diode.ts                   # ダイオードの有向導通と向きの判定（§5.4）
       potential.ts               # ネット電位の読み取り（atPlus / atZero / polarityAcross）
       validation.ts              # 短絡・極性・ダイオードの向き・未接続の検出
@@ -129,6 +132,7 @@ src/
         g7l-2a-b-dc24.ts
       power.ts
       switches.ts                # 押しボタン／切替スイッチ 4 種（§4.5・§4.7）
+      timers.ts                  # 汎用タイマー 2 種（オンディレイ／オフディレイ・§4.10）
       lamps.ts
       diodes.ts
       terminals.ts
@@ -196,6 +200,7 @@ src/
     diode.test.ts                # 逆起電力吸収ダイオードの向き（§5.4）
     wiring.test.ts               # 静的な配線チェックの範囲と境界（§5.7）
     relay.test.ts                # 接点の開閉規則。a 接点のみの扱い（§5.1）
+    timer.test.ts                # 限時の境界・電源投入直後・引き継ぎ（§5.13）
 ```
 
 **`potential.ts` を分けた理由。** 「+ 側にいる / 0V 側にいる」の解釈はコイル（`relay.ts`）とランプ（`simulate.ts`）の双方が必要とする。`graph.ts` に置くと `graph.ts → relay.ts → graph.ts` の循環参照になるため、依存の末端として独立させた。依存の向きは `potential.ts ← relay.ts ← graph.ts ← simulate.ts` の一本道。
@@ -237,16 +242,17 @@ React を import しない純粋関数なので、UI を起動せずに配線色
 | ファイル | 定義する型 |
 |---|---|
 | `terminal.ts` | `TerminalRole` / `TerminalSide` / `TerminalDefinition` |
-| `component.ts` | `ComponentCategory` / `CoilPolarity` / `RelayContact` / `RelayDefinition` / `ElectricalDefinition` / `ComponentDefinition` / `ComponentDefinitionRegistry` |
+| `component.ts` | `ComponentCategory` / `CoilPolarity` / `RelayContact` / `RelayDefinition` / `TimerDelay` / `ElectricalDefinition` / `ComponentDefinition` / `ComponentDefinitionRegistry` |
 | `connection.ts` | `TerminalRef` / `CircuitConnection` / `terminalKey()` |
 | `circuit.ts` | `CircuitComponentInstance` / `CircuitDocument` |
-| `simulation.ts` | `SimulationInput` / `NetState` / `WarningCode` / `WarningSeverity` / `Warning` / `SimulationStatus` / `SimulationResult` |
+| `simulation.ts` | `SimulationInput` / `NetState` / `TimerState` / `WarningCode` / `WarningSeverity` / `Warning` / `SimulationStatus` / `SimulationResult` |
 
 ### 3.1 部品定義
 
 ```ts
 type ComponentCategory =
   | "power" | "relay" | "switch" | "lamp" | "diode" | "terminal"
+  | "timer"   // 電気的には relay のまま。パレットと図記号の出し分けだけ（§5.13）
 
 type TerminalRole =
   | "power_positive" | "power_zero"
@@ -328,11 +334,20 @@ type RelayContact = {
   ncTerminal?: string   // a 接点のみのリレーには存在しない
   type: "SPDT" | "SPST-NO"
 }
+
+type TimerDelay = {                        // §5.13
+  mode: "on-delay" | "off-delay"           // 限時動作 / 限時復帰
+  defaultPresetMs: number
+  minPresetMs: number
+  maxPresetMs: number
+}
 ```
 
 **要件書からの変更点:** `polaritySensitive: boolean` を 3 値の `CoilPolarity` に変更した。理由は §5.3 を参照。
 
 **`ncTerminal` は省略可能。** すべてのリレーが c 接点（切替接点）を持つわけではない。ねじ／タブ端子のパワーリレーには **a 接点のみ（`SPST-NO`）** の型番があり、b 接点の端子が**実機に存在しない**。ここを「無いから空文字」で埋めると、端子一覧にも接点表にも幽霊の行が出て、実端子番号が正しいという前提が崩れる。
+
+**タイマーリレーは `kind: "timer"` を作らず、`kind: "relay"` に `delay?: TimerDelay` を足して表す。** タイマーリレーはリレーであって別種の部品ではない —— コイルも接点も同じものを持ち、違うのは接点が動くタイミングだけ。`kind` を分けると接点・コイル・端子まわりの分岐がエンジンと adapter の各所で 2 本になり、片方だけ直す事故が起きる。この形にしたことで、極性判定（§5.3）・接点の開閉（§5.1）・未接続端子（§5.7）・自己保持の検出（§5.9）・経路説明（§5.11）・接点の図記号（§8.11）は**リレー用のコードがそのまま効く。** `ncTerminal` を省略可能にして a 接点のみのリレーを表したのと同じ拡張の形。
 
 **エンジンが見るのは `ncTerminal` の有無だけで、`type` の文字列は見ない。** `type` は接点の形を人が読むための値（プロパティパネル・`contactSummaryOf()` の "4c" / "2a" 表示）であって、判定条件ではない。`type: "SPST-NO"` を足しても `engine/` の分岐は増えず、開閉規則は §5.1 の 1 箇所に閉じたままになる（CLAUDE.md 設計原則 2）。
 
@@ -362,6 +377,7 @@ type CircuitDocument = {
     label?: string             // "RY1" "S1" などのユーザー付与名
     position: { x: number; y: number }
     flipped?: boolean          // 左右反転して描くか（省略 = 反転なし）
+    presetMs?: number          // タイマーの設定時間（省略 = defaultPresetMs・§5.13）
   }[]
   connections: CircuitConnection[]
   viewport: { x: number; y: number; zoom: number }
@@ -369,6 +385,8 @@ type CircuitDocument = {
 ```
 
 `terminalKey()` を関数にしてあるのは、キー書式を 1 箇所に閉じるため。各所で `` `${a}:${b}` `` を手書きすると、書式がずれた瞬間にネット引きが静かに失敗する。
+
+**`presetMs` は定義ではなくインスタンスに持つ。** 実機のタイマーはダイヤルで設定するものであり、定義に固定すると「3 秒の T1 と 10 秒の T2」を同じ型番で置けなくなる。追加フィールドなので保存形式は `version: 1` のままで、旧データはそのまま読める（読み込み時に有限数の検証と min/max クランプを行い、壊れていても部品ごと捨てず既定値へ倒す ——`flipped` と同じ扱い）。
 
 **`flipped` は見た目だけの属性で、電気的な意味を一切持たない。** 反転しても端子 ID・端子番号・役割は変わらず、`CircuitConnection` も `ElectricalDefinition` もまったく同じものを指す。**エンジンはこのフィールドを読まない**（§8.1）。`ComponentDefinition` 側ではなくインスタンス側に置いてあるのは、同じ型番を反転して並べられる必要があるため。定義は全インスタンスで共有する不変データなので、そこに向きを持たせると 1 個の反転が全部に波及する。
 
@@ -378,18 +396,27 @@ type CircuitDocument = {
 type SimulationInput = {
   pressedSwitches: ReadonlySet<string>   // 操作中（押下中／ON 位置）の componentId・§4.7
   previousEnergizedRelays?: ReadonlySet<string>  // 直前の励磁状態。収束計算の初期値
+  nowMs?: number                         // 開始からの経過ミリ秒（省略 = 0）・§5.13
+  previousTimers?: ReadonlyMap<string, TimerState>  // 直前のタイマー状態・§5.13
 }
 
 type SimulationStatus = "stable" | "oscillating" | "not-converged"
 
 type SimulationResult = {
-  energizedRelays: ReadonlySet<string>   // componentId
+  energizedRelays: ReadonlySet<string>   // **接点が切り替わっている** componentId・§5.13
   litLamps: ReadonlySet<string>
   netOf: ReadonlyMap<string, number>     // terminalKey() → ネットID
   netState: ReadonlyMap<number, NetState>  // ネットID → 電位状態
   warnings: Warning[]
   status: SimulationStatus
   iterations: number
+  timers: ReadonlyMap<string, TimerState>  // 次回の previousTimers になる・§5.13
+  nextEventAtMs?: number                 // 次に接点が変わる時刻。カウント中が無ければ無し
+}
+
+type TimerState = {                      // §5.13
+  coilOn: boolean                        // コイルに電圧がかかっているか（今この瞬間）
+  changedAtMs: number | null             // coilOn が今の値になった時刻。null = 開始からずっと
 }
 
 type NetState = {
@@ -401,6 +428,10 @@ type NetState = {
 出力側のコレクションを `Readonly*` にしているのは、UI 側が結果を書き換えてストアと不整合を起こすのを型で防ぐため。エンジン内部では通常の `Set` / `Map` を組み立ててそのまま返してよい。
 
 **`previousEnergizedRelays` を入力に持つ理由（Step 2 で判明）。** 自己保持回路はボタンを離した状態で「全リレー非励磁」と「励磁継続」の**両方が安定解になる双安定回路**であり、どちらに落ちるかは直前の状態でしか決まらない。毎回すべて非励磁から解き直すと、ボタンを離した瞬間に必ず全 OFF 側の解へ落ち、自己保持が原理的に再現できない（検証回路テスト 3・4）。前回の `SimulationResult.energizedRelays` をそのまま渡すことで、UI 側は状態遷移を意識せずに済む。省略時は全リレー非励磁から始める（新規回路・シミュレーション開始時）。
+
+**`nowMs` / `previousTimers` も同じ形で入力に持つ（§5.13）。** 時刻をエンジンが自分で読む（`performance.now()`）と純粋関数でなくなり（CLAUDE.md 設計原則 1）、テストが実時間に縛られる。時計を持つのは `simulationStore` だけで、エンジンは「今が何 ms か」を教えてもらうだけ。`previousTimers` は `previousEnergizedRelays` と同じく**渡し忘れると壊れる** —— 毎回「今この瞬間に入力が入った」ところからやり直すので、オンディレイの接点が永久に動かない。
+
+**`energizedRelays` の意味は「接点が切り替わっている」であって「コイルが励磁している」ではない。** 遅延なしのリレーでは一致するが、タイマーではずれる（オンディレイは設定時間ぶん遅れて接点が入る）。`buildNets()` が見るのは接点の側なので、この定義でないとネットが組めない。タイマーのコイルの状態は `timers` を見る。
 
 `Warning` は §5.7 の 6 種に対応する。
 
@@ -666,6 +697,27 @@ MY2N / MY4N も `none` だが理由が違う。MY は**逆並列 LED がある�
 参考にした資料:
 - **オムロン制御機器「G7L パワーリレー」カタログ CDPA-041C（端子データの出典）**
 - [G7L パワーリレー — オムロン制御機器](https://www.fa.omron.co.jp/products/family/2837/)
+
+### 4.10 汎用タイマー（`definitions/timers.ts`）
+
+実型番を持たない汎用部品。端子は 5 個で、限時動作（オンディレイ）と限時復帰（オフディレイ）で構成は同じ。
+
+| 端子 | 役割 | 説明 |
+|---|---|---|
+| 1 | `coil` | 入力（コイル） |
+| 2 | `coil` | 入力（コイル） |
+| 3 | `common` | 限時接点 COM |
+| 4 | `normally_open` | 限時 a 接点 |
+| 5 | `normally_closed` | 限時 b 接点 |
+
+| 項目 | 値 |
+|---|---|
+| 設定時間の既定値 | 3.0 秒 |
+| 設定できる範囲 | 0.1 秒 〜 10 分（`100ms` 〜 `600000ms`） |
+| コイルの極性 | `none`（汎用部品に実機に無い極性を主張しない・§4.8 と同じ判断） |
+| `verified` | `false`（実端子番号ではないので検証対象が存在しない・§4.5 と同じ） |
+
+**実型番（OMRON H3Y-2 など）はまだ入れていない。** 実端子番号を主張するには公式データシートの図を自分で確認する工程が要る（CLAUDE.md 設計原則 5）。足すときは `verified: false` から始める。**汎用タイマーの端子表を流用しない** —— ソケット形の実機はピン配置がまったく違う。
 
 ---
 
@@ -1211,6 +1263,97 @@ PS1   0V
 
 選択中のノードでは縁取りを譲る。選択の枠（`--accent`）は今まさに操作している対象を指すもので、状態表示に奪われると何を掴んでいるのか分からなくなる。
 
+### 5.13 タイマー（時間の導入・`engine/timer.ts`）
+
+オンディレイ（限時動作）とオフディレイ（限時復帰）を扱う。**§6-4 の「時間の概念がない」を一部だけ崩す変更**であり、崩し方を最小に保つことがこの節の主題。
+
+#### タイマーは「遅れて動くリレー」
+
+`ElectricalDefinition` に `kind: "timer"` を**作らない。** `kind: "relay"` に省略可能な `delay: TimerDelay` を足して表す（§3.2）。実機のタイマーリレーはリレーであり、コイルも接点も同じものを持ち、違うのは接点が動くタイミングだけ。`kind` を分けると接点・コイル・端子まわりの分岐がエンジンと adapter の各所で 2 本になり、片方だけ直す事故が起きる。
+
+この形にしたことで、以下は**リレー用のコードがそのまま効く**（差分 0 行）。
+
+- 極性判定（§5.3）・接点の開閉（§5.1）・未接続端子（§5.7）
+- 自己保持の検出（§5.9）・電流の向き（§5.10）・経路説明（§5.11）
+- 接点の図記号（§8.11・`ContactDiagram` を `RelayBody` と共有）
+
+`category: "timer"` を新設しているのはパレットの見出しと図記号の出し分けだけで、電気的な意味は持たない。
+
+#### 時計はストアだけが持つ
+
+**エンジンは `performance.now()` を呼ばない**（CLAUDE.md 設計原則 1）。時刻は `SimulationInput.nowMs`（開始からの経過ミリ秒）として受け取る。
+
+| 置き場所 | 役割 |
+|---|---|
+| `simulationStore` | `performance.now()` を読み、`start()` からの差を `nowMs` として渡す |
+| `simulate()` | `nowMs` を受け取るだけ。純粋関数のまま |
+| テスト | `nowMs` を直接指定。設定時間の 1ms 手前と丁度という境界を実時間を待たずに突ける |
+
+これが逆（エンジンが時計を読む）だと、`timer.test.ts` の 20 件はそもそも書けない。
+
+#### 状態は 2 つだけ持ち、出力は導く
+
+```ts
+type TimerState = {
+  coilOn: boolean            // コイルに電圧がかかっているか（今この瞬間）
+  changedAtMs: number | null // coilOn が今の値になった時刻。null = 開始からずっと
+}
+```
+
+出力（接点が動いているか）は**保持しない。** `coilOn` と経過時間と設定時間から必ず導けるものを別に持つと、片方だけ更新されてずれる。導出は `timerOutputOn()` の 1 箇所。
+
+| モード | 出力 |
+|---|---|
+| `on-delay`（限時動作） | `coilOn && 経過 >= 設定` |
+| `off-delay`（限時復帰） | `coilOn \|\| 経過 < 設定` |
+
+**`changedAtMs: null` を「経過 = ∞」と読むのが要点。** 0 で初期化すると「たった今入力が切れたところ」と読まれ、**一度も入力していないオフディレイが電源投入と同時に動作する。** ∞ なら「とっくに復帰済み」が自然に出る。
+
+#### 収束ループの拡張
+
+反復 1 回の中で、遅延なしのリレーは今までどおり「コイルの励磁＝接点の切替」。タイマーだけ `advanceTimer()` → `timerOutputOn()` を通す。
+
+**`previousTimers` は 1 回の `simulate()` の中で固定する。** 反復のたびに更新すると途中経過で `changedAtMs` が打ち直され、経過時間が常に 0 になって設定時間へ到達しない。時間が進むのは呼び出しをまたいだときだけ。発振検出（`signature`）は切替集合を見ているので、タイマー出力もそのまま乗る。
+
+`previousTimers` は `previousEnergizedRelays` と**同じ性質の落とし穴**（§3.4）。渡し忘れると毎回「今この瞬間に入力が入った」ところからやり直すので、オンディレイの接点が永久に動かない。
+
+#### 再計算を回す条件
+
+`SimulationResult.nextEventAtMs`（次に接点が変わる時刻の最小値）を返し、ストアはこれがあるあいだだけ **50ms 間隔**で解き直す。無ければループを止める。
+
+- `requestAnimationFrame` は使わない。タイマーを 1 個も置いていない回路で CPU を回し続けることになる
+- 判定に「タイマーが置いてあるか」を使わない。入力の入っていないタイマーを置いただけで回り続ける
+- 到達済みのタイマーは `nextEventAtMs` を返さない。返し続けると**時計が止まらない**（`timerNextEventAtMs` が経過時間を見る理由）
+
+50ms は残り時間の表示を滑らかにするための値。接点が変わる瞬間の誤差は最大でこの幅だが、秒単位のタイマーでは見えない。
+
+#### コイルと接点を取り違えない
+
+**`energizedRelays` は「接点が切り替わっている」であって「コイルが励磁している」ではない**（§3.4）。オンディレイは設定時間のあいだ「コイルは入っているが接点はまだ」の状態にいる。
+
+コイルの側を見たい場所では `coilEnergized()` を使う。取り違えると、**計測中のタイマーのコイル配線が非通電（灰色）に見え、電流の矢印も消え、経路説明が「通電していません」と答える** —— 一番読みたい場所がまとめて消える。
+
+| 見る場所 | 使うもの |
+|---|---|
+| ネットの組み立て（`buildNets`）・接点の図記号 | `energizedRelays`（接点） |
+| 配線色（§5.6）・電流の向き（§5.10）・経路説明の `active`（§5.11） | `coilEnergized()`（コイル） |
+
+#### 設定時間はインスタンスごと
+
+`CircuitComponentInstance.presetMs`（§3.3）。実機のダイヤルに相当し、定義に固定すると「3 秒の T1 と 10 秒の T2」を同じ型番で置けない。プロパティパネルでは**秒で入力させる**（内部は ms）。ラベルと違い **Undo の対象**にする —— 設定時間は回路の動きそのものを変えるので、間違えたときに戻せないと困る。
+
+#### 表示
+
+| 状態 | ノードの表示 |
+|---|---|
+| 入力なし | 「限時動作 2.0秒」（設定時間。**停止中も出す**ので `simulation` ではなくノードデータの `presetMs` から読む） |
+| 計測中 | 「残り 1.3秒」（`--wire-plus` 色。動作中と**別の色**にする） |
+| 動作中 | 「動作中」（`--wire-energized-text`） |
+
+計測中を独立した見た目にするのは、ここを「まだ動いていない」と同じ絵にすると**タイマーが動き出したのか配線を間違えたのかが読めない**ため。待っている時間こそタイマーで一番見たいところ。
+
+操作バーの経過時間は**タイマーを置いた回路でだけ**出す（`result.timers.size > 0`）。時間の概念が要らない回路にまで秒数を出すと、「時間で何かが変わる回路なのか」という誤った期待を持たせる。判定に `nextEventAtMs` を使わないのは、計り終わるたびに表示が消えてちらつくため。
+
 ---
 
 ## 6. 既知の制約（MVP で許容する）
@@ -1220,7 +1363,7 @@ PS1   0V
    **コイルの直列は逆に実機と一致する。** `+24V → RY1 コイル → RY2 コイル → 0V` はどちらも非励磁と出るが、24V を 2 個の DC24V コイルで分け合っても吸引電圧に届かないので実機でも動かない。「負荷の直列は再現できない」と一括りにすると、合っている答えまで疑わせる。
 2. **ダイオードは順逆の別と向きの誤りまで（§5.4）。** 導通の向き・還流ダイオードの向きの正誤・順方向短絡は再現するが、**逆起電力のサージそのものは再現しない**（時間の概念が無いため。下記 4 と同じ理由）。順電圧降下（約 0.7V）も扱わない。
 3. **電圧・電流・消費電力の数値は扱わない。** 導通の有無のみ。定格電圧の不一致（DC24V ランプに AC100V など）は MVP では検出しない。
-4. **時間の概念がない。** タイマーリレー、接点のチャタリング、動作／復帰時間は扱わない。発振回路は「発振する」と判定するのみで、周期は再現しない。
+4. **時間はタイマーの限時だけ。** オンディレイ（限時動作）とオフディレイ（限時復帰）は扱う（§5.13）。**扱わないのはそれ以外の時間** —— 接点のチャタリング、リレーの動作時間・復帰時間、タイマーのフリッカ（周期）動作とワンショット。発振回路は「発振する」と判定するのみで、周期は再現しない。
 5. **同時に変化する入力の競合は解けない。** すべてのコイルを一斉に評価するため、相互 b 接点のインターロック回路で全 OFF から 2 つの起動ボタンを同時に押した場合、実機のように「わずかに早い方が勝つ」のではなく `oscillating` になる（§5.5）。動作時間を持たない以上、どちらが勝つかを決める根拠が無い。
 6. **範囲選択の配線判定は両端子を結ぶ直線で行う**（§8.6）。実際の描画は `smoothstep` の折れ線なので、大きく回り込んだ配線では見た目の線と判定線がずれる。実路を使うには描画後の DOM を測る必要があり、判定を純粋関数として検証できなくなる。
 7. **`simulate()` は履歴を持たない純粋関数。** 自己保持のような双安定回路の状態は呼び出し側が `previousEnergizedRelays` で繋ぐ（§3.4）。渡し忘れると自己保持が毎回解けてしまうため、`simulationStore` 側で必ず前回結果を渡すこと。

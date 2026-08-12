@@ -15,7 +15,13 @@ export type ComponentCategory =
   | "switch"
   | "lamp"
   | "diode"
-  | "terminal";
+  | "terminal"
+  /**
+   * タイマーリレー。**電気的には `kind: "relay"` のまま**で、
+   * `delay` の有無だけが違う（design.md §5.13）。カテゴリを分けているのは
+   * パレットの見出しと図記号の出し分けという表示都合だけ。
+   */
+  | "timer";
 
 /**
  * コイルの極性の扱い（design.md §5.3）。
@@ -69,10 +75,43 @@ export type RelayDefinition = {
 };
 
 /**
+ * 限時（タイマー）の設定（design.md §5.13）。
+ *
+ * **タイマーリレーは「遅れて動くリレー」であって別種の部品ではない。**
+ * コイルも接点も普通のリレーと同じものを持ち、違うのは接点が動く
+ * タイミングだけ。だから `ElectricalDefinition` に `kind: "timer"` を
+ * 新設せず、`kind: "relay"` にこのフィールドを**省略可能で**足す。
+ * `RelayContact.ncTerminal` を省略可能にして a 接点のみのリレーを
+ * 表したのと同じ拡張の形（design.md §4.8・CLAUDE.md 設計原則 6）。
+ *
+ * この形にしたおかげで、極性判定・接点の開閉・未接続端子の検出・
+ * 自己保持の検出・経路説明・接点の図記号は**リレー用のコードがそのまま効く。**
+ */
+export type TimerDelay = {
+  /**
+   * 限時の向き。
+   *
+   * - `on-delay`（限時動作）… 入力が入って**設定時間後に**接点が動く。
+   *   入力が切れたら即座に戻る
+   * - `off-delay`（限時復帰）… 入力と**同時に**接点が動き、入力が切れてから
+   *   設定時間そのまま保ってから戻る
+   */
+  mode: "on-delay" | "off-delay";
+  /** 設定時間の既定値（ms）。インスタンスの `presetMs` で上書きできる */
+  defaultPresetMs: number;
+  /** 設定できる下限・上限（実機のダイヤルの目盛りに相当） */
+  minPresetMs: number;
+  maxPresetMs: number;
+};
+
+/**
  * カテゴリごとの電気的なふるまい。`kind` による判別可能ユニオン。
  *
  * エンジンが持ってよい分岐はこの `kind` の 6 通りだけ。
  * 端子は必ず ID 参照で指定し、端子番号そのものをエンジンに埋め込まない。
+ *
+ * **タイマーで 7 通目を作らない。** タイマーリレーはリレーであり、
+ * `relay` の `delay` の有無で表す（`TimerDelay` 参照）。
  */
 export type ElectricalDefinition =
   | {
@@ -82,7 +121,13 @@ export type ElectricalDefinition =
       positiveTerminal: string;
       zeroTerminal: string;
     }
-  | { kind: "relay"; relay: RelayDefinition }
+  /**
+   * リレー。`delay` を持つものがタイマーリレー（design.md §5.13）。
+   *
+   * **`kind` を分けない。** 分けると接点・コイル・端子まわりの分岐が
+   * エンジンと adapter の各所で 2 本になり、片方だけ直す事故が起きる。
+   */
+  | { kind: "relay"; relay: RelayDefinition; delay?: TimerDelay }
   | {
       kind: "switch";
       contactType: "NO" | "NC";

@@ -121,6 +121,8 @@ export const inspectComponent = (
   pressedSwitches: ReadonlySet<string>,
   componentId: string | undefined,
   selfHold: SelfHoldView = EMPTY_SELF_HOLD,
+  /** `result` を解いた時刻。タイマーの残り時間の表示に使う（§5.13） */
+  nowMs = 0,
 ): ComponentInspection | null => {
   if (!componentId) return null;
 
@@ -138,6 +140,7 @@ export const inspectComponent = (
     result,
     pressedSwitches,
     selfHold,
+    nowMs,
   );
   const device = view.deviceOf.get(instance.id);
 

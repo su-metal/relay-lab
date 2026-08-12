@@ -22,6 +22,17 @@ import { useCircuitStore } from "./circuitStore";
 
 const EMPTY_PRESSED: ReadonlySet<string> = new Set();
 
+/**
+ * タイマーのカウント中に解き直す間隔（ms）（design.md §5.13）。
+ *
+ * 残り時間の表示を滑らかにするための値。接点が変わる瞬間の誤差は最大でこの
+ * 幅だが、秒単位のタイマーでは見えない。**`requestAnimationFrame` は使わない**
+ * —— タイマーを 1 個も置いていない回路で CPU を回し続けることになる。
+ * カウントしているタイマーが 1 個も無ければ（`nextEventAtMs` が無ければ）
+ * このループ自体を止める。
+ */
+const TICK_INTERVAL_MS = 50;
+
 export type SimulationStore = {
   running: boolean;
   /**
@@ -33,6 +44,14 @@ export type SimulationStore = {
   pressedSwitches: ReadonlySet<string>;
   /** 最新の結果。停止中は null */
   result: SimulationResult | null;
+  /**
+   * `result` を解いた時刻（開始からの経過ミリ秒）。停止中は 0。
+   *
+   * **`result` と対で持つ。** 残り時間の表示（`buildSimulationView`）は
+   * 「その結果を解いたのが何 ms 地点か」を知らないと計算できず、描画のたびに
+   * 時計を読むと結果と表示がずれる（design.md §5.13）。
+   */
+  nowMs: number;
 
   start: () => void;
   stop: () => void;
@@ -57,19 +76,53 @@ export type SimulationStore = {
   evaluate: () => void;
 };
 
+/**
+ * 実時間の基準（design.md §5.13）。**時計を読むのはこのストアだけ。**
+ *
+ * エンジンは `nowMs` を入力として受け取る純粋関数のままで（CLAUDE.md 設計原則 1）、
+ * テストは時刻を直接指定して書ける。ストアの状態には入れない —— 描画に使う値では
+ * ないので、更新しても再描画を起こしてはいけない。
+ */
+let startedAt = 0;
+
+/** カウント中だけ回すタイマー。止め忘れると停止後も解き続ける */
+let tickHandle: ReturnType<typeof setInterval> | null = null;
+
+const stopTicking = (): void => {
+  if (tickHandle === null) return;
+  clearInterval(tickHandle);
+  tickHandle = null;
+};
+
 export const useSimulationStore = create<SimulationStore>()((set, get) => ({
   running: false,
   pressedSwitches: EMPTY_PRESSED,
   result: null,
+  nowMs: 0,
 
   // 開始時は前回の結果を捨てる。残すと前回の励磁状態が
   // `previousEnergizedRelays` として引き継がれ、押していない自己保持回路が
   // 最初から励磁した状態で立ち上がってしまう
-  start: () =>
-    set({ running: true, pressedSwitches: EMPTY_PRESSED, result: null }),
+  start: () => {
+    stopTicking();
+    startedAt = performance.now();
+    set({
+      running: true,
+      pressedSwitches: EMPTY_PRESSED,
+      result: null,
+      nowMs: 0,
+    });
+  },
 
-  stop: () =>
-    set({ running: false, pressedSwitches: EMPTY_PRESSED, result: null }),
+  stop: () => {
+    stopTicking();
+    set({
+      running: false,
+      pressedSwitches: EMPTY_PRESSED,
+      result: null,
+      nowMs: 0,
+    });
+  },
 
   pressSwitch: (componentId) =>
     set((state) => {
@@ -100,17 +153,47 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
     const { running, pressedSwitches, result } = get();
 
     if (!running) {
-      if (result !== null) set({ result: null });
+      stopTicking();
+      if (result !== null) set({ result: null, nowMs: 0 });
       return;
     }
 
+    const nowMs = performance.now() - startedAt;
+
     // 前回の励磁状態を必ず渡す。渡し忘れると自己保持回路が毎回解け、
-    // ボタンを離した瞬間に落ちる（design.md §3.4 / §6-6）
-    set({
-      result: simulate(useCircuitStore.getState().document, componentRegistry, {
+    // ボタンを離した瞬間に落ちる（design.md §3.4 / §6-6）。
+    // `previousTimers` も同じ性質で、渡し忘れるとタイマーの時間が進まない
+    const next = simulate(
+      useCircuitStore.getState().document,
+      componentRegistry,
+      {
         pressedSwitches,
         previousEnergizedRelays: result?.energizedRelays,
-      }),
-    });
+        previousTimers: result?.timers,
+        nowMs,
+      },
+    );
+    set({ result: next, nowMs });
+
+    /*
+     * カウント中のタイマーがあるあいだだけ解き直しを回す。
+     *
+     * **`nextEventAtMs` の有無だけで判断する。** ここで「タイマーが置いてあるか」
+     * を見ると、入力の入っていないタイマーを置いただけで回り続ける。
+     */
+    const counting = next.nextEventAtMs !== undefined;
+    if (counting && tickHandle === null) {
+      tickHandle = setInterval(() => {
+        // 途中で停止された場合に備えて毎回確かめる（`stop()` でも止めているが、
+        // 回路の差し替えなど別経路で running が落ちることがある）
+        if (!get().running) {
+          stopTicking();
+          return;
+        }
+        get().evaluate();
+      }, TICK_INTERVAL_MS);
+    } else if (!counting) {
+      stopTicking();
+    }
   },
 }));

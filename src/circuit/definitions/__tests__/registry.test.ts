@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("13 定義が登録されている", () => {
+  it("15 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "switch-pushbutton-no",
@@ -28,11 +28,13 @@ describe("部品定義レジストリ", () => {
       "omron-my4n-d2-dc24",
       "omron-g7l-1a-b-dc24",
       "omron-g7l-2a-b-dc24",
+      "timer-on-delay",
+      "timer-off-delay",
       "lamp-dc24v",
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(13);
+    expect(componentRegistry.size).toBe(15);
   });
 
   it("型番から定義を取得できる", () => {
@@ -63,7 +65,13 @@ describe("部品定義レジストリ", () => {
       "omron-g7l-1a-b-dc24",
       "omron-g7l-2a-b-dc24",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(13);
+    // タイマーは電気的にはリレーだが、パレットのカテゴリは分けている
+    // （design.md §5.13）。`category` で絞ると relay 側には出てこない
+    expect(listComponentDefinitions("timer").map((d) => d.id)).toEqual([
+      "timer-on-delay",
+      "timer-off-delay",
+    ]);
+    expect(listComponentDefinitions()).toHaveLength(15);
   });
 
   it("全定義が端子データの出典を持つ", () => {

@@ -135,6 +135,29 @@
   visibility: visible;
 }
 
+/*
+ * タイマーの砂時計（design.md §5.13）。コイル枠の中に重ねて、
+ * 「これは限時のリレーだ」を絵で示す。塗るのは小さくても形が潰れないようにするため。
+ */
+.timerGlass {
+  fill: var(--panel);
+  stroke-width: 1.2;
+}
+
+/*
+ * 計測中の残り時間。**励磁中（動作した）とは別の色にする。**
+ * 同じ色にすると「もう動いた」と「まだ待っている」が見分けられず、
+ * タイマーで一番見たい情報が消える。
+ */
+.timerCounting {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--wire-plus);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 励磁中のキャプション。接点の切替そのものは端子と配線の色で読む */
 .energizedCaption {
   font-size: 14px;

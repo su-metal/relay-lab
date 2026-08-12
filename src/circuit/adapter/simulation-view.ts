@@ -9,9 +9,18 @@
  * このファイルは React を import しない純粋関数なので、node 環境の Vitest で検証できる。
  */
 
-import { isShorted, reachesPlus, reachesZero } from "@/circuit/engine";
+import {
+  coilEnergized,
+  isShorted,
+  presetMsOf,
+  reachesPlus,
+  reachesZero,
+  timerNextEventAtMs,
+} from "@/circuit/engine";
 import type {
+  CircuitComponentInstance,
   CircuitDocument,
+  ComponentDefinition,
   ComponentDefinitionRegistry,
   SimulationResult,
 } from "@/circuit/types";
@@ -51,8 +60,33 @@ export type WireState =
  * 別途 `running` フラグを持たせると、停止中なのに `energized: false` が
  * 描画側へ流れてしまい「消磁した」と「動いていない」を区別できなくなる。
  */
+/**
+ * タイマー 1 個の表示状態（design.md §5.13）。タイマー以外では持たない。
+ *
+ * **コイルと接点を分けて持つ。** タイマーは「コイルは入っているが接点は
+ * まだ動いていない」という状態を必ず通る —— そこが読めないと、
+ * カウント中なのか止まっているのかが画面から分からない。
+ */
+export type TimerDisplayState = {
+  mode: "on-delay" | "off-delay";
+  /** 設定時間（ms） */
+  presetMs: number;
+  /** コイルに電圧がかかっているか */
+  coilOn: boolean;
+  /**
+   * 接点が動くまでの残り（ms）。カウントしていなければ `undefined`。
+   * これが入っていることが「今まさに計っている」の合図になる。
+   */
+  remainingMs?: number;
+};
+
 export type DeviceSimulationState = {
-  /** リレーのコイルが励磁しているか */
+  /**
+   * **接点が切り替わっているか**（`SimulationResult.energizedRelays`）。
+   *
+   * 遅延なしのリレーではコイルの励磁と一致する。タイマーではずれるので、
+   * コイルの側は `timer.coilOn` を見ること（design.md §5.13）。
+   */
   energized: boolean;
   /**
    * そのリレーが**自分の接点で自分を保持している**か（design.md §5.9）。
@@ -74,6 +108,8 @@ export type DeviceSimulationState = {
    * 使い方では、これが正常な最終状態になる。
    */
   cutOff: boolean;
+  /** タイマーのときだけ入る（design.md §5.13） */
+  timer?: TimerDisplayState;
 };
 
 export type SimulationView = {
@@ -116,7 +152,13 @@ const energizedNetIds = (
     if (!definition) continue;
     const { electrical } = definition;
 
-    if (electrical.kind === "relay" && result.energizedRelays.has(instance.id)) {
+    /*
+     * **`energizedRelays` ではなくコイルの状態で見る。** カウント中のタイマーは
+     * コイルに電流が流れているが接点はまだ動いていないので、`energizedRelays`
+     * だけを見るとコイル配線が灰色になる（design.md §5.13）。
+     */
+    if (coilEnergized(result, instance.id, electrical)) {
+      if (electrical.kind !== "relay") continue;
       add(instance.id, electrical.relay.coil.positiveTerminal);
       add(instance.id, electrical.relay.coil.negativeTerminal);
     }
@@ -127,6 +169,35 @@ const energizedNetIds = (
   }
 
   return nets;
+};
+
+/**
+ * タイマーの表示状態を組み立てる（design.md §5.13）。タイマー以外は `undefined`。
+ *
+ * 残り時間はここで**負にならないよう丸める。** 経過が設定を追い越した後も
+ * 引き算の結果をそのまま出すと「残り -1.2 秒」という読めない表示になる。
+ */
+const timerDisplayOf = (
+  instance: CircuitComponentInstance,
+  definition: ComponentDefinition,
+  result: SimulationResult,
+  nowMs: number,
+): TimerDisplayState | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "relay" || !electrical.delay) return undefined;
+
+  const delay = electrical.delay;
+  const presetMs = presetMsOf(delay, instance.presetMs);
+  const state = result.timers.get(instance.id);
+  if (!state) return { mode: delay.mode, presetMs, coilOn: false };
+
+  const at = timerNextEventAtMs(delay, state, presetMs, nowMs);
+  return {
+    mode: delay.mode,
+    presetMs,
+    coilOn: state.coilOn,
+    remainingMs: at === undefined ? undefined : Math.max(0, at - nowMs),
+  };
 };
 
 /**
@@ -159,6 +230,8 @@ const wireStateOfNet = (
  *   ここで受け取るだけにして**計算しない**のは、検出に `simulate()` の再実行が
  *   要るため —— 表示状態の組み立てと同じ関数に混ぜると、色を引くたびに
  *   回路を解き直すことになる
+ * @param nowMs `result` を解いた時刻（開始からの経過ミリ秒）。タイマーの
+ *   残り時間の算出だけに使う。**ここでも時計は読まない**（design.md §5.13）
  */
 export const buildSimulationView = (
   document: CircuitDocument,
@@ -166,6 +239,7 @@ export const buildSimulationView = (
   result: SimulationResult | null,
   pressedSwitches: ReadonlySet<string>,
   selfHold: SelfHoldView = EMPTY_SELF_HOLD,
+  nowMs = 0,
 ): SimulationView => {
   if (!result) return IDLE_SIMULATION_VIEW;
 
@@ -223,6 +297,7 @@ export const buildSimulationView = (
       lit: result.litLamps.has(instance.id),
       pressed: operated,
       cutOff,
+      timer: timerDisplayOf(instance, definition, result, nowMs),
     });
   }
 

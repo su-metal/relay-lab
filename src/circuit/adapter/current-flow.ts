@@ -25,7 +25,7 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { polarityAcross } from "@/circuit/engine";
+import { coilEnergized, polarityAcross } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
@@ -114,7 +114,12 @@ const energizedLoads = (
     if (!definition) continue;
     const { electrical } = definition;
 
-    if (electrical.kind === "relay" && result.energizedRelays.has(instance.id)) {
+    /*
+     * **`energizedRelays` ではなくコイルの状態で見る**（design.md §5.13）。
+     * カウント中のタイマーはコイルに電流が流れているが接点はまだ動いていない
+     * ので、接点の側で判定すると計測中の矢印がまるごと消える。
+     */
+    if (electrical.kind === "relay" && coilEnergized(result, instance.id, electrical)) {
       const { coil } = electrical.relay;
       const load = orientLoad(
         result,

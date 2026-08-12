@@ -16,10 +16,12 @@
  * **読めない要素は捨てて、捨てた理由を日本語で返す。**
  */
 
+import { presetMsOf } from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitConnection,
   CircuitDocument,
+  ComponentDefinition,
   ComponentDefinitionRegistry,
   TerminalRef,
 } from "@/circuit/types";
@@ -75,6 +77,22 @@ const readTerminalRef = (value: unknown): TerminalRef | null =>
   isRecord(value) && isId(value.componentId) && isId(value.terminalId)
     ? { componentId: value.componentId, terminalId: value.terminalId }
     : null;
+
+/**
+ * タイマーの設定時間を読む（design.md §5.13）。
+ *
+ * `delay` を持たない部品では `undefined`（保存 JSON に無意味な値を残さない）。
+ * 数値でなければ `undefined` にして定義の既定値へ倒し、範囲外は上下限へ丸める。
+ */
+const readPresetMs = (
+  definition: ComponentDefinition,
+  value: unknown,
+): number | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "relay" || !electrical.delay) return undefined;
+  if (!isFiniteNumber(value)) return undefined;
+  return presetMsOf(electrical.delay, value);
+};
 
 /** ズームは 0 や負値を通すとキャンバスが描画できなくなるので既定へ戻す */
 const readViewport = (value: unknown): CircuitDocument["viewport"] => {
@@ -164,6 +182,13 @@ export const parseDocument = (
       // 見た目だけの属性なので、値が壊れていても部品ごと捨てずに
       // 「反転なし」へ倒す。true 以外はすべて未反転として読む
       flipped: entry.flipped === true ? true : undefined,
+      /*
+       * タイマーの設定時間（design.md §5.13）。**壊れていても部品ごと捨てない。**
+       * 範囲外は上下限へ丸め、数値でなければ持たない（＝定義の既定値になる）。
+       * `delay` を持たない部品では意味が無いので落とす —— 保存 JSON に
+       * 誰も読まないフィールドを残さない。
+       */
+      presetMs: readPresetMs(definition, entry.presetMs),
     });
     terminalsOf.set(
       entry.id,

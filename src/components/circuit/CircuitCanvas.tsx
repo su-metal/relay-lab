@@ -200,6 +200,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
 
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
+  const nowMs = useSimulationStore((state) => state.nowMs);
 
   /**
    * 自己保持の検出（design.md §5.9）。励磁中のリレー 1 個につき `simulate()` を
@@ -211,7 +212,9 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document, result, pressedSwitches],
   );
 
-  // 停止中は result が null で、ビューは空＝すべて非通電として描かれる
+  // 停止中は result が null で、ビューは空＝すべて非通電として描かれる。
+  // `nowMs` は `result` を解いた時刻で、タイマーの残り時間の算出だけに使う
+  // （ここでも時計は読まない・design.md §5.13）
   const view = useMemo(
     () =>
       buildSimulationView(
@@ -220,8 +223,9 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         result,
         pressedSwitches,
         selfHold,
+        nowMs,
       ),
-    [document, result, pressedSwitches, selfHold],
+    [document, result, pressedSwitches, selfHold, nowMs],
   );
 
   // 端子ツールチップの接続先（design.md §8.3）。実行中かどうかに関わらず

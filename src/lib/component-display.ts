@@ -19,6 +19,7 @@ export const CATEGORY_LABELS: Record<ComponentCategory, string> = {
   lamp: "ランプ",
   diode: "ダイオード",
   terminal: "端子台",
+  timer: "タイマー",
 };
 
 /** パレットに並べる順序。`componentDefinitions` の並びより優先する */
@@ -26,6 +27,8 @@ export const CATEGORY_ORDER: readonly ComponentCategory[] = [
   "power",
   "switch",
   "relay",
+  // リレーの直後。タイマーは「遅れて動くリレー」なので隣に並べる（design.md §5.13）
+  "timer",
   "lamp",
   "diode",
   "terminal",
