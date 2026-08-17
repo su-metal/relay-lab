@@ -90,11 +90,17 @@ const STATE_LEGEND: readonly LegendItem[] = [
 export type WireLegendProps = {
   /** シミュレーション実行中か。色の意味が §5.8 から §5.6・§5.9 へ切り替わる */
   running: boolean;
+  /**
+   * 畳んで出すか（design.md §8.12）。狭い画面では 6 項目を広げると図面を覆う。
+   * **「凡例がある」ことは畳んでも見せ続ける** —— 隠してしまうと、読めない
+   * 1 色（紫の自己保持・灰の破線）に説明が付いていること自体に気付けない。
+   */
+  collapsible?: boolean;
 };
 
-export function WireLegend({ running }: WireLegendProps) {
-  return (
-    <ul className={styles.legend}>
+export function WireLegend({ running, collapsible }: WireLegendProps) {
+  const items = (
+    <ul className={styles.legend} data-inline={collapsible || undefined}>
       {(running ? STATE_LEGEND : ROLE_LEGEND).map(({ swatch, label, hint }) => (
         <li key={label} className={styles.item} title={hint}>
           <span className={`${styles.swatch} ${swatch ?? ""}`} />
@@ -102,5 +108,16 @@ export function WireLegend({ running }: WireLegendProps) {
         </li>
       ))}
     </ul>
+  );
+
+  if (!collapsible) return items;
+
+  // 開閉の状態は `<details>` に持たせる。React の状態にすると、
+  // 実行・停止で色の意味が入れ替わるたびに開閉まで作り直すことになる
+  return (
+    <details className={styles.disclosure}>
+      <summary className={styles.summary}>凡例</summary>
+      {items}
+    </details>
   );
 }

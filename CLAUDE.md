@@ -7,6 +7,7 @@
 ## 技術構成のうち、コードから読み取れないもの
 
 - CSS は **CSS Modules**。Tailwind 等の CSS フレームワークは使わない
+- 画面は PC の 3 カラムが基本。狭い画面（900px 未満）と指の端末での出し分けは `useViewportMode.ts` の 1 箇所が判定し、**見た目は `data-compact` 属性で切り替える**（同じブレークポイントを CSS に書き写さない・`design.md` §8.12）
 - バックエンド・ログイン・DB は持たない。永続化は LocalStorage
 - 部品データは TypeScript でローカル保持。将来 Supabase / Firebase へ移行できる構造を崩さない
 - デプロイは **main への push で自動**（`.github/workflows/deploy.yml`）。静的書き出し（`out/`）を Cloudflare Workers へ配る。リポジトリの Actions Secrets に `CLOUDFLARE_API_TOKEN`（必要なら `CLOUDFLARE_ACCOUNT_ID`）が要る。手元から配るなら `npm run deploy`（`design.md` §9.1）

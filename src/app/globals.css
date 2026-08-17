@@ -80,4 +80,16 @@ body {
   line-height: 1.6;
   /* キャンバス操作中にページ全体がスクロールしないようにする */
   overflow: hidden;
+  /*
+   * モバイルの引っぱり（design.md §8.12）。キャンバスを下へ払う操作が
+   * **ページの再読み込み**（pull-to-refresh）に取られると、組みかけの回路が
+   * 消えたように見える（実際は LocalStorage から復元されるが、
+   * 図面の縮尺と選択は失われる）
+   */
+  overscroll-behavior: none;
+  /*
+   * 横向きにしたときに Safari が本文を勝手に拡大するのを止める。
+   * 端子番号と操作バーの字だけが太って、図面との対応が崩れる
+   */
+  -webkit-text-size-adjust: 100%;
 }

@@ -205,3 +205,45 @@
   color: var(--warn-text);
   background: var(--warn-bg);
 }
+
+/* 狭い画面（design.md §8.12）------------------------------------------- */
+
+/*
+ * **横スクロールにはしない。折り返す。** 1 行に押し込んで横へ流すと、
+ * はみ出した書き出し・読み込みが「無い機能」になる。高さを 1 行ぶん
+ * 譲ってでも、置いてある操作は全部見えているほうがよい。
+ */
+.toolbar[data-compact] {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  height: auto;
+  min-height: 44px;
+  padding: 6px 8px;
+}
+
+.toolbar[data-compact] .group {
+  gap: 4px;
+}
+
+/* 折り返した 2 行目の先頭に来ることがあるので、右端固定を解く */
+.toolbar[data-compact] .help {
+  margin-left: auto;
+}
+
+/*
+ * 指で押す当たり判定（design.md §8.12）。狭さではなく**入力の粗さ**で決まるので、
+ * `data-compact` ではなくメディアクエリで持つ。1 辺 36px は
+ * 「44px の指の当たり判定」を隣接ボタンとの間隔込みで満たす下限。
+ */
+@media (pointer: coarse) {
+  .button,
+  .run,
+  .segment {
+    min-height: 36px;
+  }
+
+  .help {
+    width: 36px;
+    height: 36px;
+  }
+}

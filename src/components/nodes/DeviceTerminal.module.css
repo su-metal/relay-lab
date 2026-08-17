@@ -40,6 +40,20 @@
   border-radius: 50%;
 }
 
+/*
+ * 指で摘まむときの当たり判定（design.md §8.12）。
+ *
+ * **見た目は広げない。** 端子の点を大きくすると、MY4N のように 14 個並ぶ
+ * 部品では点どうしがくっついて実端子番号が読めなくなる（本プロダクトが
+ * 最優先で読ませたいもの）。広げるのは触れる範囲だけ ——
+ * 直径 12px の点に対して外側 12px を足し、およそ 36px 角を確保する。
+ */
+@media (pointer: coarse) {
+  .terminal .handle::after {
+    inset: -12px;
+  }
+}
+
 .terminal .handle:hover {
   transform: translate(-50%, -50%) scale(1.3);
   border-color: var(--terminal-hover);

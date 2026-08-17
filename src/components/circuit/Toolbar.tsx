@@ -37,6 +37,19 @@ const STATUS_LABEL: Record<SimulationStatus, string> = {
 };
 
 /**
+ * 狭い画面での収束結果（design.md §8.12）。
+ *
+ * **意味は削らず、言い換えるだけ。** 「発振中」を落として「実行中」に
+ * まとめてしまうと、ブザー回路が正常に動いているのか止まっているのかが
+ * 読めなくなる。長い括弧書きだけを外す。
+ */
+const COMPACT_STATUS_LABEL: Record<SimulationStatus, string> = {
+  stable: "実行中",
+  oscillating: "発振中",
+  "not-converged": "収束せず",
+};
+
+/**
  * 保存状態の表示（design.md §8.4）。
  *
  * 自動保存は目に見えないので、**保存できていない環境をここで必ず知らせる。**
@@ -51,6 +64,13 @@ const SAVE_LABEL: Record<PersistenceStatus, string> = {
 };
 
 export type ToolbarProps = {
+  /**
+   * 狭い画面か（design.md §8.12）。ボタンの**数は減らさず名前だけを縮める。**
+   * モバイルでは Delete キーも L キーも無いので、ここから消した操作は
+   * 二度と辿り着けなくなる（唯一の例外は範囲選択の対象切り替え —— 指では
+   * 枠そのものを引けないので設定する意味が無い）。
+   */
+  compact: boolean;
   saveStatus: PersistenceStatus;
   rangeSelectionTarget: RangeSelectionTarget;
   onRangeSelectionTargetChange: (value: RangeSelectionTarget) => void;
@@ -60,6 +80,7 @@ export type ToolbarProps = {
 };
 
 export function Toolbar({
+  compact,
   saveStatus,
   rangeSelectionTarget,
   onRangeSelectionTargetChange,
@@ -129,8 +150,9 @@ export function Toolbar({
   );
 
   return (
-    <header className={styles.toolbar}>
-      <span className={styles.brand}>{APP_NAME}</span>
+    <header className={styles.toolbar} data-compact={compact || undefined}>
+      {/* アプリ名は狭い画面では畳む。操作に要らない唯一の要素なので最初に落とす */}
+      {!compact && <span className={styles.brand}>{APP_NAME}</span>}
 
       <div className={styles.group}>
         <button
@@ -139,8 +161,9 @@ export function Toolbar({
           onClick={start}
           disabled={running}
           title="回路を解いて通電状態を表示します（S キーでも可）"
+          aria-label="シミュレーション開始"
         >
-          ▶ シミュレーション開始
+          {compact ? "▶ 開始" : "▶ シミュレーション開始"}
         </button>
         <button
           type="button"
@@ -148,12 +171,13 @@ export function Toolbar({
           onClick={stop}
           disabled={!running}
           title="シミュレーションを停止し、押下状態と励磁状態を捨てます（S キーでも可）"
+          aria-label="シミュレーション停止"
         >
-          ■ 停止
+          {compact ? "■" : "■ 停止"}
         </button>
         {running && (
           <span className={styles.status} data-status={status ?? "stable"}>
-            {STATUS_LABEL[status ?? "stable"]}
+            {(compact ? COMPACT_STATUS_LABEL : STATUS_LABEL)[status ?? "stable"]}
           </span>
         )}
         {/*
@@ -176,8 +200,9 @@ export function Toolbar({
           onClick={undo}
           disabled={!canUndo}
           title="直前の操作を取り消します（Ctrl/⌘ + Z）"
+          aria-label="元に戻す"
         >
-          ↶ 元に戻す
+          {compact ? "↶" : "↶ 元に戻す"}
         </button>
         <button
           type="button"
@@ -185,43 +210,51 @@ export function Toolbar({
           onClick={redo}
           disabled={!canRedo}
           title="取り消した操作をやり直します（Ctrl/⌘ + Shift + Z）"
+          aria-label="やり直す"
         >
-          ↷ やり直す
+          {compact ? "↷" : "↷ やり直す"}
         </button>
       </div>
 
-      <div className={styles.group}>
-        {/*
-          何もない所を左ドラッグすれば常に範囲選択になるので、モードの切り替えは
-          置かない。ここにあるのは枠が拾う対象だけ（design.md §8.6）。
-          画面移動は Shift+ドラッグ・中／右ドラッグ・ホイール
-        */}
-        <span
-          className={styles.groupLabel}
-          title="何もない所をドラッグすると範囲選択します。画面を動かすときは Shift+ドラッグ（中ボタン／右ドラッグ・ホイールでも可）"
-        >
-          ⬚ 範囲選択
-        </span>
-        <div
-          className={styles.segmented}
-          role="group"
-          aria-label="範囲選択の対象"
-        >
-          {RANGE_SELECTION_TARGETS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={styles.segment}
-              onClick={() => onRangeSelectionTargetChange(option.value)}
-              aria-pressed={rangeSelectionTarget === option.value}
-              data-active={rangeSelectionTarget === option.value || undefined}
-              title={option.title}
-            >
-              {option.label}
-            </button>
-          ))}
+      {/*
+        範囲選択の対象（design.md §8.6）。**狭い画面では出さない。**
+        指では枠そのものを引けず（1 本指のドラッグは画面移動・§8.12）、
+        設定しても効く場面が無い
+      */}
+      {!compact && (
+        <div className={styles.group}>
+          {/*
+            何もない所を左ドラッグすれば常に範囲選択になるので、モードの切り替えは
+            置かない。ここにあるのは枠が拾う対象だけ（design.md §8.6）。
+            画面移動は Shift+ドラッグ・中／右ドラッグ・ホイール
+          */}
+          <span
+            className={styles.groupLabel}
+            title="何もない所をドラッグすると範囲選択します。画面を動かすときは Shift+ドラッグ（中ボタン／右ドラッグ・ホイールでも可）"
+          >
+            ⬚ 範囲選択
+          </span>
+          <div
+            className={styles.segmented}
+            role="group"
+            aria-label="範囲選択の対象"
+          >
+            {RANGE_SELECTION_TARGETS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={styles.segment}
+                onClick={() => onRangeSelectionTargetChange(option.value)}
+                aria-pressed={rangeSelectionTarget === option.value}
+                data-active={rangeSelectionTarget === option.value || undefined}
+                title={option.title}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={styles.group}>
         <button
@@ -230,8 +263,13 @@ export function Toolbar({
           onClick={removeSelected}
           disabled={selectedCount === 0}
           title="選択中の部品と配線を削除します（Delete / Backspace / D キーでも可）"
+          aria-label="選択を削除"
         >
-          選択を削除
+          {/*
+            **モバイルではこのボタンが唯一の削除手段。** Delete キーも D キーも
+            無いので、狭くても短い名前に留めて必ず出す（design.md §8.12）
+          */}
+          {compact ? "削除" : "選択を削除"}
           {selectedCount > 0 && ` (${selectedCount})`}
         </button>
         {/*
@@ -245,11 +283,25 @@ export function Toolbar({
           onClick={runAutoArrange}
           disabled={componentCount === 0}
           title="部品をグリッドに揃え、行・列を整え、重なりをほどきます（L キーでも可）。Undo 1 回で元に戻せます"
+          aria-label={
+            selectedComponentIds.length > 0 ? "選択を整列" : "配置を整列"
+          }
         >
-          ▦ {selectedComponentIds.length > 0 ? "選択を整列" : "配置を整列"}
+          ▦{" "}
+          {compact
+            ? "整列"
+            : selectedComponentIds.length > 0
+              ? "選択を整列"
+              : "配置を整列"}
         </button>
-        <button type="button" className={styles.button} onClick={handleFitView}>
-          全体表示
+        <button
+          type="button"
+          className={styles.button}
+          onClick={handleFitView}
+          title="回路全体が収まるように表示します"
+          aria-label="全体表示"
+        >
+          {compact ? "全体" : "全体表示"}
         </button>
       </div>
 
@@ -264,16 +316,18 @@ export function Toolbar({
           onClick={onExportFile}
           disabled={componentCount === 0}
           title="いまの回路を JSON ファイルに書き出します"
+          aria-label="書き出し"
         >
-          ⬇ 書き出し
+          {compact ? "⬇" : "⬇ 書き出し"}
         </button>
         <button
           type="button"
           className={styles.button}
           onClick={() => fileInputRef.current?.click()}
           title="JSON ファイルから回路を読み込みます（いまの回路は置き換わります）"
+          aria-label="読み込み"
         >
-          ⬆ 読み込み
+          {compact ? "⬆" : "⬆ 読み込み"}
         </button>
         <input
           ref={fileInputRef}
@@ -301,12 +355,23 @@ export function Toolbar({
         ?
       </button>
 
-      <span className={styles.counts}>
-        部品 {componentCount} ／ 配線 {connectionCount}
-      </span>
-      <span className={styles.save} data-status={saveStatus}>
-        {SAVE_LABEL[saveStatus]}
-      </span>
+      {/* 部品数・配線数は操作ではなく目安。狭い画面では場所を譲る */}
+      {!compact && (
+        <span className={styles.counts}>
+          部品 {componentCount} ／ 配線 {connectionCount}
+        </span>
+      )}
+
+      {/*
+        保存状態（design.md §8.4）。狭い画面では**「保存済み」だけを畳む。**
+        自動保存が効いている間は黙っていてよいが、保存できない環境を黙るのは
+        別問題 —— リロードで回路が消えて初めて気付くことになる
+      */}
+      {(!compact || (saveStatus !== "saved" && saveStatus !== "pending")) && (
+        <span className={styles.save} data-status={saveStatus}>
+          {SAVE_LABEL[saveStatus]}
+        </span>
+      )}
     </header>
   );
 }
