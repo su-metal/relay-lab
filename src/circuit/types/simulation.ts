@@ -88,6 +88,11 @@ export type WarningCode =
   | "diode-reversed"
   /** どの接続にも現れない端子がある */
   | "unconnected-terminal"
+  /**
+   * コイルが自分自身の b 接点を通して給電されている。
+   * 動作した瞬間に自分で給電を切るため実機では唸る（design.md §5.14）
+   */
+  | "coil-self-interrupt"
   /** 励磁状態が振動して収束しない（B 接点による自励発振） */
   | "oscillating"
   /** 反復上限に達しても安定しなかった */

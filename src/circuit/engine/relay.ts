@@ -23,12 +23,20 @@ export type TerminalPair = readonly [string, string];
  * 非励磁では閉じるペアが 1 つも無い（COM はどこにも繋がらない）。
  * ここで見ているのは `ncTerminal` の有無だけで、接点の形の名前も型番も見ない
  * —— 相手の端子が定義に無ければ union する対象が無い、という 1 行で済む。
+ *
+ * `openContacts` は**切り替わる一瞬の中間位置**（NC も NO も開いている）を表す
+ * 接点 ID の集合。実機の c 接点は break-before-make で、NC が開いてから NO が
+ * 閉じるまでに必ず「どちらにも繋がっていない」瞬間がある。通常の解析では
+ * 通らない状態だが、`chatter.ts` がこの瞬間を作ってコイルの給電が残るかを
+ * 調べる（design.md §5.14）。省略時は従来どおり NC / NO のどちらかが閉じる。
  */
 export const closedContactPairs = (
   relay: RelayDefinition,
   energized: boolean,
+  openContacts?: ReadonlySet<string>,
 ): TerminalPair[] =>
   relay.contacts.flatMap((contact) => {
+    if (openContacts?.has(contact.id)) return [];
     const other = energized ? contact.noTerminal : contact.ncTerminal;
     return other === undefined ? [] : [[contact.commonTerminal, other]];
   });

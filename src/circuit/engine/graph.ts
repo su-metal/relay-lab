@@ -73,6 +73,17 @@ export type NetLookup = {
 };
 
 /**
+ * 接点を**中間位置**（NC も NO も開）に固定する指定。componentId → 接点 ID の集合。
+ *
+ * 実機の c 接点は break-before-make なので、切り替わる途中に必ず
+ * 「どちらにも繋がっていない」瞬間がある。`chatter.ts` だけがこれを使い、
+ * その瞬間にコイルの給電が残るかを調べる（design.md §5.14）。
+ * 通常の収束ループは渡さない —— 中間位置は安定状態ではないので、
+ * 解として求めるものではない。
+ */
+export type OpenContacts = ReadonlyMap<string, ReadonlySet<string>>;
+
+/**
  * 部品の内部で導通する端子ペアを返す。
  *
  * **負荷（コイル・ランプ・ダイオード）は絶対にここへ含めてはならない。**
@@ -89,6 +100,7 @@ export const conductingPairs = (
   electrical: ElectricalDefinition,
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
+  openContacts?: OpenContacts,
 ): TerminalPair[] => {
   switch (electrical.kind) {
     case "switch": {
@@ -102,6 +114,7 @@ export const conductingPairs = (
       return closedContactPairs(
         electrical.relay,
         energizedRelays.has(componentId),
+        openContacts?.get(componentId),
       );
     case "terminal":
       // 端子台は全端子が常時導通する。先頭端子に順に繋げば連結成分は 1 つになる
@@ -129,6 +142,7 @@ export const buildNets = (
   definitions: ComponentDefinitionRegistry,
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
+  openContacts?: OpenContacts,
 ): NetAssignment => {
   const dsu = new UnionFind();
   const orderedKeys: string[] = [];
@@ -169,6 +183,7 @@ export const buildNets = (
       definition.electrical,
       input,
       energizedRelays,
+      openContacts,
     )) {
       dsu.union(
         register(terminalKey(instance.id, a)),

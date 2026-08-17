@@ -14,6 +14,7 @@ export const WARNING_CODE_LABELS: Record<WarningCode, string> = {
   "coil-polarity-reversed": "コイル極性",
   "diode-reversed": "ダイオードの向き",
   "unconnected-terminal": "未接続の端子",
+  "coil-self-interrupt": "チャタリング",
   oscillating: "発振",
   "not-converged": "収束しません",
 };
