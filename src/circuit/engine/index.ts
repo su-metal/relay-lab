@@ -13,7 +13,8 @@ export {
   conductingPairs,
   stateAt,
 } from "./graph";
-export type { NetAssignment, NetLookup } from "./graph";
+export type { NetAssignment, NetLookup, OpenContacts } from "./graph";
+export { detectSelfInterruptingCoils } from "./chatter";
 export {
   atPlus,
   atZero,

@@ -20,6 +20,7 @@ import type {
 } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
+import { detectSelfInterruptingCoils } from "./chatter";
 import {
   buildNets,
   computeNetStates,
@@ -281,6 +282,12 @@ export const simulate = (
     ...detectPowerShortCircuits(document, definitions, lookup),
     ...detectDiodeOrientation(document, definitions, lookup),
     ...last.coilWarnings,
+    /*
+     * 収束した**あと**に 1 回だけ聞く。中間位置は安定状態ではないので
+     * 反復の中で解くものではなく、確定した状態に対する後付けの検査になる
+     * （design.md §5.14）
+     */
+    ...detectSelfInterruptingCoils(document, definitions, input, last.energized),
     ...statusWarnings(status),
     ...detectUnconnectedTerminals(document, definitions),
   ];
