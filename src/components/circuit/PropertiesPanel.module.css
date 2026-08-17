@@ -110,6 +110,24 @@
   color: var(--text-muted);
 }
 
+/*
+ * 指の端末では入力欄を 16px 以上にする（design.md §8.12）。
+ * iOS Safari は 16px 未満の入力欄にフォーカスするとページごと拡大するので、
+ * 名前やタイマーの秒数を打つたびに図面の縮尺が変わってしまう。
+ * 触る対象そのものも指で狙える高さまで広げる。
+ */
+@media (pointer: coarse) {
+  .labelInput,
+  .presetInput {
+    min-height: 36px;
+    font-size: 16px;
+  }
+
+  .action {
+    min-height: 36px;
+  }
+}
+
 /* 部品への操作（左右反転）。名前欄と仕様表の間に置く */
 .actions {
   display: flex;

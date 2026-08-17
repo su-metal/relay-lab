@@ -7,6 +7,8 @@
 }
 
 .emptyHint {
+  /* 携帯の幅では画面いっぱいに広がらないよう左右に余白を残す */
+  max-width: min(560px, calc(100vw - 24px));
   margin: 0;
   padding: 8px 14px;
   border: 1px solid var(--border);
@@ -15,6 +17,27 @@
   color: var(--text-muted);
   background: var(--panel);
   box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+/*
+ * 狭い画面では丸みを落とす（design.md §8.12）。携帯の幅では案内文が 6〜7 行に
+ * なり、999px の角丸が**円形の吹き出し**になって行末が欠けて見える。
+ */
+.canvas[data-compact] .emptyHint {
+  border-radius: 12px;
+  text-align: left;
+}
+
+/*
+ * 指で押すズームボタン（design.md §8.12）。React Flow の既定は 16px 角で、
+ * 指では隣のボタンを巻き込む。当たり判定は端末の性質なので、狭さ
+ * （`data-compact`）ではなくメディアクエリで持つ。
+ */
+@media (pointer: coarse) {
+  .canvas :global(.react-flow__controls-button) {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 /* 配線の既定色（非通電）。状態別の色は下の .wire* が上書きする */
