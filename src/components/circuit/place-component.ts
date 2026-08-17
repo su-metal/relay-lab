@@ -115,18 +115,22 @@ export function panToInclude(
     length: number,
     paneLength: number,
   ): number => {
+    /*
+     * **そもそも収まらない軸は動かさない。** 横向きの携帯（キャンバスの高さ
+     * 244px）に MY4N（230px ＋ 端子ラベル）を置くと、どう寄せても全体は
+     * 見えない。ここで片側へ寄せると、逆側が余分に切れたうえ図面まで動く。
+     * `placeAtViewportCenter()` が中央に置いてあるので、そのままにすれば
+     * 上下（左右）が均等に切れる —— 縮めるのはピンチと「全体」に任せる。
+     */
+    if (length * zoom > paneLength - VIEW_MARGIN * 2) return offset;
+
     const screenStart = start * zoom + offset;
     const screenEnd = screenStart + length * zoom;
 
-    // 左（上）へはみ出しているならそちらを優先して寄せる
     if (screenStart < VIEW_MARGIN) return offset + (VIEW_MARGIN - screenStart);
 
     const overflow = screenEnd - (paneLength - VIEW_MARGIN);
-    if (overflow > 0) {
-      // **画面より大きい部品では左（上）を切らない。** 両端は同時に満たせず、
-      // 端子番号を読み始める側（左上）を残すほうが図面として使える
-      return offset - Math.min(overflow, screenStart - VIEW_MARGIN);
-    }
+    if (overflow > 0) return offset - overflow;
 
     return offset;
   };

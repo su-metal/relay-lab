@@ -243,17 +243,20 @@ function Sheet({
 
   return (
     <section className={styles.sheet} aria-label={meta?.title}>
-      <div className={styles.sheetHead}>
-        <span className={styles.sheetGrabber} aria-hidden />
-        <button
-          type="button"
-          className={styles.sheetClose}
-          onClick={onClose}
-          aria-label="パネルを閉じる"
-        >
-          ×
-        </button>
-      </div>
+      {/*
+        閉じるボタンは**見出しの帯を作らずに右上へ重ねる**（design.md §8.12）。
+        横向きの携帯ではシートに使える高さが 200px を切り、帯 1 本（28px）が
+        部品 1 件ぶんに相当する。中身のパネルは自分の見出しを持っているので、
+        シート側で見出しを繰り返す理由も無い
+      */}
+      <button
+        type="button"
+        className={styles.sheetClose}
+        onClick={onClose}
+        aria-label="パネルを閉じる"
+      >
+        ×
+      </button>
       <div className={styles.sheetBody}>{children}</div>
     </section>
   );

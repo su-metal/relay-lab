@@ -182,15 +182,27 @@ describe("panToInclude", () => {
   });
 
   /**
-   * 画面より大きい部品は両端を同時に収められない。
-   * **左上を残す** —— 端子番号を読み始める側を切ると図面として使えない。
+   * 横向きの携帯（キャンバスの高さ 244px）に MY4N（230px ＋端子ラベル）を
+   * 置いた状況。**どう寄せても全体は見えないので動かさない** —— 片側へ
+   * 寄せると逆側が余分に切れたうえ、図面まで動く。
    */
-  it("画面より大きい部品は左上を合わせる", () => {
-    const narrow = { width: 300, height: 400 };
-    const rect = { x: 400, y: 300, width: 500, height: 600 };
-    const screen = screenRectOf(panToInclude(identity, narrow, rect), rect);
+  it("画面に収まらない軸は動かさない（中央のまま切れさせる）", () => {
+    const shortPane = { width: 750, height: 244 };
+    const relay = { x: 100, y: 7, width: 260, height: 230 };
+    const transform = { x: 0, y: 0, zoom: 1 };
 
-    expect(screen.left).toBeGreaterThanOrEqual(0);
-    expect(screen.top).toBeGreaterThanOrEqual(0);
+    // 縦は収まらないので動かさない。横は収まっているので通常どおり
+    expect(panToInclude(transform, shortPane, relay).y).toBe(transform.y);
+    expect(panToInclude(transform, shortPane, relay).x).toBe(transform.x);
+  });
+
+  it("収まらない縦を抱えていても、はみ出した横は寄せる", () => {
+    const shortPane = { width: 750, height: 244 };
+    const relay = { x: 700, y: 7, width: 260, height: 230 };
+    const panned = panToInclude({ x: 0, y: 0, zoom: 1 }, shortPane, relay);
+    const screen = screenRectOf(panned, relay);
+
+    expect(panned.y).toBe(0);
+    expect(screen.right).toBeLessThanOrEqual(shortPane.width);
   });
 });
