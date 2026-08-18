@@ -3,11 +3,12 @@
 /**
  * 配線色の凡例（design.md §5.8・§5.9）。
  *
- * 色の意味は停止中（役割・§5.8）と実行中（状態・§5.6）で切り替わるので、
- * 凡例も 2 種類持つ。どちらも「見れば分かる色」は説明が要らないが、
+ * 色の意味は停止中（役割・§5.8）・経路確認中（到達範囲・§5.15）・実行中
+ * （状態・§5.6）で切り替わるので、凡例も 3 種類持つ。どちらも「見れば分かる色」は説明が要らないが、
  * **読み取れない色が 1 つずつある。**
  *
  * - 停止中: 灰の破線＝どこにも電源が届いていない
+ * - 経路確認中: 破線＝実際に電位が届いている線（実行中の実線と読み分ける）
  * - 実行中: 紫の流れる破線＝自己保持（この線を切ればリレーが落ちる）
  * - 実行中: 線を流れる切れ目＝電流の向き（design.md §5.10）。これは色の軸では
  *   なく**動きの軸**なので、緑にも紫にも同じように乗る
@@ -87,20 +88,91 @@ const STATE_LEGEND: readonly LegendItem[] = [
   },
 ];
 
+/**
+ * 経路確認モード（design.md §8.14）。
+ *
+ * **読ませたい順に置く。** このモードで最初に知りたいのは
+ * 「どこまで来ているか」ではなく「**どこで止まっているか**」——
+ * 到達範囲は色で一目で分かるが、止まっている箇所は説明が無いと
+ * ただの黄色い点線に見える。
+ */
+const PREVIEW_LEGEND: readonly LegendItem[] = [
+  {
+    swatch: styles.predictedEnergized,
+    label: "励磁する",
+    hint: "この状態のままでコイルが励磁する・ランプが点灯する経路",
+  },
+  {
+    swatch: `${styles.plus} ${styles.predicted}`,
+    label: "+ 側が到達",
+    hint: "電源の + 側の電位がここまで来ています",
+  },
+  {
+    swatch: `${styles.zero} ${styles.predicted}`,
+    label: "0V が到達",
+    hint: "電源の 0V 側がここまで来ています",
+  },
+  {
+    swatch: `${styles.idle}`,
+    label: "まだ届かない",
+    hint: "今は電位が届いていない線。接点やスイッチが閉じれば届くこともあります",
+  },
+  {
+    // 色ではなく**部品に付く目印**の説明。線の見本を持たない唯一の項目
+    label: "⌁ 止まっている部品",
+    hint: "黄色い点線で囲まれた部品で電位が止まっています。右の一覧に端子番号が出ます",
+  },
+];
+
 export type WireLegendProps = {
   /** シミュレーション実行中か。色の意味が §5.8 から §5.6・§5.9 へ切り替わる */
   running: boolean;
+  /**
+   * 経路確認モードか（design.md §8.14）。`running` とは排他
+   * （`simulationStore` が守っている）。
+   */
+  pathPreview?: boolean;
+  /**
+   * 畳んで出すか（design.md §8.12）。狭い画面では 6 項目を広げると図面を覆う。
+   * **「凡例がある」ことは畳んでも見せ続ける** —— 隠してしまうと、読めない
+   * 1 色（紫の自己保持・灰の破線）に説明が付いていること自体に気付けない。
+   */
+  collapsible?: boolean;
 };
 
-export function WireLegend({ running }: WireLegendProps) {
-  return (
-    <ul className={styles.legend}>
-      {(running ? STATE_LEGEND : ROLE_LEGEND).map(({ swatch, label, hint }) => (
+export function WireLegend({
+  running,
+  pathPreview,
+  collapsible,
+}: WireLegendProps) {
+  // 3 通りのうち 1 つだけが載る。実行中が最優先だが、そもそも排他なので
+  // ここで順位が問題になることは無い
+  const legend = running
+    ? STATE_LEGEND
+    : pathPreview
+      ? PREVIEW_LEGEND
+      : ROLE_LEGEND;
+
+  const items = (
+    <ul className={styles.legend} data-inline={collapsible || undefined}>
+      {legend.map(({ swatch, label, hint }) => (
         <li key={label} className={styles.item} title={hint}>
-          <span className={`${styles.swatch} ${swatch ?? ""}`} />
+          {/* 線の見本を持たない項目がある（部品に付く目印の説明） */}
+          {swatch && <span className={`${styles.swatch} ${swatch}`} />}
           {label}
         </li>
       ))}
     </ul>
+  );
+
+  if (!collapsible) return items;
+
+  // 開閉の状態は `<details>` に持たせる。React の状態にすると、
+  // 実行・停止で色の意味が入れ替わるたびに開閉まで作り直すことになる
+  return (
+    <details className={styles.disclosure}>
+      <summary className={styles.summary}>凡例</summary>
+      {items}
+    </details>
   );
 }

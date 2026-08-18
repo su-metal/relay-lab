@@ -22,6 +22,7 @@ import type {
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  NetState,
   SimulationResult,
 } from "@/circuit/types";
 import { terminalKey } from "@/circuit/types";
@@ -129,21 +130,28 @@ export const IDLE_SIMULATION_VIEW: SimulationView = {
 };
 
 /**
- * 通電中の負荷に隣接するネット ID を集める。
+ * 成立している負荷に隣接するネット ID を集める。
  *
  * 負荷は union されていない（design.md §5.2）ので、
  * 「電流が流れている経路」はネットの 2 ビットからは読み取れない。
  * 励磁したコイル・点灯したランプの両端のネットを辿るのが唯一の手がかり。
+ *
+ * **`SimulationResult` を受け取らず、成立した負荷の集合とネット表だけを取る。**
+ * 経路確認（design.md §5.15）は収束していない静止状態の解を持っており、
+ * `SimulationResult` を作れない。緑を塗る規則をそちらに書き写すと、
+ * 実行中と経路確認で同じ回路が別の色になりうる。
  */
-const energizedNetIds = (
+export const loadNetIds = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
-  result: SimulationResult,
+  netOf: ReadonlyMap<string, number>,
+  energizedCoils: ReadonlySet<string>,
+  litLamps: ReadonlySet<string>,
 ): Set<number> => {
   const nets = new Set<number>();
 
   const add = (componentId: string, terminalId: string): void => {
-    const netId = result.netOf.get(terminalKey(componentId, terminalId));
+    const netId = netOf.get(terminalKey(componentId, terminalId));
     if (netId !== undefined) nets.add(netId);
   };
 
@@ -152,23 +160,38 @@ const energizedNetIds = (
     if (!definition) continue;
     const { electrical } = definition;
 
-    /*
-     * **`energizedRelays` ではなくコイルの状態で見る。** カウント中のタイマーは
-     * コイルに電流が流れているが接点はまだ動いていないので、`energizedRelays`
-     * だけを見るとコイル配線が灰色になる（design.md §5.13）。
-     */
-    if (coilEnergized(result, instance.id, electrical)) {
-      if (electrical.kind !== "relay") continue;
+    if (electrical.kind === "relay" && energizedCoils.has(instance.id)) {
       add(instance.id, electrical.relay.coil.positiveTerminal);
       add(instance.id, electrical.relay.coil.negativeTerminal);
     }
-    if (electrical.kind === "lamp" && result.litLamps.has(instance.id)) {
+    if (electrical.kind === "lamp" && litLamps.has(instance.id)) {
       add(instance.id, electrical.terminalA);
       add(instance.id, electrical.terminalB);
     }
   }
 
   return nets;
+};
+
+/**
+ * 実行中の結果から、通電中の負荷に隣接するネット ID を集める。
+ *
+ * **`energizedRelays` ではなくコイルの状態で見る。** カウント中のタイマーは
+ * コイルに電流が流れているが接点はまだ動いていないので、`energizedRelays`
+ * だけを見るとコイル配線が灰色になる（design.md §5.13）。
+ */
+const energizedNetIds = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  result: SimulationResult,
+): Set<number> => {
+  const coils = new Set<string>();
+  for (const instance of document.components) {
+    const electrical = definitions.get(instance.definitionId)?.electrical;
+    if (!electrical) continue;
+    if (coilEnergized(result, instance.id, electrical)) coils.add(instance.id);
+  }
+  return loadNetIds(document, definitions, result.netOf, coils, result.litLamps);
 };
 
 /**
@@ -206,13 +229,13 @@ const timerDisplayOf = (
  * 短絡の判定を最初に置くのは、短絡したネットを緑（正常な通電）として
  * 描いてしまうと、最も危険な配線ミスが最も安全に見えるため。
  */
-const wireStateOfNet = (
+export const wireStateOfNet = (
   netId: number | undefined,
-  result: SimulationResult,
+  netState: ReadonlyMap<number, NetState>,
   energizedNets: ReadonlySet<number>,
 ): WireState => {
   if (netId === undefined) return "inactive";
-  const state = result.netState.get(netId);
+  const state = netState.get(netId);
   if (!state) return "inactive";
   if (isShorted(state)) return "short";
   if (energizedNets.has(netId)) return "energized";
@@ -256,7 +279,7 @@ export const buildSimulationView = (
       const key = terminalKey(instance.id, terminal.id);
       const state = wireStateOfNet(
         result.netOf.get(key),
-        result,
+        result.netState,
         energizedNets,
       );
       /*

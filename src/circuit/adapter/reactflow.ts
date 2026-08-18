@@ -84,6 +84,14 @@ export type DeviceNodeData = {
    * キー自体が存在しない（空配列と未接続を区別する必要が無いため）。
    */
   terminalConnections?: ReadonlyMap<string, readonly ConnectedTerminalInfo[]>;
+  /**
+   * 経路確認モードで、**この部品で電位が止まっている**か（design.md §8.14）。
+   *
+   * `simulation` と別に持つのは、経路確認が「動いていない」ままの表示だから
+   * —— `simulation` を作ると部品がシミュレーション中に見える。
+   * モード外では常に `undefined`。
+   */
+  previewBlocked?: true;
 };
 
 export type DeviceNode = Node<DeviceNodeData, typeof DEVICE_NODE_TYPE>;
@@ -177,6 +185,7 @@ export const toDeviceNode = (
     string,
     readonly ConnectedTerminalInfo[]
   > = new Map(),
+  previewBlocked = false,
 ): DeviceNode => ({
   id: instance.id,
   type: DEVICE_NODE_TYPE,
@@ -193,6 +202,7 @@ export const toDeviceNode = (
       instance.id,
       definition.terminals.map((terminal) => terminal.id),
     ),
+    previewBlocked: previewBlocked || undefined,
     terminalConnections: connectionsForComponent(
       terminalConnections,
       instance.id,
@@ -225,6 +235,8 @@ export const toDeviceNodes = (
     string,
     readonly ConnectedTerminalInfo[]
   > = new Map(),
+  /** 経路確認モードで電位が止まっている部品（design.md §8.14）。既定は空 */
+  previewBlocked: ReadonlySet<string> = new Set(),
 ): DeviceNode[] => {
   const selected = new Set(selectedComponentIds);
   const nodes: DeviceNode[] = [];
@@ -238,6 +250,7 @@ export const toDeviceNodes = (
         selected.has(instance.id),
         view,
         terminalConnections,
+        previewBlocked.has(instance.id),
       ),
     );
   }

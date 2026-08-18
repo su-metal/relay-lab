@@ -24,6 +24,53 @@
   white-space: nowrap;
 }
 
+/* 畳んで出すとき（design.md §8.12）------------------------------------- */
+
+/*
+ * 閉じている間は「凡例」の 1 語だけ。開くと本体（.legend）が上に出る。
+ * キャンバスの右下に置くので、下ではなく**上へ伸ばす**（下は画面外）。
+ */
+.disclosure {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.summary {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+  cursor: pointer;
+  user-select: none;
+  /* 指で押す当たり判定を確保する。既定の三角は場所を食うので消す */
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+/*
+ * 畳んだ側の本体は縦に積む。携帯の幅では 6 項目を 1 行に並べられず、
+ * 折り返すと丸い枠の中で行がずれて読めない
+ */
+.legend[data-inline] {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 10px;
+  max-width: 60vw;
+}
+
 /* 見本は実際の配線と同じ 2px の線で描く。四角い色チップだと線の破線が伝わらない */
 .swatch {
   width: 18px;
@@ -43,6 +90,21 @@
 }
 
 .isolated {
+  border-top-style: dashed;
+}
+
+/*
+ * 経路確認モードの見本（design.md §8.14）。キャンバス側と同じく
+ * **色は実行中と同じまま、破線にだけ落とす。** 見本を実線で描くと
+ * 「予測であること」を伝える唯一の軸が凡例から抜ける。
+ */
+.predicted {
+  border-top-style: dashed;
+}
+
+.predictedEnergized {
+  border-top-color: var(--wire-energized);
+  border-top-width: 3px;
   border-top-style: dashed;
 }
 

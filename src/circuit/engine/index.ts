@@ -7,13 +7,20 @@
 
 export { simulate } from "./simulate";
 export { inspectWiring } from "./wiring";
+export { previewAtRest } from "./preview";
+export type { AtRestPreview, PreviewBlocker } from "./preview";
 export {
+  AT_REST,
+  NONE_ENERGIZED,
   buildNets,
   computeNetStates,
   conductingPairs,
+  openPairs,
+  solveAtRest,
   stateAt,
 } from "./graph";
-export type { NetAssignment, NetLookup } from "./graph";
+export type { NetAssignment, NetLookup, OpenContacts } from "./graph";
+export { detectSelfInterruptingCoils } from "./chatter";
 export {
   atPlus,
   atZero,
@@ -25,7 +32,11 @@ export {
   spansSupply,
 } from "./potential";
 export type { Polarity } from "./potential";
-export { closedContactPairs, evaluateCoil } from "./relay";
+export {
+  closedContactPairs,
+  evaluateCoil,
+  openContactPairs,
+} from "./relay";
 export type { CoilEvaluation, TerminalPair } from "./relay";
 export {
   advanceTimer,

@@ -111,6 +111,84 @@
 }
 
 /*
+ * 「揃える」のメニュー（design.md §8.13）。
+ *
+ * 8 種類を操作バーへ直接並べると、狭い画面で折り返しが増えてキャンバスが
+ * 削られる（§8.12）。ボタン 1 個に畳み、押したときだけ下に開く。
+ */
+.menuWrap {
+  position: relative;
+  display: flex;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  /*
+   * 2 列 × 4 行を**列方向に流し込む** —— 左列が左右方向（左 / 中央 / 右 / 均等）、
+   * 右列が上下方向。行方向に流すと「左揃え」の隣に「上揃え」が並び、
+   * どの軸の操作なのかが読み取れなくなる。
+   */
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(4, auto);
+  gap: 2px;
+  /*
+   * **中身に合わせて広げる。** 絶対配置の既定の幅は「入る幅」＝トリガーの
+   * ボタン 1 個ぶんしかないので、指定しないと 2 列が重なって潰れる。
+   */
+  width: max-content;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 4px 16px rgb(15 23 42 / 14%);
+  /* キャンバス（React Flow）より前面へ。操作バーは DOM 上ではキャンバスの前 */
+  z-index: 20;
+  white-space: nowrap;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s ease-out;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+/* 均等は 3 個から。押せないことを見せたうえで、理由は title で伝える */
+.menuItem:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.menuIcon {
+  width: 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.menuItem:hover:not(:disabled) .menuIcon {
+  color: inherit;
+}
+
+/*
  * 読み込み用の <input type="file">。ボタンから click() で開くだけなので隠す。
  * `display: none` で消すのは意図的 —— 見えない入力欄が Tab 順に残ると、
  * キーボード操作で「押しても何も起きない場所」を通ることになる。
@@ -204,4 +282,57 @@
   border-radius: 999px;
   color: var(--warn-text);
   background: var(--warn-bg);
+}
+
+/* 狭い画面（design.md §8.12）------------------------------------------- */
+
+/*
+ * **横スクロールにはしない。折り返す。** 1 行に押し込んで横へ流すと、
+ * はみ出した書き出し・読み込みが「無い機能」になる。高さを 1 行ぶん
+ * 譲ってでも、置いてある操作は全部見えているほうがよい。
+ */
+.toolbar[data-compact] {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  height: auto;
+  min-height: 44px;
+  padding: 6px 8px;
+}
+
+.toolbar[data-compact] .group {
+  gap: 4px;
+}
+
+/* 折り返した 2 行目の先頭に来ることがあるので、右端固定を解く */
+.toolbar[data-compact] .help {
+  margin-left: auto;
+}
+
+/*
+ * 狭い画面では、メニューが操作バーの右端からはみ出しやすい。
+ * 開く向きを右寄せに変え、画面幅を超えないように上限を切る（§8.12）。
+ */
+.toolbar[data-compact] .menu {
+  left: auto;
+  right: 0;
+  max-width: calc(100vw - 16px);
+}
+
+/*
+ * 指で押す当たり判定（design.md §8.12）。狭さではなく**入力の粗さ**で決まるので、
+ * `data-compact` ではなくメディアクエリで持つ。1 辺 36px は
+ * 「44px の指の当たり判定」を隣接ボタンとの間隔込みで満たす下限。
+ */
+@media (pointer: coarse) {
+  .button,
+  .run,
+  .segment,
+  .menuItem {
+    min-height: 36px;
+  }
+
+  .help {
+    width: 36px;
+    height: 36px;
+  }
 }

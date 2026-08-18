@@ -1,0 +1,139 @@
+/*
+ * 経路確認の一覧（右カラム・design.md §8.14）。
+ * 骨格は診断（`WarningList.module.css`）に揃える。右カラムに並ぶ 2 枚が
+ * 別々の見た目だと、同じ列にある別のアプリのように見える。
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.total {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* いま何を見ているのか。指摘ではないので警告の色は使わない */
+.scope {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+/*
+ * 静止状態で成立している負荷の件数。**キャンバスの通電色と同じ緑で示す。**
+ * 「動かす前から励磁している」は、押しボタン式の回路では配線を見直す
+ * 手がかりになるので、注記より一段強く出す。
+ */
+.active {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--wire-energized);
+  border-radius: 0 6px 6px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  cursor: pointer;
+}
+
+.item:hover {
+  border-color: var(--accent-soft);
+  background: var(--bg);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* どちらの電位が止まっているか。配線の赤・青と同じ色で対応づける */
+.side {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.side[data-side="plus"] {
+  border-color: var(--wire-plus);
+  color: var(--wire-plus);
+}
+
+.side[data-side="zero"] {
+  border-color: var(--wire-minus);
+  color: var(--wire-minus);
+}
+
+/* 端子番号を含む本体。**折り返させない** —— "9 → 5" が行をまたぐと読めない */
+.path {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 何をすれば進むか。補足なので弱く、幅が足りなければここから省く */
+.action {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

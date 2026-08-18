@@ -63,9 +63,18 @@ import { useSimulationStore } from "@/store/simulationStore";
 
 import { readDefinitionId } from "./palette-dnd";
 import type { RangeSelectionTarget } from "./range-selection";
+import { useCoarsePointer, useCompactLayout } from "./useViewportMode";
 import { useRangeSelection } from "./useRangeSelection";
+import { usePathPreview } from "./usePathPreview";
 import { WireLegend } from "./WireLegend";
 import styles from "./CircuitCanvas.module.css";
+
+/**
+ * 端子に吸い付く距離（`ReactFlow.connectionRadius`）。指では既定の 20px では
+ * 足りない —— 指先の当たり判定（およそ 40px）の中に端子が複数入るので、
+ * 狙った端子の手前で線が離れる（design.md §8.12）。
+ */
+const TOUCH_CONNECTION_RADIUS = 32;
 
 /** 部品はすべて 1 種類のノードで描く（design.md §2）。再生成しないよう外に置く */
 const nodeTypes = { [DEVICE_NODE_TYPE]: DeviceNode };
@@ -157,6 +166,33 @@ const WIRE_ROLE_CLASS: Record<WireRole, string | undefined> = {
   short: styles.wireShort,
 };
 
+/**
+ * 部品が 1 つも無いときの案内文。
+ *
+ * **書き分ける軸は 2 つある**（design.md §8.12）。部品の置き方は入力の種類
+ * （掴めるか・タップか）で決まり、パレットの在り処は画面の広さ（左の
+ * カラムか、下のシートか）で決まる。片方だけで文を選ぶと、指で操作できる
+ * タブレットに「左のパレットからドラッグ」と出て、そのとおりにしても
+ * 何も起きない。
+ */
+const emptyHint = (coarse: boolean, compact: boolean): string => {
+  const palette = compact ? "画面下の「部品」" : "左のパレット";
+  // 置き方はパレットの実装に合わせる。シートのパレットは指でもマウスでも
+  // タップで置く（`CircuitWorkspace` が `onPick` を渡している）
+  const place =
+    compact || coarse
+      ? `${palette}から部品をタップして置き`
+      : `${palette}から部品をドラッグして配置し`;
+  const view = coarse
+    ? "1 本指で画面移動、2 本指で拡大・縮小。"
+    : "何もない所をドラッグすると範囲選択、Shift+ドラッグで画面を動かせます。";
+  const help = compact
+    ? "操作の一覧は操作バーの ? から。"
+    : "操作の一覧は右上の ? から。";
+
+  return `${place}、端子（小さな丸）どうしをドラッグして配線します。${view}${help}`;
+};
+
 export type CircuitCanvasProps = {
   /** 範囲選択が拾う対象（部品＋配線 / 部品のみ / 配線のみ） */
   rangeSelectionTarget: RangeSelectionTarget;
@@ -164,6 +200,15 @@ export type CircuitCanvasProps = {
 
 export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
   const { screenToFlowPosition } = useReactFlow();
+
+  /**
+   * 指で触っているか（design.md §8.12）。**ドラッグの割り当てが変わる。**
+   * マウスでは素の左ドラッグを範囲選択に取っているが（§8.6）、指には
+   * Shift も中ボタンも無く、そのままでは**画面をまったく動かせない。**
+   */
+  const coarse = useCoarsePointer();
+  // 狭い画面では凡例を畳み、ズーム操作を下から上へ逃がす（シートに隠れるため）
+  const compact = useCompactLayout();
   // 範囲選択の枠を「今まさに引いているか」をイベント時にその場で読むため。
   // state として購読するとドラッグ 1 フレームごとにハンドラーが作り直される
   const flowStore = useStoreApi();
@@ -201,6 +246,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
   const nowMs = useSimulationStore((state) => state.nowMs);
+  const pathPreview = useSimulationStore((state) => state.pathPreview);
 
   /**
    * 自己保持の検出（design.md §5.9）。励磁中のリレー 1 個につき `simulate()` を
@@ -228,6 +274,15 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document, result, pressedSwitches, selfHold, nowMs],
   );
 
+  /**
+   * 経路確認モードの表示状態（design.md §5.15・§8.14）。
+   *
+   * 解くのは `usePathPreview` 1 箇所で、**一覧（`PathPreviewList`）と同じ
+   * 結果を読む** —— 色と文言が別々の解を指すと、画面で止まっている場所と
+   * 一覧に並ぶ場所が食い違う。モードに入っていない間は空を返す。
+   */
+  const preview = usePathPreview();
+
   // 端子ツールチップの接続先（design.md §8.3）。実行中かどうかに関わらず
   // 配線そのものから決まるので、シミュレーションビューとは別に組み立てる
   const terminalConnections = useMemo(
@@ -241,10 +296,20 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         document,
         componentRegistry,
         selectedComponentIds,
-        view,
+        // 経路確認中は予測の端子色を描く。`deviceOf` は空なので、
+        // 部品そのものは「動いていない」ままになる（`path-preview.ts`）
+        pathPreview ? preview.view : view,
         terminalConnections,
+        preview.blockedComponentIds,
       ),
-    [document, selectedComponentIds, view, terminalConnections],
+    [
+      document,
+      pathPreview,
+      preview,
+      selectedComponentIds,
+      view,
+      terminalConnections,
+    ],
   );
   /**
    * 配線の役割（design.md §5.8）。**実行中も計算する。**
@@ -303,6 +368,30 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
       ).map((edge) => {
         const hovered = edge.id === hoveredWireId;
         const role = wireRoles.get(edge.id);
+
+        if (pathPreview) {
+          /*
+           * 経路確認モード（design.md §8.14）。**実行中と同じ状態色を使う。**
+           * 予測であることは色ではなく描き方（破線・発光なし）で表し、
+           * それは `.canvas[data-path-preview]` の CSS が受け持つ。ここで
+           * 予測専用のクラスを配ると、同じ意味の色が 2 系統になる。
+           *
+           * 役割色（`wireRoles`）とは**排他**。4 色＋4 色が同時に載ると、
+           * どちらの軸で読めばよいのかが線から分からなくなる。
+           */
+          const state = preview.view.wireOf.get(edge.id) ?? "inactive";
+          return {
+            ...edge,
+            zIndex: hovered
+              ? HOVERED_WIRE_Z
+              : state === "short"
+                ? WIRE_Z.short
+                : state === "energized"
+                  ? WIRE_Z.energized
+                  : WIRE_Z.base,
+            className: WIRE_CLASS[state],
+          };
+        }
 
         if (!result) {
           /*
@@ -369,6 +458,8 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
       currentFlow,
       document,
       hoveredWireId,
+      pathPreview,
+      preview,
       result,
       selectedConnectionIds,
       view,
@@ -520,7 +611,14 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
   );
 
   return (
-    <div className={styles.canvas} onDragOver={onDragOver} onDrop={onDrop}>
+    <div
+      className={styles.canvas}
+      data-compact={compact || undefined}
+      // 経路確認モード（design.md §8.14）。予測であることを線の描き方で表す
+      data-path-preview={pathPreview || undefined}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       <ReactFlow<DeviceNodeType>
         nodes={nodes}
         edges={edges}
@@ -545,6 +643,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         onReconnect={onReconnect}
         onReconnectEnd={onReconnectEnd}
         reconnectRadius={WIRE_RECONNECT_RADIUS}
+        connectionRadius={coarse ? TOUCH_CONNECTION_RADIUS : undefined}
         isValidConnection={isValidConnection}
         onMoveEnd={onMoveEnd}
         defaultViewport={document.viewport}
@@ -553,13 +652,20 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         connectionMode={ConnectionMode.Loose}
         connectionLineType={ConnectionLineType.SmoothStep}
         deleteKeyCode={DELETE_KEYS}
-        // 左ドラッグ＝範囲選択、Shift+ドラッグ＝パン、Ctrl/Cmd+クリック＝複数選択
-        // （design.md §8.6）。パンを Shift へ移したので、端子を掴み損ねて枠が出ても
-        // 画面移動の手段は常に残る
-        selectionOnDrag
+        /*
+         * マウス: 左ドラッグ＝範囲選択、Shift+ドラッグ＝パン、
+         * Ctrl/Cmd+クリック＝複数選択（design.md §8.6）。パンを Shift へ移したので、
+         * 端子を掴み損ねて枠が出ても画面移動の手段は常に残る。
+         *
+         * 指: **1 本指のドラッグは画面移動**（design.md §8.12）。指には Shift も
+         * 中ボタンも無いので、範囲選択に割り当てたままだと図面を動かせない。
+         * 拡大・縮小は 2 本指（`zoomOnPinch` は既定で有効）。
+         * 範囲選択が使えなくなるぶん、操作バーの対象切り替えも隠す
+         */
+        selectionOnDrag={!coarse}
         selectionKeyCode={null}
         panActivationKeyCode={PAN_ACTIVATION_KEY}
-        panOnDrag={PAN_BUTTONS}
+        panOnDrag={coarse ? true : PAN_BUTTONS}
         multiSelectionKeyCode={MULTI_SELECT_KEYS}
         panOnScroll
         minZoom={0.2}
@@ -567,19 +673,33 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         nodeOrigin={[0, 0]}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-        <Controls showInteractive={false} />
+        {/*
+          ズーム操作。狭い画面では**下から出るシートに隠れる**ので左上へ逃がす
+          （design.md §8.12）。指では 2 本指のピンチが本命だが、片手で持って
+          いるときにボタンで寄れる経路は残す
+        */}
+        <Controls
+          showInteractive={false}
+          position={compact ? "top-left" : "bottom-left"}
+        />
         {/* 凡例は停止中・実行中の両方で出す。中身は色の意味に合わせて入れ替わる */}
         {document.connections.length > 0 && (
           <Panel position="bottom-right">
-            <WireLegend running={result !== null} />
+            {/*
+              狭い画面では凡例を畳んでおく（design.md §8.12）。6 項目を広げると
+              携帯の画面では図面の 3 分の 1 を覆う。色の意味は必要になったときに
+              開けばよいが、**畳んでも「凡例がある」ことは見せ続ける**
+            */}
+            <WireLegend
+              running={result !== null}
+              pathPreview={pathPreview}
+              collapsible={compact}
+            />
           </Panel>
         )}
         {document.components.length === 0 && (
           <Panel position="top-center">
-            <p className={styles.emptyHint}>
-              左のパレットから部品をドラッグして配置し、端子（小さな丸）どうしをドラッグして配線します。何もない所をドラッグすると範囲選択、
-              Shift+ドラッグで画面を動かせます。操作の一覧は右上の ? から。
-            </p>
+            <p className={styles.emptyHint}>{emptyHint(coarse, compact)}</p>
           </Panel>
         )}
       </ReactFlow>

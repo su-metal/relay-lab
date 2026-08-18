@@ -38,7 +38,16 @@ const handleDragStart =
     event.dataTransfer.effectAllowed = "copy";
   };
 
-export function ComponentPalette() {
+export type ComponentPaletteProps = {
+  /**
+   * タップで置く経路（design.md §8.12）。指の端末には HTML5 の D&D が無いので、
+   * **渡されたときはドラッグではなくタップで置く一覧に切り替える。**
+   * 置き場所（いま見えている範囲の中央）は呼び出し側が決める。
+   */
+  onPick?: (definition: ComponentDefinition) => void;
+};
+
+export function ComponentPalette({ onPick }: ComponentPaletteProps = {}) {
   const [query, setQuery] = useState("");
 
   // 絞り込みは `searchComponentDefinitions()` に閉じる。
@@ -53,7 +62,11 @@ export function ComponentPalette() {
   return (
     <aside className={styles.palette} aria-label="部品パレット">
       <h2 className={styles.title}>部品</h2>
-      <p className={styles.hint}>キャンバスへドラッグして配置します。</p>
+      <p className={styles.hint}>
+        {onPick
+          ? "タップするとキャンバスの中央に置きます。"
+          : "キャンバスへドラッグして配置します。"}
+      </p>
 
       <div className={styles.search}>
         <input
@@ -95,35 +108,31 @@ export function ComponentPalette() {
             <ul className={styles.list}>
               {group.items.map((definition) => (
                 <li key={definition.id}>
-                  <div
-                    className={styles.item}
-                    draggable
-                    onDragStart={handleDragStart(definition.id)}
-                    title={definition.source}
-                  >
-                    <span className={styles.itemName}>
-                      {definition.manufacturer && (
-                        <span className={styles.manufacturer}>
-                          {definition.manufacturer}{" "}
-                        </span>
-                      )}
-                      {definition.model}
-                    </span>
-                    <span className={styles.itemMeta}>
-                      {definition.terminals.length} 端子
-                      {/*
-                        実端子番号を持つ型番だけが「未検証」の対象。
-                        汎用部品は実端子番号そのものが無い（design.md §4.4 / §4.5）
-                      */}
-                      {hasRealTerminalNumbers(definition) ? (
-                        !definition.verified && (
-                          <span className={styles.unverified}>未検証</span>
-                        )
-                      ) : (
-                        <span className={styles.generic}>実端子番号なし</span>
-                      )}
-                    </span>
-                  </div>
+                  {/*
+                    置き方は 2 通り（design.md §8.12）。ドラッグできる環境では
+                    掴める `<div>`、指の端末では押せる `<button>`。
+                    **指のときに draggable な要素を出さない** —— 掴めるように
+                    見えて実際には動かないので、置けないと誤解される
+                  */}
+                  {onPick ? (
+                    <button
+                      type="button"
+                      className={`${styles.item} ${styles.tapItem}`}
+                      onClick={() => onPick(definition)}
+                      title={definition.source}
+                    >
+                      <ItemContent definition={definition} />
+                    </button>
+                  ) : (
+                    <div
+                      className={styles.item}
+                      draggable
+                      onDragStart={handleDragStart(definition.id)}
+                      title={definition.source}
+                    >
+                      <ItemContent definition={definition} />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -131,5 +140,35 @@ export function ComponentPalette() {
         ))
       )}
     </aside>
+  );
+}
+
+/** 一覧 1 行の中身。掴む `<div>` と押す `<button>` で同じものを出す */
+function ItemContent({ definition }: { definition: ComponentDefinition }) {
+  return (
+    <>
+      <span className={styles.itemName}>
+        {definition.manufacturer && (
+          <span className={styles.manufacturer}>
+            {definition.manufacturer}{" "}
+          </span>
+        )}
+        {definition.model}
+      </span>
+      <span className={styles.itemMeta}>
+        {definition.terminals.length} 端子
+        {/*
+          実端子番号を持つ型番だけが「未検証」の対象。
+          汎用部品は実端子番号そのものが無い（design.md §4.4 / §4.5）
+        */}
+        {hasRealTerminalNumbers(definition) ? (
+          !definition.verified && (
+            <span className={styles.unverified}>未検証</span>
+          )
+        ) : (
+          <span className={styles.generic}>実端子番号なし</span>
+        )}
+      </span>
+    </>
   );
 }

@@ -43,6 +43,17 @@
   border-color: var(--accent);
 }
 
+/*
+ * 指の端末では 16px を下回らせない（design.md §8.12）。
+ * iOS Safari は 16px 未満の入力欄にフォーカスすると**ページごと拡大**し、
+ * 戻す手段がピンチしかない。検索窓を触るたびに図面の縮尺が変わってしまう。
+ */
+@media (pointer: coarse) {
+  .searchInput {
+    font-size: 16px;
+  }
+}
+
 /* type="search" の既定の×は Safari にしか出ないので自前で置く */
 .searchInput::-webkit-search-cancel-button {
   appearance: none;
@@ -127,6 +138,24 @@
 
 .item:active {
   cursor: grabbing;
+}
+
+/*
+ * タップで置く一覧（design.md §8.12）。`<button>` なので既定の
+ * 中央寄せ・太字を打ち消し、掴む `<div>` と同じ見た目に戻す。
+ * 指で押す行なので高さも稼ぐ（44px は指 1 本の当たり判定の目安）。
+ */
+.tapItem {
+  width: 100%;
+  min-height: 44px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tapItem:active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
 }
 
 .itemName {

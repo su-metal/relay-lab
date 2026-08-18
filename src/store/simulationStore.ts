@@ -52,9 +52,21 @@ export type SimulationStore = {
    * 時計を読むと結果と表示がずれる（design.md §5.13）。
    */
   nowMs: number;
+  /**
+   * 経路確認モード（design.md §8.14）。**▶ とは排他。**
+   *
+   * 静止状態の到達範囲を塗るだけのモードで、時間は進まない。実行と同時に
+   * 立てられるようにすると、同じ線に「今流れている」と「電源を入れれば
+   * 流れる」の 2 つの意味が同時に載る。
+   *
+   * `running` と同じく**保存対象ではない。**
+   */
+  pathPreview: boolean;
 
   start: () => void;
   stop: () => void;
+  /** 経路確認モードを切り替える。入るときは実行を止める */
+  togglePathPreview: () => void;
 
   /**
    * モーメンタリ操作。マウスダウンで押下、マウスアップで復帰する。
@@ -99,6 +111,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
   pressedSwitches: EMPTY_PRESSED,
   result: null,
   nowMs: 0,
+  pathPreview: false,
 
   // 開始時は前回の結果を捨てる。残すと前回の励磁状態が
   // `previousEnergizedRelays` として引き継がれ、押していない自己保持回路が
@@ -111,12 +124,34 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       pressedSwitches: EMPTY_PRESSED,
       result: null,
       nowMs: 0,
+      // 実行が始まったら予測の色は下ろす。排他はここ 1 箇所で守る
+      pathPreview: false,
     });
   },
 
   stop: () => {
     stopTicking();
     set({
+      running: false,
+      pressedSwitches: EMPTY_PRESSED,
+      result: null,
+      nowMs: 0,
+    });
+  },
+
+  /*
+   * **入るときに実行を止める。** 「実行中は押せない」にすると、動かしたまま
+   * 配線を読み直したくなったときに ■ を先に押させることになり、
+   * ボタンが 2 度手間になる。止まるという結果は同じ。
+   */
+  togglePathPreview: () => {
+    if (get().pathPreview) {
+      set({ pathPreview: false });
+      return;
+    }
+    stopTicking();
+    set({
+      pathPreview: true,
       running: false,
       pressedSwitches: EMPTY_PRESSED,
       result: null,

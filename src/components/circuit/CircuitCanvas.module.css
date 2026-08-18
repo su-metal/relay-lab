@@ -7,6 +7,8 @@
 }
 
 .emptyHint {
+  /* 携帯の幅では画面いっぱいに広がらないよう左右に余白を残す */
+  max-width: min(560px, calc(100vw - 24px));
   margin: 0;
   padding: 8px 14px;
   border: 1px solid var(--border);
@@ -15,6 +17,27 @@
   color: var(--text-muted);
   background: var(--panel);
   box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+/*
+ * 狭い画面では丸みを落とす（design.md §8.12）。携帯の幅では案内文が 6〜7 行に
+ * なり、999px の角丸が**円形の吹き出し**になって行末が欠けて見える。
+ */
+.canvas[data-compact] .emptyHint {
+  border-radius: 12px;
+  text-align: left;
+}
+
+/*
+ * 指で押すズームボタン（design.md §8.12）。React Flow の既定は 16px 角で、
+ * 指では隣のボタンを巻き込む。当たり判定は端末の性質なので、狭さ
+ * （`data-compact`）ではなくメディアクエリで持つ。
+ */
+@media (pointer: coarse) {
+  .canvas :global(.react-flow__controls-button) {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 /* 配線の既定色（非通電）。状態別の色は下の .wire* が上書きする */
@@ -139,6 +162,42 @@
   to {
     opacity: 0.25;
   }
+}
+
+/*
+ * 経路確認モード（design.md §8.14）。
+ *
+ * **色は実行中と同じものを使い、描き方だけを変える。** 「+ 側が来ている」の
+ * 意味は動かしていても止まっていても同じなので、色相まで変えると読み手は
+ * 2 つの語彙を覚えることになる。ここで表したいのは色の意味ではなく
+ * **これが予測であること**なので、破線という 1 つの軸に載せる。
+ *
+ * 発光（`drop-shadow`）は落とす。光っている線は「今まさに流れている」と
+ * 読まれる —— 電源を入れればこうなる、という話をしている画面でそれは嘘になる。
+ *
+ * 詳細度はクラス 2 個＋属性 1 個で、上の `.canvas .wire*`（クラス 2 個）に勝つ。
+ */
+.canvas[data-path-preview] .wirePlus :global(.react-flow__edge-path),
+.canvas[data-path-preview] .wireZero :global(.react-flow__edge-path) {
+  stroke-dasharray: 6 4;
+  /* 実行中は背景へ下げている線だが、ここでは主役なので濃さを戻す */
+  opacity: 1;
+}
+
+.canvas[data-path-preview] .wireEnergized :global(.react-flow__edge-path) {
+  stroke-dasharray: 6 4;
+  filter: none;
+}
+
+/*
+ * 電位が届いていない線。**役割色の灰（`.wireRoleIsolated`）と同じ破線には
+ * しない。** あちらは「どう動作させても届かない＝配線漏れの手がかり」で、
+ * こちらは「今は届いていないだけ」。実線のまま薄く引いて、破線を
+ * 「電位が来ている予測の線」だけの印にしておく。
+ */
+.canvas[data-path-preview] .wireInactive :global(.react-flow__edge-path) {
+  stroke-dasharray: none;
+  opacity: 0.4;
 }
 
 /*
