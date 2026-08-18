@@ -27,22 +27,15 @@
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
-  SimulationInput,
   Warning,
 } from "@/circuit/types";
 
-import { buildNets, computeNetStates, type NetLookup } from "./graph";
+import { solveAtRest } from "./graph";
 import {
   detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,
 } from "./validation";
-
-/** 静止状態の入力。どのスイッチも操作していない */
-const AT_REST: SimulationInput = { pressedSwitches: new Set() };
-
-/** 静止状態の励磁集合。どのリレーも励磁していない */
-const NONE_ENERGIZED: ReadonlySet<string> = new Set();
 
 /**
  * 静止状態の回路を 1 回だけ解き、配線そのものの誤りを返す。
@@ -54,9 +47,9 @@ export const inspectWiring = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
 ): Warning[] => {
-  const nets = buildNets(document, definitions, AT_REST, NONE_ENERGIZED);
-  const netState = computeNetStates(document, definitions, nets);
-  const lookup: NetLookup = { netOf: nets.netOf, netState };
+  // 静止状態の 1 パスは `preview.ts`（経路確認）と共有する（design.md §5.15）。
+  // 警告に出る回路と画面に出る色が別の状態を指さないよう、解くのは 1 箇所
+  const lookup = solveAtRest(document, definitions);
 
   return [
     // B 接点や端子台を通って静止状態で + と 0V が繋がっているなら、

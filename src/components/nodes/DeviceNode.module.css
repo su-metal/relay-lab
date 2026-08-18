@@ -230,3 +230,18 @@
   border-color: var(--wire-self-hold);
   box-shadow: 0 0 0 2px var(--wire-self-hold-soft);
 }
+
+/*
+ * 経路確認モードで電位が止まっている部品（design.md §8.14）。
+ *
+ * **枠線ではなく点線の輪郭にする。** 選択（`data-selected`）と実行中の
+ * 励磁（`data-energized`）が既に実線の枠を使っており、3 つ目の実線を足すと
+ * 「選んだのか / 動いているのか / 止まっているのか」が枠から読めなくなる。
+ *
+ * 色はアクセントを借りず注意色にする。配線ミスではないので警告色ほど強くはせず、
+ * 「ここまでしか来ていない」という道標に留める。
+ */
+.node[data-preview-blocked] {
+  outline: 2px dashed var(--wire-control);
+  outline-offset: 3px;
+}

@@ -19,7 +19,11 @@ import {
   spreadThroughDiodes,
   type MutableNetState,
 } from "./diode";
-import { closedContactPairs, type TerminalPair } from "./relay";
+import {
+  closedContactPairs,
+  openContactPairs,
+  type TerminalPair,
+} from "./relay";
 
 /**
  * 経路圧縮つき Union-Find。キーは `terminalKey()` の文字列。
@@ -258,6 +262,69 @@ export const computeNetStates = (
   );
 
   return states;
+};
+
+/**
+ * **静止状態** —— どのスイッチも操作されておらず、どのリレーも励磁していない ——
+ * の入力。`wiring.ts`（静的な配線チェック）と `preview.ts`（静止状態の到達範囲）が
+ * 共有する。
+ */
+export const AT_REST: SimulationInput = { pressedSwitches: new Set() };
+
+/** 静止状態の切替集合。どのリレーの接点も動いていない */
+export const NONE_ENERGIZED: ReadonlySet<string> = new Set();
+
+/**
+ * 静止状態のネットを 1 回だけ解く。**収束ループは回らない。**
+ *
+ * 静止状態を見る用途が 2 つ（配線チェックと到達範囲の可視化）あり、
+ * どちらも同じ 1 パスで足りる。**同じ 2 行を両方に書かない** —— 片方だけ
+ * `openContacts` を渡すような食い違いが入ると、警告に出る回路と画面に出る色が
+ * 別の状態を指すことになる。
+ */
+export const solveAtRest = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+): NetLookup => {
+  const nets = buildNets(document, definitions, AT_REST, NONE_ENERGIZED);
+  return { netOf: nets.netOf, netState: computeNetStates(document, definitions, nets) };
+};
+
+/**
+ * 部品の内部で **開いている** 端子ペア —— 今は通っていないが、
+ * スイッチを操作するかリレーが動けば閉じる 2 端子 —— を返す。
+ *
+ * `conductingPairs()` の裏返し。**開閉の規則を書き直さない**ために、
+ * 接点は `openContactPairs()`（relay.ts）へ委ね、ここではスイッチだけを見る。
+ * 端子台は常時導通なので開くペアを持たない。
+ *
+ * 「電位がどこで止まっているか」を求めるのに要る（design.md §5.15）。
+ * ネット ID からは「閉じれば繋がる 2 端子」が復元できないので、
+ * `conductingPairs()` と同じ理由でここに置く。
+ */
+export const openPairs = (
+  componentId: string,
+  electrical: ElectricalDefinition,
+  input: SimulationInput,
+  energizedRelays: ReadonlySet<string>,
+): TerminalPair[] => {
+  switch (electrical.kind) {
+    case "switch": {
+      const operated = input.pressedSwitches.has(componentId);
+      const closed = electrical.contactType === "NO" ? operated : !operated;
+      return closed ? [] : [[electrical.terminalA, electrical.terminalB]];
+    }
+    case "relay":
+      return openContactPairs(
+        electrical.relay,
+        energizedRelays.has(componentId),
+      );
+    case "terminal":
+    case "power":
+    case "lamp":
+    case "diode":
+      return [];
+  }
 };
 
 /** 端子が属するネットの電位状態を引く。未登録の端子は undefined（＝浮いている） */

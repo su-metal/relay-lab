@@ -129,6 +129,10 @@ export function Toolbar({
   );
   const start = useSimulationStore((state) => state.start);
   const stop = useSimulationStore((state) => state.stop);
+  const pathPreview = useSimulationStore((state) => state.pathPreview);
+  const togglePathPreview = useSimulationStore(
+    (state) => state.togglePathPreview,
+  );
 
   const selectedCount =
     selectedComponentIds.length + selectedConnectionIds.length;
@@ -261,6 +265,25 @@ export function Toolbar({
         {running && hasTimers && (
           <span className={styles.elapsed}>{(nowMs / 1000).toFixed(1)} 秒</span>
         )}
+        {/*
+          経路確認（design.md §8.14）。**▶ の隣に置く。** 「動かす前に読む」
+          操作なので、動かす操作と同じ場所に無いと存在に気付けない。
+
+          押している間そのものが状態なので `aria-pressed` を持たせる。
+          部品が 1 つも無いときは塗る対象が無いので押せない
+        */}
+        <button
+          type="button"
+          className={styles.button}
+          onClick={togglePathPreview}
+          disabled={componentCount === 0}
+          aria-pressed={pathPreview}
+          data-active={pathPreview || undefined}
+          title="動かさずに、電源から電位が届いている範囲と止まっている箇所を色で示します"
+          aria-label="経路確認"
+        >
+          {compact ? "⚡ 経路" : "⚡ 経路確認"}
+        </button>
       </div>
 
       <div className={styles.group}>

@@ -165,6 +165,42 @@
 }
 
 /*
+ * 経路確認モード（design.md §8.14）。
+ *
+ * **色は実行中と同じものを使い、描き方だけを変える。** 「+ 側が来ている」の
+ * 意味は動かしていても止まっていても同じなので、色相まで変えると読み手は
+ * 2 つの語彙を覚えることになる。ここで表したいのは色の意味ではなく
+ * **これが予測であること**なので、破線という 1 つの軸に載せる。
+ *
+ * 発光（`drop-shadow`）は落とす。光っている線は「今まさに流れている」と
+ * 読まれる —— 電源を入れればこうなる、という話をしている画面でそれは嘘になる。
+ *
+ * 詳細度はクラス 2 個＋属性 1 個で、上の `.canvas .wire*`（クラス 2 個）に勝つ。
+ */
+.canvas[data-path-preview] .wirePlus :global(.react-flow__edge-path),
+.canvas[data-path-preview] .wireZero :global(.react-flow__edge-path) {
+  stroke-dasharray: 6 4;
+  /* 実行中は背景へ下げている線だが、ここでは主役なので濃さを戻す */
+  opacity: 1;
+}
+
+.canvas[data-path-preview] .wireEnergized :global(.react-flow__edge-path) {
+  stroke-dasharray: 6 4;
+  filter: none;
+}
+
+/*
+ * 電位が届いていない線。**役割色の灰（`.wireRoleIsolated`）と同じ破線には
+ * しない。** あちらは「どう動作させても届かない＝配線漏れの手がかり」で、
+ * こちらは「今は届いていないだけ」。実線のまま薄く引いて、破線を
+ * 「電位が来ている予測の線」だけの印にしておく。
+ */
+.canvas[data-path-preview] .wireInactive :global(.react-flow__edge-path) {
+  stroke-dasharray: none;
+  opacity: 0.4;
+}
+
+/*
  * 停止中の役割色（design.md §5.8）。実行中の状態色（上記 .wire*）とは
  * 排他で、どちらか一方しか Edge に載らない。+ 側 / 0V 側は実行中と同じ
  * 赤・青を使う —— 停止中と実行中で同じ線の色が変わると、色が「状態」なのか

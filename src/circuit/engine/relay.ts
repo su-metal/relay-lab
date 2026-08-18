@@ -41,6 +41,29 @@ export const closedContactPairs = (
     return other === undefined ? [] : [[contact.commonTerminal, other]];
   });
 
+/**
+ * 今は開いているが、**リレーの状態が反転すれば閉じる**端子ペアを返す。
+ *
+ * `closedContactPairs()` の裏返しで、非励磁なら COM–NO、励磁なら COM–NC。
+ * 「電位がこの接点で止まっている」を言うために要る（design.md §5.15）。
+ *
+ * a 接点のみ（SPST-NO）のリレーが励磁している場合、開くペアは 1 つも無い ——
+ * `ncTerminal` が実機に存在しないため（CLAUDE.md 設計原則 6）。
+ * ここでも見ているのは端子の有無だけで、接点の形の名前も型番も見ない。
+ *
+ * 中間位置（`openContacts`）は受け取らない。**あれは接点が切り替わる一瞬の
+ * 状態**であって（design.md §5.14）、「どちらへ倒れれば通るか」を問うここには
+ * 答えが無い。
+ */
+export const openContactPairs = (
+  relay: RelayDefinition,
+  energized: boolean,
+): TerminalPair[] =>
+  relay.contacts.flatMap((contact) => {
+    const other = energized ? contact.ncTerminal : contact.noTerminal;
+    return other === undefined ? [] : [[contact.commonTerminal, other]];
+  });
+
 export type CoilEvaluation = {
   /** コイルが励磁するか */
   energized: boolean;

@@ -65,6 +65,7 @@ import { readDefinitionId } from "./palette-dnd";
 import type { RangeSelectionTarget } from "./range-selection";
 import { useCoarsePointer, useCompactLayout } from "./useViewportMode";
 import { useRangeSelection } from "./useRangeSelection";
+import { usePathPreview } from "./usePathPreview";
 import { WireLegend } from "./WireLegend";
 import styles from "./CircuitCanvas.module.css";
 
@@ -245,6 +246,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
   const result = useSimulationStore((state) => state.result);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
   const nowMs = useSimulationStore((state) => state.nowMs);
+  const pathPreview = useSimulationStore((state) => state.pathPreview);
 
   /**
    * 自己保持の検出（design.md §5.9）。励磁中のリレー 1 個につき `simulate()` を
@@ -272,6 +274,15 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document, result, pressedSwitches, selfHold, nowMs],
   );
 
+  /**
+   * 経路確認モードの表示状態（design.md §5.15・§8.14）。
+   *
+   * 解くのは `usePathPreview` 1 箇所で、**一覧（`PathPreviewList`）と同じ
+   * 結果を読む** —— 色と文言が別々の解を指すと、画面で止まっている場所と
+   * 一覧に並ぶ場所が食い違う。モードに入っていない間は空を返す。
+   */
+  const preview = usePathPreview();
+
   // 端子ツールチップの接続先（design.md §8.3）。実行中かどうかに関わらず
   // 配線そのものから決まるので、シミュレーションビューとは別に組み立てる
   const terminalConnections = useMemo(
@@ -285,10 +296,20 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         document,
         componentRegistry,
         selectedComponentIds,
-        view,
+        // 経路確認中は予測の端子色を描く。`deviceOf` は空なので、
+        // 部品そのものは「動いていない」ままになる（`path-preview.ts`）
+        pathPreview ? preview.view : view,
         terminalConnections,
+        preview.blockedComponentIds,
       ),
-    [document, selectedComponentIds, view, terminalConnections],
+    [
+      document,
+      pathPreview,
+      preview,
+      selectedComponentIds,
+      view,
+      terminalConnections,
+    ],
   );
   /**
    * 配線の役割（design.md §5.8）。**実行中も計算する。**
@@ -347,6 +368,30 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
       ).map((edge) => {
         const hovered = edge.id === hoveredWireId;
         const role = wireRoles.get(edge.id);
+
+        if (pathPreview) {
+          /*
+           * 経路確認モード（design.md §8.14）。**実行中と同じ状態色を使う。**
+           * 予測であることは色ではなく描き方（破線・発光なし）で表し、
+           * それは `.canvas[data-path-preview]` の CSS が受け持つ。ここで
+           * 予測専用のクラスを配ると、同じ意味の色が 2 系統になる。
+           *
+           * 役割色（`wireRoles`）とは**排他**。4 色＋4 色が同時に載ると、
+           * どちらの軸で読めばよいのかが線から分からなくなる。
+           */
+          const state = preview.view.wireOf.get(edge.id) ?? "inactive";
+          return {
+            ...edge,
+            zIndex: hovered
+              ? HOVERED_WIRE_Z
+              : state === "short"
+                ? WIRE_Z.short
+                : state === "energized"
+                  ? WIRE_Z.energized
+                  : WIRE_Z.base,
+            className: WIRE_CLASS[state],
+          };
+        }
 
         if (!result) {
           /*
@@ -413,6 +458,8 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
       currentFlow,
       document,
       hoveredWireId,
+      pathPreview,
+      preview,
       result,
       selectedConnectionIds,
       view,
@@ -567,6 +614,8 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     <div
       className={styles.canvas}
       data-compact={compact || undefined}
+      // 経路確認モード（design.md §8.14）。予測であることを線の描き方で表す
+      data-path-preview={pathPreview || undefined}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
@@ -641,7 +690,11 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
               携帯の画面では図面の 3 分の 1 を覆う。色の意味は必要になったときに
               開けばよいが、**畳んでも「凡例がある」ことは見せ続ける**
             */}
-            <WireLegend running={result !== null} collapsible={compact} />
+            <WireLegend
+              running={result !== null}
+              pathPreview={pathPreview}
+              collapsible={compact}
+            />
           </Panel>
         )}
         {document.components.length === 0 && (

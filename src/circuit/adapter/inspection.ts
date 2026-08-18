@@ -53,7 +53,10 @@ export type ContactInspection = {
 
 export type TerminalInspection = {
   terminal: TerminalDefinition;
-  /** 端子の電位状態。**停止中は `undefined`** */
+  /**
+   * 端子の電位状態。**停止中は `undefined`** ——
+   * ただし経路確認モードでは静止状態の電位が入る（design.md §8.14）。
+   */
   state?: WireState;
 };
 
@@ -123,6 +126,15 @@ export const inspectComponent = (
   selfHold: SelfHoldView = EMPTY_SELF_HOLD,
   /** `result` を解いた時刻。タイマーの残り時間の表示に使う（§5.13） */
   nowMs = 0,
+  /**
+   * 経路確認モードの端子状態（design.md §8.14）。停止中（`result` が null）の
+   * ときだけ端子の電位を埋める。
+   *
+   * **接点の倒れている側（`contacts`）と部品の状態（`device`）は埋めない。**
+   * 静止状態＝どのリレーも励磁していない状態なので接点は定義どおりで、
+   * ここに値を入れるとパネルが「動いている」と言い始める。
+   */
+  previewTerminals?: ReadonlyMap<string, WireState>,
 ): ComponentInspection | null => {
   if (!componentId) return null;
 
@@ -145,10 +157,13 @@ export const inspectComponent = (
   const device = view.deviceOf.get(instance.id);
 
   const terminals = definition.terminals.map<TerminalInspection>(
-    (terminal) => ({
-      terminal,
-      state: view.terminalOf.get(terminalKey(instance.id, terminal.id)),
-    }),
+    (terminal) => {
+      const key = terminalKey(instance.id, terminal.id);
+      return {
+        terminal,
+        state: view.terminalOf.get(key) ?? previewTerminals?.get(key),
+      };
+    },
   );
 
   const { electrical } = definition;

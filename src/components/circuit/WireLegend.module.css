@@ -94,6 +94,21 @@
 }
 
 /*
+ * 経路確認モードの見本（design.md §8.14）。キャンバス側と同じく
+ * **色は実行中と同じまま、破線にだけ落とす。** 見本を実線で描くと
+ * 「予測であること」を伝える唯一の軸が凡例から抜ける。
+ */
+.predicted {
+  border-top-style: dashed;
+}
+
+.predictedEnergized {
+  border-top-color: var(--wire-energized);
+  border-top-width: 3px;
+  border-top-style: dashed;
+}
+
+/*
  * 実行中の待機線（design.md §5.6）。キャンバス上と同じだけ濃さを落とす。
  * 「薄い＝電流が流れていない」が読み取らせたい軸そのものなので、
  * 見本だけ濃く描くとその軸が凡例から抜ける。

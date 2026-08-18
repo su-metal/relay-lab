@@ -26,6 +26,7 @@ import { ComponentPalette } from "./ComponentPalette";
 import { HelpDialog } from "./HelpDialog";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
+import { PathPreviewList } from "./PathPreviewList";
 import { WarningList } from "./WarningList";
 import { panToInclude, placeAtViewportCenter } from "./place-component";
 import type { RangeSelectionTarget } from "./range-selection";
@@ -159,6 +160,11 @@ function Workspace() {
   const inspector = (
     <>
       <PropertiesPanel />
+      {/*
+        経路確認の一覧はモードに入っている間だけ現れる（design.md §8.14）。
+        モード外では `null` を返すので、ここに条件を書き写さない
+      */}
+      <PathPreviewList />
       <WarningList />
     </>
   );
@@ -204,7 +210,14 @@ function Workspace() {
               <ComponentPalette onPick={placeFromPalette} />
             )}
             {openSheet === "properties" && <PropertiesPanel />}
-            {openSheet === "diagnostics" && <WarningList />}
+            {openSheet === "diagnostics" && (
+              <>
+                {/* 狭い画面では診断と同じシートに入れる。どちらも
+                    「回路を読む」ための一覧で、タブを増やすほどの別物ではない */}
+                <PathPreviewList />
+                <WarningList />
+              </>
+            )}
           </Sheet>
         )}
       </div>

@@ -46,6 +46,7 @@ import {
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
+import { usePathPreview } from "./usePathPreview";
 import styles from "./PropertiesPanel.module.css";
 
 export function PropertiesPanel() {
@@ -78,6 +79,12 @@ export function PropertiesPanel() {
     [document, result, pressedSwitches],
   );
 
+  /**
+   * 経路確認モードの表示状態（design.md §8.14）。キャンバス・一覧と
+   * 同じ 1 回の解を読む（`usePathPreview`）。
+   */
+  const preview = usePathPreview();
+
   const selectedId = selectedComponentIds[0];
   const inspection = useMemo(
     () =>
@@ -89,8 +96,19 @@ export function PropertiesPanel() {
         selectedId,
         selfHold,
         nowMs,
+        // 経路確認モードでは静止状態の電位を端子に出す（design.md §8.14）。
+        // モード外は空なので、ここに条件を書き写さない
+        preview.view.terminalOf,
       ),
-    [document, result, pressedSwitches, selectedId, selfHold, nowMs],
+    [
+      document,
+      result,
+      pressedSwitches,
+      preview,
+      selectedId,
+      selfHold,
+      nowMs,
+    ],
   );
 
   /**

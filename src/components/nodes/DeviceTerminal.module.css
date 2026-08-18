@@ -224,3 +224,17 @@
   border-color: var(--wire-short);
   background: var(--wire-short);
 }
+
+/*
+ * 経路確認モード（design.md §8.14）。**発光だけを落とす。**
+ *
+ * 光っている端子は「今まさに流れている」と読まれる。ここで言っているのは
+ * 「電源を入れればこうなる」なので、色は残しつつ光は消す。配線側の
+ * `.canvas[data-path-preview]`（`CircuitCanvas.module.css`）と対になっており、
+ * **どちらか片方だけ直すと端子だけが光って線と食い違う。**
+ *
+ * 祖先の属性で引くのは、ノードがキャンバスとは別の CSS Modules にいるため。
+ */
+:global([data-path-preview]) .terminal[data-state="energized"] .handle {
+  box-shadow: none;
+}
