@@ -1,9 +1,9 @@
 /**
  * 配線のレーン分離の検証（design.md §8.7）。
  *
- * 守りたいのは 2 つ。**同じ道に重なって走る配線は必ず離れること**と、
- * **重なっていない配線は動かさないこと。** 後者が崩れると、混んでもいない
- * 場所の線まで部品からずれて図面が読みにくくなる。
+ * 守りたいのは 3 つ。**同じ道に重なって走る配線は必ず離れること**、
+ * **部品の本体を横切らないこと**、そして **横切ってもいない配線を動かさないこと。**
+ * 最後が崩れると、混んでもいない場所の線まで部品からずれて図面が読みにくくなる。
  *
  * 座標は実際の部品定義から計算する。定数を書き写すと、`visual` や端子位置を
  * 変えたときにテストだけが古い前提のまま通ってしまう。
@@ -206,14 +206,24 @@ describe("buildWireLanes", () => {
   });
 
   it("向かい合ったまま回り込む配線は従来の幹線として扱う", () => {
-    // 右辺 → 左辺で、相手が左にいる形。中点（centerY）で動かせるので
-    // 走行として扱わない
+    /*
+     * 右辺 → 左辺で、相手が左にいる形。中点（centerY）で動かせるので
+     * 走行として扱わない。
+     *
+     * **部品を大きく離してあるのは、避ける動き（§8.7）と混ざらないため。**
+     * 幹線は両端の中点の高さに立つので、部品が近いとその高さが本体に重なり、
+     * 「跨がない」ほうの規則が先に効いてレーンの間隔で振られなくなる。
+     * ここで見たいのは間隔なので、本体を横切らない位置に置く。
+     *
+     * 幹線の高さは w1 が (39 + 1132) / 2、w2 が (91 + 1080) / 2 で
+     * どちらも 585.5 —— 同じ束に入りつつ、どの部品の本体にもかからない。
+     */
     const document: CircuitDocument = {
       version: 1,
       components: [
         { id: "ps", definitionId: "power-dc24v", position: { x: 600, y: 0 } },
-        { id: "l1", definitionId: "lamp-dc24v", position: { x: 0, y: 0 } },
-        { id: "l2", definitionId: "lamp-dc24v", position: { x: 0, y: 200 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 0, y: 1052 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 0, y: 1000 } },
       ],
       connections: [
         wire("w1", ["ps", "plus"], ["l1", "1"]),
@@ -223,6 +233,8 @@ describe("buildWireLanes", () => {
     };
 
     const lanes = buildWireLanes(document, componentRegistry);
+    // 重なっているので必ず 1 本はずれる（空振りで素通りしないことを押さえる）
+    expect(lanes.size).toBeGreaterThan(0);
     for (const shift of lanes.values()) {
       // 幹線の間隔で振られている（走行の 16px ではない）
       expect(Math.abs(shift) % LANE_STEP).toBe(0);
@@ -409,5 +421,157 @@ describe("straightRunPath", () => {
     // 逃がすのは x 側。符号もそのまま効く
     expect(path).toContain("-10,25");
     expect(path).toContain("-10,175");
+  });
+});
+
+/**
+ * 部品を跨がない（design.md §8.7）。
+ *
+ * 幹線・走行が部品の本体を突っ切ると、線と型番・端子番号が重なって
+ * どちらも読めなくなる。**横切っているときだけ**外へ逃がす。
+ */
+describe("buildWireLanes — 部品を避ける", () => {
+  /** 幹線が本体の中を通っていないか。`x` 側を見るか `y` 側を見るかは呼び出し側が決める */
+  const insideBody = (
+    value: number,
+    min: number,
+    max: number,
+  ): boolean => value > min && value < max;
+
+  it("同じ部品の上下の端子を結ぶ線は、本体を突っ切らずに回り込む", () => {
+    /*
+     * MY4N（260×240）の上辺の端子と下辺の端子を 1 本で結ぶ。素直に引くと
+     * 走行が本体を縦に貫通する —— 型番も接点図も端子番号も線に潰される。
+     */
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ry", definitionId: "omron-my4n-dc24", position: { x: 400, y: 0 } },
+      ],
+      // MY4N の 1（上辺）と 5（下辺）
+      connections: [wire("w1", ["ry", "1"], ["ry", "5"])],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const definition = componentRegistry.get("omron-my4n-dc24")!;
+    const terminal = definition.terminals.find((t) => t.id === "1")!;
+    const naturalX = 400 + terminal.position.x * definition.visual.width;
+    // そもそも本体の中を通る位置に立っていること（前提の確認）
+    expect(insideBody(naturalX, 400, 400 + definition.visual.width)).toBe(true);
+
+    const shift = buildWireLanes(document, componentRegistry).get("w1") ?? 0;
+    expect(shift).not.toBe(0);
+    expect(
+      insideBody(naturalX + shift, 400, 400 + definition.visual.width),
+    ).toBe(false);
+  });
+
+  it("横切っていない配線は 1px も動かさない", () => {
+    /*
+     * 電源の右端子からランプの左端子へ、間に何も無い並び。
+     * 避ける理由が無いので、レーンも避けも何も配られない。
+     */
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 400, y: 0 } },
+      ],
+      connections: [wire("w1", ["ps", "plus"], ["l1", "1"])],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    expect(buildWireLanes(document, componentRegistry).size).toBe(0);
+  });
+
+  it("間に挟まった部品も跨がない", () => {
+    /*
+     * 電源 → ランプの間にリレーを置く。走行はリレーの本体を横切るので、
+     * 上か下へ逃げる。
+     */
+    const relay = componentRegistry.get("omron-my4n-dc24")!;
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        { id: "ry", definitionId: "omron-my4n-dc24", position: { x: 300, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 800, y: 0 } },
+      ],
+      // 右辺 → 右辺。走行は電源の plus の高さに立ち、リレーの本体を横切る
+      connections: [wire("w1", ["ps", "plus"], ["l1", "2"])],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const power = componentRegistry.get("power-dc24v")!;
+    const plus = power.terminals.find((t) => t.id === "plus")!;
+    const runY = plus.position.y * power.visual.height;
+    expect(insideBody(runY, 0, relay.visual.height)).toBe(true);
+
+    const shift = buildWireLanes(document, componentRegistry).get("w1") ?? 0;
+    expect(insideBody(runY + shift, 0, relay.visual.height)).toBe(false);
+  });
+
+  it("同じ部品を避ける配線どうしは、避けたあとも離れている", () => {
+    /*
+     * 3 台のランプから電源の 0V へ引き戻す。走行は 3 本とも 0V の高さに立ち、
+     * 途中のランプ本体を横切る。避けたあとに全部が本体のすぐ外へ寄ると、
+     * せっかく解いた重なりが戻ってしまう。
+     */
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 300 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 700, y: 0 } },
+        { id: "l2", definitionId: "lamp-dc24v", position: { x: 700, y: 300 } },
+        { id: "l3", definitionId: "lamp-dc24v", position: { x: 700, y: 600 } },
+      ],
+      connections: [
+        wire("w1", ["l1", "2"], ["ps", "zero"]),
+        wire("w2", ["l2", "2"], ["ps", "zero"]),
+        wire("w3", ["l3", "2"], ["ps", "zero"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const lanes = buildWireLanes(document, componentRegistry);
+    const shifts = [
+      lanes.get("w1") ?? 0,
+      lanes.get("w2") ?? 0,
+      lanes.get("w3") ?? 0,
+    ];
+    // 3 本とも別の高さに立っている
+    expect(new Set(shifts).size).toBe(3);
+
+    const lamp = componentRegistry.get("lamp-dc24v")!;
+    const power = componentRegistry.get("power-dc24v")!;
+    const zero = power.terminals.find((t) => t.id === "zero")!;
+    const runY = 300 + zero.position.y * power.visual.height;
+    for (const shift of shifts) {
+      // どれも l2（y 300〜460）の本体を横切らない
+      expect(insideBody(runY + shift, 300, 300 + lamp.visual.height)).toBe(
+        false,
+      );
+    }
+  });
+
+  it("回り込む幅が足りなければ諦める（無理に引き回さない）", () => {
+    /*
+     * 中点を動かす形の幹線は、両端の間から出ると経路が折り返す。
+     * 部品が邪魔でも動かせる幅が無ければ、跨いだままにする —— 折り返した線は
+     * 跨いでいる線より読みにくい。
+     */
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 190, y: 0 } },
+      ],
+      connections: [wire("w1", ["ps", "plus"], ["l1", "1"])],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    // 動いても動かなくても構わないが、破綻した値（部品幅を超える迂回）は返さない
+    const shift = buildWireLanes(document, componentRegistry).get("w1") ?? 0;
+    expect(Math.abs(shift)).toBeLessThanOrEqual(200);
   });
 });

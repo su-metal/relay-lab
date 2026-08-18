@@ -34,6 +34,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
     terminalStates,
     terminalConnections,
     presetMs,
+    lampColor,
     preview,
   } = data;
   const Body = bodyForCategory(definition.category);
@@ -129,6 +130,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
             simulation={simulation}
             preview={preview}
             presetMs={presetMs}
+            lampColor={lampColor}
           />
           {/*
             図記号へのホバーで出す主要ステータスの吹き出し。

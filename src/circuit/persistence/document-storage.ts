@@ -25,7 +25,7 @@ import type {
   ComponentDefinitionRegistry,
   TerminalRef,
 } from "@/circuit/types";
-import { terminalRefKey } from "@/circuit/types";
+import { isLampColor, terminalRefKey } from "@/circuit/types";
 
 /**
  * LocalStorage のキー。
@@ -92,6 +92,20 @@ const readPresetMs = (
   if (electrical.kind !== "relay" || !electrical.delay) return undefined;
   if (!isFiniteNumber(value)) return undefined;
   return presetMsOf(electrical.delay, value);
+};
+
+/**
+ * 表示ランプのレンズの色を読む（design.md §4.11）。
+ *
+ * ランプ以外では `undefined`（保存 JSON に無意味な値を残さない）。
+ * 未知の色名は既定へ倒す —— 見た目だけの属性なので、壊れていても部品ごと捨てない。
+ */
+const readLampColor = (
+  definition: ComponentDefinition,
+  value: unknown,
+): CircuitComponentInstance["lampColor"] => {
+  if (definition.electrical.kind !== "lamp") return undefined;
+  return isLampColor(value) ? value : undefined;
 };
 
 /** ズームは 0 や負値を通すとキャンバスが描画できなくなるので既定へ戻す */
@@ -189,6 +203,11 @@ export const parseDocument = (
        * 誰も読まないフィールドを残さない。
        */
       presetMs: readPresetMs(definition, entry.presetMs),
+      /*
+       * レンズの色（design.md §4.11）。`flipped` と同じく**見た目だけの属性**
+       * なので、壊れていても部品ごと捨てずに既定色へ倒す。ランプ以外では落とす。
+       */
+      lampColor: readLampColor(definition, entry.lampColor),
     });
     terminalsOf.set(
       entry.id,

@@ -1,6 +1,6 @@
 import type { PreviewDeviceState } from "@/circuit/adapter/reactflow";
 import type { DeviceSimulationState } from "@/circuit/adapter/simulation-view";
-import type { ComponentDefinition } from "@/circuit/types";
+import type { ComponentDefinition, LampColor } from "@/circuit/types";
 
 /**
  * カテゴリ別ボディの共通 props。
@@ -31,4 +31,9 @@ export type BodyProps = {
    * （design.md §5.13）。タイマー以外では `undefined`。
    */
   presetMs?: number;
+  /**
+   * 表示ランプのレンズの色（design.md §4.11）。ランプ以外では `undefined`。
+   * `presetMs` と同じ理由でインスタンス側から来る（**停止中も出す**）。
+   */
+  lampColor?: LampColor;
 };

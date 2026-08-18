@@ -17,6 +17,7 @@ import type {
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  LampColor,
   TerminalDefinition,
   TerminalSide,
 } from "@/circuit/types";
@@ -85,6 +86,14 @@ export type DeviceNodeData = {
    * タイマー以外は持たない
    */
   presetMs?: number;
+  /**
+   * 表示ランプのレンズの色（design.md §4.11）。ランプ以外では `undefined`。
+   *
+   * `presetMs` と同じくインスタンスごとの値なので `definition` からは読めない。
+   * **停止中も出す**（レンズの色は点いていなくても分かるべきもの）ので
+   * `simulation` にも載せられない。
+   */
+  lampColor?: LampColor;
   /**
    * シミュレーション中の部品の状態。**停止中は `undefined`。**
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
@@ -210,6 +219,7 @@ export const toDeviceNode = (
     flipped: instance.flipped === true,
     label: instance.label,
     presetMs: instance.presetMs,
+    lampColor: instance.lampColor,
     simulation: view.deviceOf.get(instance.id),
     terminalStates: terminalStatesOf(
       view,
