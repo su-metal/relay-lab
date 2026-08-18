@@ -48,27 +48,44 @@ export const hasRealTerminalNumbers = (
   definition.terminals.some((terminal) => terminal.number !== undefined);
 
 /**
- * 接点構成の呼び名（"4c" / "2a"）。
+ * 接点構成の呼び名（"4c" / "2a" / "4a1b"）。
  *
  * 現場の呼び方は接点の**数**だけでは決まらない。c 接点（切替・SPDT）の
  * MY4N は 4c、a 接点のみ（SPST-NO）の G7L 2 極は 2a と呼ぶ。
  * ここを一律 "c" と出すと、b 接点が無いリレーに b 接点があるように読める。
+ *
+ * **形の混在をひとまとめに丸めない。** 電磁接触器は主接点 3 極と補助
+ * a 接点が SPST-NO、補助 b 接点が SPST-NC という混成で、これを "5c" と
+ * 出すと**実機に無い切替接点を 5 回路ぶん主張する**ことになる。
+ * 形ごとに数えて連ねる（"4a1b"）。
  *
  * 分岐しているのは接点の**形**であって型番ではない（CLAUDE.md 設計原則 2）。
  */
 export const contactSummaryOf = (relay: {
   contacts: readonly RelayContact[];
 }): string => {
-  const count = relay.contacts.length;
-  const allNoOnly =
-    count > 0 && relay.contacts.every((contact) => contact.type === "SPST-NO");
-  return `${count}${allNoOnly ? "a" : "c"}`;
+  const countOf = (type: RelayContact["type"]) =>
+    relay.contacts.filter((contact) => contact.type === type).length;
+
+  // 並びは c → a → b。現場の呼び方（"1a1b"）に合わせる
+  return (
+    [
+      [countOf("SPDT"), "c"],
+      [countOf("SPST-NO"), "a"],
+      [countOf("SPST-NC"), "b"],
+    ] as const
+  )
+    .filter(([count]) => count > 0)
+    .map(([count, suffix]) => `${count}${suffix}`)
+    .join("");
 };
 
 /** 端子の役割の日本語表示。プロパティパネルの端子一覧で使う */
 export const TERMINAL_ROLE_LABELS: Record<TerminalRole, string> = {
   power_positive: "電源 +",
   power_zero: "電源 0V",
+  power_line: "電源 L（非接地側）",
+  power_neutral: "電源 N（接地側）",
   coil_positive: "コイル +",
   coil_negative: "コイル −",
   coil: "コイル",

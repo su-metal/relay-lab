@@ -20,6 +20,7 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
+import { genericContactor } from "./contactors";
 import { genericDiode } from "./diodes";
 import { dc24vLamp } from "./lamps";
 import { omronG7l1aBDc24 } from "./omron/g7l-1a-b-dc24";
@@ -27,7 +28,7 @@ import { omronG7l2aBDc24 } from "./omron/g7l-2a-b-dc24";
 import { omronMy2nDc24 } from "./omron/my2n-dc24";
 import { omronMy4nD2Dc24 } from "./omron/my4n-d2-dc24";
 import { omronMy4nDc24 } from "./omron/my4n-dc24";
-import { dc24vPowerSupply } from "./power";
+import { ac100vPowerSupply, dc24vPowerSupply } from "./power";
 import {
   pushbuttonNc,
   pushbuttonNo,
@@ -40,6 +41,7 @@ import { offDelayTimer, onDelayTimer } from "./timers";
 /** パレットの表示順もこの並びに従う */
 export const componentDefinitions: readonly ComponentDefinition[] = [
   dc24vPowerSupply,
+  ac100vPowerSupply,
   pushbuttonNo,
   pushbuttonNc,
   selectorSwitchNo,
@@ -49,6 +51,7 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   omronMy4nD2Dc24,
   omronG7l1aBDc24,
   omronG7l2aBDc24,
+  genericContactor,
   onDelayTimer,
   offDelayTimer,
   dc24vLamp,
@@ -100,8 +103,10 @@ export const listComponentDefinitions = (
     : [...componentDefinitions];
 
 export {
+  ac100vPowerSupply,
   dc24vLamp,
   dc24vPowerSupply,
+  genericContactor,
   genericDiode,
   genericTerminalBlock,
   offDelayTimer,
