@@ -9,7 +9,7 @@
  */
 
 import { useReactFlow } from "@xyflow/react";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { CIRCUIT_FILE_ACCEPT } from "@/circuit/persistence/document-file";
@@ -18,6 +18,7 @@ import { APP_NAME } from "@/lib/app-info";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
+import { ALIGN_MENU_ITEMS, canRunAlign, runAlign } from "./align-components";
 import { runAutoArrange } from "./auto-arrange";
 import { RANGE_SELECTION_TARGETS } from "./range-selection";
 import type { RangeSelectionTarget } from "./range-selection";
@@ -91,6 +92,16 @@ export function Toolbar({
   const { fitView } = useReactFlow();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * 「揃える」のメニュー（design.md §8.13）。
+   *
+   * `<dialog>` にはしない。ヘルプと違い**選択を保ったまま押せること自体が要件**で、
+   * モーダルにするとフォーカスが移って「何を選んでいるか」が画面から消える。
+   */
+  const alignMenuRef = useRef<HTMLDivElement>(null);
+  const alignTriggerRef = useRef<HTMLButtonElement>(null);
+  const [alignOpen, setAlignOpen] = useState(false);
+
   const componentCount = useCircuitStore(
     (state) => state.document.components.length,
   );
@@ -121,6 +132,65 @@ export function Toolbar({
 
   const selectedCount =
     selectedComponentIds.length + selectedConnectionIds.length;
+
+  /** 揃えるは 2 個から（`minimumSelection`）。均等の 3 個は項目ごとに見る */
+  const canAlign = selectedComponentIds.length >= 2;
+
+  /**
+   * メニューを閉じる契機。**外側のクリック・Esc・選択が足りなくなったとき。**
+   *
+   * 選択を見ているのは、メニューを開いたままキャンバスで選び直すと
+   * 「押せない項目だけが並んだメニュー」が残るため。
+   */
+  useEffect(() => {
+    if (!alignOpen) return;
+    if (!canAlign) {
+      setAlignOpen(false);
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!alignMenuRef.current?.contains(event.target as Node)) {
+        setAlignOpen(false);
+      }
+    };
+    /**
+     * **メニューを開いている間、その中の打鍵をキャンバスへ通さない。**
+     * 通すと、項目にフォーカスがある状態で D を押しただけで選択が削除される。
+     *
+     * **`window` のキャプチャ段階で止める。** React の `onKeyDown` から
+     * `stopPropagation()` しても効かない —— Next.js の App Router は
+     * `document` 全体を React のルートにするので、React のリスナーと
+     * React Flow の `deleteKeyCode`（`document` に載る）が**同じノード上**に
+     * 並ぶ。同一ノードのリスナーは `stopPropagation()` では止まらない。
+     * キャプチャ段階の `window` はそのどれよりも先に走る。
+     *
+     * 既定動作は妨げないので、Enter / Space での項目の実行と Tab 移動は
+     * そのまま効く（止めているのは伝播だけで `preventDefault()` はしない）。
+     */
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAlignOpen(false);
+        // 閉じたあとの行き先を操作バーに戻す（項目は消えるのでフォーカスが宙に浮く）
+        alignTriggerRef.current?.focus();
+      }
+      if (alignMenuRef.current?.contains(event.target as Node)) {
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [alignOpen, canAlign]);
+
+  const handleAlign = useCallback((mode: Parameters<typeof runAlign>[0]) => {
+    runAlign(mode);
+    // 押したら閉じる。続けて別の揃え方を試すときは開き直す —— 開きっぱなしだと
+    // メニューがキャンバスを隠したまま部品が動き、結果が見えない
+    setAlignOpen(false);
+  }, []);
 
   const handleFitView = useCallback(() => {
     void fitView({ padding: 0.2, duration: 200 });
@@ -294,6 +364,61 @@ export function Toolbar({
               ? "選択を整列"
               : "配置を整列"}
         </button>
+        {/*
+          選択した部品を揃える（design.md §8.13）。**自動整理とは別のボタンにする。**
+          あちらは「描いた並びを崩さず整える」、こちらは「指定した基準へ意図的に
+          動かす」で性格が違う。同じボタンに混ぜると L を押すたびに列が潰れる。
+
+          8 種類あるのでメニューに畳む。操作バーへ直接並べると、狭い画面で
+          折り返しが増えてキャンバスが削られる（§8.12）。
+        */}
+        <div className={styles.menuWrap} ref={alignMenuRef}>
+          <button
+            ref={alignTriggerRef}
+            type="button"
+            className={styles.button}
+            onClick={() => setAlignOpen((open) => !open)}
+            disabled={!canAlign}
+            aria-haspopup="menu"
+            aria-expanded={alignOpen}
+            data-active={alignOpen || undefined}
+            title={
+              canAlign
+                ? "選択した部品を、指定した基準へ揃えます。Undo 1 回で元に戻せます"
+                : "部品を 2 個以上選ぶと使えます"
+            }
+            aria-label="選択を揃える"
+          >
+            ⇤ 揃える ▾
+          </button>
+          {alignOpen && (
+            <div
+              className={styles.menu}
+              role="menu"
+              aria-label="選択を揃える"
+            >
+              {ALIGN_MENU_ITEMS.map((item) => (
+                <button
+                  key={item.mode}
+                  type="button"
+                  role="menuitem"
+                  className={styles.menuItem}
+                  // 均等だけは 3 個要る。押せない理由は `title` に書いてある
+                  disabled={
+                    !canRunAlign(item.mode, selectedComponentIds.length)
+                  }
+                  title={item.description}
+                  onClick={() => handleAlign(item.mode)}
+                >
+                  <span className={styles.menuIcon} aria-hidden>
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="button"
           className={styles.button}
