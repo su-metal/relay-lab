@@ -12,6 +12,7 @@ export type { AtRestPreview, PreviewBlocker } from "./preview";
 export {
   AT_REST,
   NONE_ENERGIZED,
+  UnionFind,
   buildNets,
   computeNetStates,
   conductingPairs,

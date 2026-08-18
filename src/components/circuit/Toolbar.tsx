@@ -78,6 +78,7 @@ export type ToolbarProps = {
   onExportFile: () => void;
   onImportFile: (file: File) => Promise<void>;
   onOpenHelp: () => void;
+  onOpenLadder: () => void;
 };
 
 export function Toolbar({
@@ -88,6 +89,7 @@ export function Toolbar({
   onExportFile,
   onImportFile,
   onOpenHelp,
+  onOpenLadder,
 }: ToolbarProps) {
   const { fitView } = useReactFlow();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -283,6 +285,23 @@ export function Toolbar({
           aria-label="経路確認"
         >
           {compact ? "⚡ 経路" : "⚡ 経路確認"}
+        </button>
+        {/*
+          ラダー図（design.md §8.15）。**「読む」操作の並びに置く。**
+          経路確認と同じく動かさずに回路を読むためのもので、
+          配置や書き出しの隣にあると図面の編集操作に見える。
+
+          部品が 1 つも無いときは段が 1 本も出ないので押せない
+        */}
+        <button
+          type="button"
+          className={styles.button}
+          onClick={onOpenLadder}
+          disabled={componentCount === 0}
+          title="いまの配線をラダー図に変換して表示します（実端子番号のまま）"
+          aria-label="ラダー図"
+        >
+          {compact ? "⊞ ラダー" : "⊞ ラダー図"}
         </button>
       </div>
 

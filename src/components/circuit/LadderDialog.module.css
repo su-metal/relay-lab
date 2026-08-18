@@ -1,0 +1,282 @@
+/*
+ * ラダー図（design.md §8.15）。
+ *
+ * 図の骨組みは **CSS が引く横線と、図記号が自分の下地で作る切れ目**でできている。
+ * 線を SVG で 1 本ずつ引かないのは、段の幅が中身（接点の枚数と呼び名の長さ）で
+ * 決まるため —— 座標を計算して描くと、部品名を変えるたびに図が崩れる。
+ *
+ * 図記号の中心はどの要素でも上から 30px（呼び名 18px + 図記号の高さ 24px の半分）に
+ * 揃えてある。横線と縦線の位置はすべてこの 1 つの数から出ている。
+ */
+
+.dialog {
+  width: min(880px, calc(100vw - 32px));
+  max-height: min(84vh, 760px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--panel);
+  font-family: inherit;
+  overflow: hidden;
+}
+
+.dialog::backdrop {
+  background: rgb(15 23 42 / 45%);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 見出しの下だけをスクロールさせる（`HelpDialog` と同じ） */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: calc(min(84vh, 760px) - 53px);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.scope {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.empty {
+  margin: 0;
+  padding: 24px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* 段が横に長い回路は図だけを横スクロールさせる（本文は畳まない） */
+.ladder {
+  overflow-x: auto;
+}
+
+.rungs {
+  min-width: min-content;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * 段番号は母線の外（左）。**段と段の間を空けない** —— 母線は
+ * 各段の枠線を縦に積んで 1 本に見せているので、隙間を空けると切れる。
+ */
+.rung {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: stretch;
+}
+
+.index {
+  padding-top: 32px;
+  padding-right: 8px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.wireArea {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 0;
+  /* 左右の母線 */
+  border-right: 2px solid var(--text);
+  border-left: 2px solid var(--text);
+}
+
+/*
+ * 段の横線。図記号の中心（上から 30px）に引く。
+ * 図記号は自分の下地でこの線を隠し、必要な切れ目を作る。
+ */
+.condition,
+.branch {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  min-height: 58px;
+}
+
+.condition::before,
+.branch::before {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--text);
+  content: "";
+}
+
+/* 条件が 1 枚も無い段。横線だけが母線から出力へ通る */
+.direct {
+  display: block;
+}
+
+.series {
+  display: flex;
+  align-items: flex-start;
+}
+
+/*
+ * 並列の枝。両端の縦線は**最初の枝の中心から最後の枝の中心まで**。
+ * 58px は枝 1 本の高さ、30px はその中の図記号の中心。
+ */
+.parallel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0 12px;
+}
+
+.parallel::before,
+.parallel::after {
+  position: absolute;
+  top: 30px;
+  bottom: 28px;
+  width: 2px;
+  background: var(--text);
+  content: "";
+}
+
+.parallel::before {
+  left: 0;
+}
+
+.parallel::after {
+  right: 0;
+}
+
+.element {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.elementLabel {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.badge {
+  padding: 0 4px;
+  border: 1px solid var(--warn-border);
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+/*
+ * 図記号。**下地を持たせる**のが要点で、これが無いと横線が
+ * 接点の内側を突き抜け、開いている接点が閉じて見える。
+ */
+.symbol {
+  width: 44px;
+  height: 24px;
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  background: var(--panel);
+}
+
+/* 実端子番号。ここを落とすと実配線と照らせなくなる */
+.elementTerminals {
+  height: 16px;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 図にできなかった段。理由を線の代わりに置く */
+.blocked {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-height: 58px;
+  margin-right: 8px;
+  padding: 0 10px;
+  border-left: 2px solid var(--warn-border);
+  font-size: 11.5px;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notes li {
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/*
+ * 図は読み上げられないので、同じ内容の文を各段に隠して置く
+ * （`adapter/ladder.ts` の `rungText()`）。
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
