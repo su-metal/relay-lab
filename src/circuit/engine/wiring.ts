@@ -30,7 +30,7 @@ import type {
   Warning,
 } from "@/circuit/types";
 
-import { solveAtRest } from "./graph";
+import { solveWithoutRelays } from "./graph";
 import {
   detectDiodeOrientation,
   detectPowerShortCircuits,
@@ -49,7 +49,7 @@ export const inspectWiring = (
 ): Warning[] => {
   // 静止状態の 1 パスは `preview.ts`（経路確認）と共有する（design.md §5.15）。
   // 警告に出る回路と画面に出る色が別の状態を指さないよう、解くのは 1 箇所
-  const lookup = solveAtRest(document, definitions);
+  const lookup = solveWithoutRelays(document, definitions);
 
   return [
     // B 接点や端子台を通って静止状態で + と 0V が繋がっているなら、

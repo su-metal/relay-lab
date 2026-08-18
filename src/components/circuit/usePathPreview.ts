@@ -8,6 +8,9 @@
  *
  * モードに入っていない間は `EMPTY_PATH_PREVIEW` を返すので、呼び出し側に
  * 分岐は要らない。`pathPreview` は `running` と排他（`simulationStore`）。
+ *
+ * 解き直しの入力は **回路とスイッチの操作の 2 つ。** リレーの励磁は入力に
+ * ならない —— このモードでは接点が動かない（§5.15）。
  */
 
 import { useMemo } from "react";
@@ -27,12 +30,18 @@ export function usePathPreview(): PathPreviewView {
   const components = useCircuitStore((state) => state.document.components);
   const connections = useCircuitStore((state) => state.document.connections);
   const pathPreview = useSimulationStore((state) => state.pathPreview);
+  /*
+   * 倒しているスイッチ（design.md §8.14）。**これも解き直しの入力。**
+   * 購読し忘れると、ボタンを押しても色と一覧が前のままになる。
+   */
+  const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
 
   return useMemo(() => {
     if (!pathPreview) return EMPTY_PATH_PREVIEW;
     return buildPathPreview(
       useCircuitStore.getState().document,
       componentRegistry,
+      pressedSwitches,
     );
-  }, [components, connections, pathPreview]);
+  }, [components, connections, pathPreview, pressedSwitches]);
 }

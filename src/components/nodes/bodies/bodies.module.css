@@ -252,3 +252,23 @@
   border-color: var(--accent);
   background: var(--accent);
 }
+
+/*
+ * 経路確認モードの操作子（design.md §8.14）。
+ *
+ * **配線と同じ約束で「予測」を表す** —— 色相は変えず、破線にして塗りを
+ * 落とす。実行中の塗り（`--accent` のべた塗り）をそのまま使うと、
+ * 電源を入れていないのに「今この状態で動いている」と読まれる。
+ *
+ * `data-pressed` の指定より後に置く。倒している間もここが勝って、
+ * 破線のままであることが「まだ ▶ を押していない」の合図になる。
+ */
+.pressButton[data-preview="true"] {
+  border-style: dashed;
+}
+
+.pressButton[data-preview="true"][data-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}

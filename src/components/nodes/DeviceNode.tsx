@@ -34,7 +34,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
     terminalStates,
     terminalConnections,
     presetMs,
-    previewBlocked,
+    preview,
   } = data;
   const Body = bodyForCategory(definition.category);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
@@ -86,7 +86,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
       // `simulation` の有無がそのまま「シミュレーション中か」を表す
       data-running={simulation ? "true" : undefined}
       // 経路確認モードで電位が止まっている部品（design.md §8.14）
-      data-preview-blocked={previewBlocked ? "true" : undefined}
+      data-preview-blocked={preview?.blocked ? "true" : undefined}
       data-energized={simulation?.energized ? "true" : undefined}
       // 自分の接点で自分を保持しているリレー（design.md §5.9）。
       // 配線の紫を追わなくても、どのリレーが保持側かノード単体で分かる
@@ -127,6 +127,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
             definition={definition}
             componentId={id}
             simulation={simulation}
+            preview={preview}
             presetMs={presetMs}
           />
           {/*

@@ -1,3 +1,4 @@
+import type { PreviewDeviceState } from "@/circuit/adapter/reactflow";
 import type { DeviceSimulationState } from "@/circuit/adapter/simulation-view";
 import type { ComponentDefinition } from "@/circuit/types";
 
@@ -16,6 +17,14 @@ export type BodyProps = {
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
    */
   simulation?: DeviceSimulationState;
+  /**
+   * 経路確認モードでの状態（design.md §8.14）。**モード外は `undefined`。**
+   *
+   * `simulation` と排他で、両方が入ることは無い（`simulationStore` が
+   * `running` と `pathPreview` を排他にしている）。スイッチだけがこれを読み、
+   * 倒す操作子を出す —— **リレーは動かないので、他のボディには使い道が無い。**
+   */
+  preview?: PreviewDeviceState;
   /**
    * タイマーの設定時間（ms）。インスタンスごとの値なので `definition` からは
    * 読めず、**停止中も出したい**ので `simulation` にも載せられない

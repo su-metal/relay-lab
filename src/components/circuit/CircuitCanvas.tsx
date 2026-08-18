@@ -300,12 +300,23 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         // 部品そのものは「動いていない」ままになる（`path-preview.ts`）
         pathPreview ? preview.view : view,
         terminalConnections,
-        preview.blockedComponentIds,
+        /*
+          経路確認中だけ渡す。**渡すこと自体がモードの合図**で、
+          スイッチはこれを見て倒す操作子を出す（`SwitchBody`・§8.14）。
+          モード外で渡すと、停止中の図面にボタンが並ぶ。
+        */
+        pathPreview
+          ? {
+              blocked: preview.blockedComponentIds,
+              operated: pressedSwitches,
+            }
+          : undefined,
       ),
     [
       document,
       pathPreview,
       preview,
+      pressedSwitches,
       selectedComponentIds,
       view,
       terminalConnections,
