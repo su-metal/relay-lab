@@ -49,7 +49,7 @@ describe("部品検索", () => {
   it("カテゴリの日本語表示で引ける", () => {
     expect(ids("端子台")).toEqual(["terminal-block-6p"]);
     expect(ids("ランプ")).toEqual(["lamp-dc24v"]);
-    expect(ids("リレー")).toHaveLength(5);
+    expect(ids("リレー")).toHaveLength(6);
   });
 
   it("空白区切りの語は AND で絞り込む", () => {

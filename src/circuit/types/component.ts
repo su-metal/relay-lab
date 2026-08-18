@@ -42,25 +42,34 @@ export type CoilPolarity =
  * 接点 1 回路ぶん。
  *
  * `type` は接点の形であって型番ではない。エンジンが見るのは
- * **NC 端子があるかどうか**の 1 点だけで、型番も `type` の文字列も参照しない
- * （CLAUDE.md 設計原則 2・design.md §5.1）。
+ * **その向きの端子があるかどうか**の 1 点だけで、型番も `type` の文字列も
+ * 参照しない（CLAUDE.md 設計原則 2・design.md §5.1）。
  *
  * - `SPDT`（c 接点）… COM が NC / NO のどちらかへ必ず倒れる。MY シリーズ
  * - `SPST-NO`（a 接点）… NC 端子が**実機に存在しない**。励磁している間だけ
  *   COM–NO が閉じ、非励磁では COM がどこにも繋がらない。G7L のような
  *   ねじ／タブ端子のパワーリレーがこれにあたる
+ * - `SPST-NC`（b 接点）… その裏返しで **NO 端子が実機に存在しない**。
+ *   非励磁のあいだ COM–NC が閉じ、励磁すると COM がどこにも繋がらない。
+ *   電磁接触器の補助 b 接点（21–22）がこれにあたる（design.md §4.12）
  *
- * **`ncTerminal` を「無いから空文字」で埋めない。** 存在しない端子を
- * 空の端子番号として持つと、端子一覧にも接点表にも幽霊の行が出る。
+ * **`ncTerminal` / `noTerminal` を「無いから空文字」で埋めない。** 存在しない
+ * 端子を空の端子番号として持つと、端子一覧にも接点表にも幽霊の行が出る。
+ *
+ * **2 つの省略可能な端子は対称に扱うこと。** 一方だけを `undefined` 前提で
+ * 書くと、b 接点のみの接点が「NO 端子が undefined の a 接点」として
+ * 静かにすり抜ける。エンジンの `closedContactPairs()` /
+ * `openContactPairs()` は両側を同じ 1 行で弾いている（design.md §5.1）。
  */
 export type RelayContact = {
   /** リレー定義内で一意な接点 ID。`TerminalDefinition.contactGroup` と対応する */
   id: string;
   commonTerminal: string;
-  noTerminal: string;
+  /** a 接点の端子。b 接点のみ（`SPST-NC`）のリレーには存在しない */
+  noTerminal?: string;
   /** b 接点の端子。a 接点のみ（`SPST-NO`）のリレーには存在しない */
   ncTerminal?: string;
-  type: "SPDT" | "SPST-NO";
+  type: "SPDT" | "SPST-NO" | "SPST-NC";
 };
 
 export type RelayDefinition = {

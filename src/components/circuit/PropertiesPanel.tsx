@@ -699,25 +699,33 @@ function ContactRow({ inspection }: { inspection: ContactInspection }) {
           数え方に合わせて「第1極」と呼ぶ（design.md §4.8） */}
       <span className={styles.contactName}>
         第{order}
-        {contact.ncTerminal === undefined ? "極" : "接点"}
+        {/* 切替（c 接点）だけが「接点」。片側しか端子が無いものは「極」 */}
+        {contact.ncTerminal === undefined || contact.noTerminal === undefined
+          ? "極"
+          : "接点"}
       </span>
       <span className={styles.contactPairs}>
         {/* NC 端子が実機に無い a 接点（G7L など）では行ごと出さない。
             「COM–NC 開」と出すと存在しない端子があるように読めてしまう */}
         {contact.ncTerminal !== undefined && (
           <ContactPair
-            role="COM–NC"
+            // NO 端子が無い b 接点に「COM–NC」と出すと、実機に無い COM が
+            // あるように読める（電磁接触器の 21–22・design.md §4.12）
+            role={contact.noTerminal === undefined ? "b接点" : "COM–NC"}
             terminals={`${contact.commonTerminal}–${contact.ncTerminal}`}
             closed={closed === undefined ? undefined : closed === "nc"}
           />
         )}
-        <ContactPair
-          // NC 端子が無い a 接点に「COM–NO」と出すと、実機に無い COM が
-          // あるように読める。G7L の 2 端子は対等な a 接点（design.md §4.8）
-          role={contact.ncTerminal === undefined ? "a接点" : "COM–NO"}
-          terminals={`${contact.commonTerminal}–${contact.noTerminal}`}
-          closed={closed === undefined ? undefined : closed === "no"}
-        />
+        {/* NO 端子が実機に無い b 接点では行ごと出さない。上の NC 行と対称 */}
+        {contact.noTerminal !== undefined && (
+          <ContactPair
+            // NC 端子が無い a 接点に「COM–NO」と出すと、実機に無い COM が
+            // あるように読める。G7L の 2 端子は対等な a 接点（design.md §4.8）
+            role={contact.ncTerminal === undefined ? "a接点" : "COM–NO"}
+            terminals={`${contact.commonTerminal}–${contact.noTerminal}`}
+            closed={closed === undefined ? undefined : closed === "no"}
+          />
+        )}
       </span>
     </li>
   );

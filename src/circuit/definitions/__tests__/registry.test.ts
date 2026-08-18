@@ -16,9 +16,10 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("15 定義が登録されている", () => {
+  it("17 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
+      "power-ac100v",
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
       "switch-selector-no",
@@ -28,13 +29,14 @@ describe("部品定義レジストリ", () => {
       "omron-my4n-d2-dc24",
       "omron-g7l-1a-b-dc24",
       "omron-g7l-2a-b-dc24",
+      "contactor-generic-3p-1a1b",
       "timer-on-delay",
       "timer-off-delay",
       "lamp-dc24v",
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(15);
+    expect(componentRegistry.size).toBe(17);
   });
 
   it("型番から定義を取得できる", () => {
@@ -64,6 +66,9 @@ describe("部品定義レジストリ", () => {
       "omron-my4n-d2-dc24",
       "omron-g7l-1a-b-dc24",
       "omron-g7l-2a-b-dc24",
+      // 電磁接触器も電気的にはリレー。パレットのカテゴリも分けていないので
+      // relay 側に並ぶ（design.md §4.12）
+      "contactor-generic-3p-1a1b",
     ]);
     // タイマーは電気的にはリレーだが、パレットのカテゴリは分けている
     // （design.md §5.13）。`category` で絞ると relay 側には出てこない
@@ -71,7 +76,7 @@ describe("部品定義レジストリ", () => {
       "timer-on-delay",
       "timer-off-delay",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(15);
+    expect(listComponentDefinitions()).toHaveLength(17);
   });
 
   it("全定義が端子データの出典を持つ", () => {

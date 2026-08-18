@@ -18,8 +18,16 @@ const CELL_HEIGHT = 54;
 const PIVOT = { x: 8, y: 27 };
 const NC_POINT = { x: 32, y: 13 };
 const NO_POINT = { x: 32, y: 41 };
-/** どちらにも閉じていない a 接点の可動片の先。固定接点には届かせない */
-const OPEN_TIP = { x: 30, y: 17 };
+/**
+ * どちらにも閉じていない可動片の先。固定接点には届かせない。
+ *
+ * **開いた向きは接点の形で変わる。** a 接点（NC 端子が無い）は下の NO から
+ * 離れるので上を向き、b 接点（NO 端子が無い）は上の NC から離れるので
+ * 下を向く。1 つの座標で済ませると、**b 接点の開いた絵が NC に触れそうな
+ * 位置に描かれて「まだ繋がっている」ように読める。**
+ */
+const OPEN_TIP_UP = { x: 30, y: 17 };
+const OPEN_TIP_DOWN = { x: 30, y: 37 };
 
 /**
  * 接点 1 極。COM の可動片が NC 側 / NO 側のどちらへ倒れているかを描く。
@@ -41,7 +49,11 @@ function ContactSymbol({
 }) {
   // NC 端子が実機に無い a 接点（G7L など）に b 接点を描かない（design.md §4.8）
   const hasNc = contact.ncTerminal !== undefined;
-  const tip = closed === "nc" ? NC_POINT : closed === "no" ? NO_POINT : OPEN_TIP;
+  // NO 端子が実機に無い b 接点（電磁接触器の 21–22）に a 接点を描かない（§4.12）
+  const hasNo = contact.noTerminal !== undefined;
+  // 開いているときの向きは、残っている固定接点から離れる側へ倒す
+  const openTip = hasNo ? OPEN_TIP_UP : OPEN_TIP_DOWN;
+  const tip = closed === "nc" ? NC_POINT : closed === "no" ? NO_POINT : openTip;
 
   return (
     <g transform={`translate(${offset} 0)`}>
@@ -81,15 +93,24 @@ function ContactSymbol({
         </>
       )}
 
-      <line x1={NO_POINT.x} y1={NO_POINT.y} x2={CELL_WIDTH - 4} y2={NO_POINT.y} />
-      <text
-        className={styles.contactNumber}
-        x={CELL_WIDTH - 10}
-        y={NO_POINT.y + 11}
-        textAnchor="middle"
-      >
-        {contact.noTerminal}
-      </text>
+      {hasNo && (
+        <>
+          <line
+            x1={NO_POINT.x}
+            y1={NO_POINT.y}
+            x2={CELL_WIDTH - 4}
+            y2={NO_POINT.y}
+          />
+          <text
+            className={styles.contactNumber}
+            x={CELL_WIDTH - 10}
+            y={NO_POINT.y + 11}
+            textAnchor="middle"
+          >
+            {contact.noTerminal}
+          </text>
+        </>
+      )}
 
       {/*
         可動片。閉じている側は通電色で描き、開閉が一目で分かるようにする
