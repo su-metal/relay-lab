@@ -17,8 +17,12 @@ const stopOnly = (event: PointerEvent<HTMLButtonElement>) => {
  * 読むのは `contactType` と `action` の 2 値だけなので、型番が増えても分岐は増えない。
  * A/B の別はモデル名にも出るため、図記号側に文字は重ねない。
  *
- * シミュレーション中は操作子を出し、図記号も実際の開閉に合わせる。
+ * **シミュレーション中と経路確認中**に操作子を出し、図記号も実際の開閉に合わせる。
  * 操作の仕方は `action` で分かれる（design.md §4.7）。
+ *
+ * 経路確認中に倒せるのは、スイッチが**人の手で決まる**入力だから（§8.14）。
+ * リレーの接点は回路を解いた結果なので、あちらは動かない —— だからここだけが
+ * `preview` を読むボディになる。倒した結果は色と一覧に即座に出る。
  *
  * - **モーメンタリ**（押しボタン）: 押している間だけ状態が変わる。ボタン外で
  *   マウスを離す事故に備えて `pointerleave` / `pointercancel` でも必ず復帰させる。
@@ -27,7 +31,12 @@ const stopOnly = (event: PointerEvent<HTMLButtonElement>) => {
  * - **オルタネート**（切替スイッチ）: 1 クリックで ON 位置に留まり、もう 1 回で戻る。
  *   こちらは離しても復帰させてはならない
  */
-export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
+export function SwitchBody({
+  definition,
+  componentId,
+  simulation,
+  preview,
+}: BodyProps) {
   const pressSwitch = useSimulationStore((state) => state.pressSwitch);
   const releaseSwitch = useSimulationStore((state) => state.releaseSwitch);
   const toggleSwitch = useSimulationStore((state) => state.toggleSwitch);
@@ -37,7 +46,12 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
   const normallyClosed = electrical?.contactType === "NC";
   const maintained = electrical?.action === "maintained";
 
-  const operated = simulation?.pressed ?? false;
+  /*
+    操作子を出すのは実行中か経路確認中。**両方が同時に立つことは無い**
+    （`simulationStore` が `running` と `pathPreview` を排他にしている）。
+  */
+  const operable = simulation !== undefined || preview !== undefined;
+  const operated = simulation?.pressed ?? preview?.operated ?? false;
   // B 接点は操作すると開き、A 接点は操作すると閉じる
   const closed = normallyClosed !== operated;
 
@@ -121,13 +135,20 @@ export function SwitchBody({ definition, componentId, simulation }: BodyProps) {
         )}
       </svg>
 
-      {simulation && (
+      {operable && (
         <button
           type="button"
           // React Flow はこのクラスの付いた要素の上でノードドラッグを始めない
           className={`${styles.pressButton} nodrag`}
           data-pressed={operated ? "true" : undefined}
+          // 予測であることは配線と同じ約束（破線・発光なし）で表す（§8.14）
+          data-preview={preview ? "true" : undefined}
           aria-pressed={operated}
+          title={
+            preview
+              ? "この状態で電位がどこまで届くかを確かめます（リレーの接点は動きません）"
+              : undefined
+          }
           {...(maintained ? maintainedHandlers : momentaryHandlers)}
         >
           {maintained ? (operated ? "ON" : "OFF") : operated ? "押下中" : "押す"}

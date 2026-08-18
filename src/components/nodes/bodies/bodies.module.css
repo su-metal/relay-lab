@@ -50,11 +50,66 @@
 }
 
 /* ランプ: 消灯時は輪郭のみ */
+/*
+ * レンズの色（design.md §4.11）。
+ *
+ * **消灯中も色を出す。** 盤面では赤＝異常・緑＝運転のように色そのものが
+ * 意味を持つので、▶ を押すまで何色か分からないのでは図面にならない。
+ * 消灯は同じ色相の淡い塗り、点灯は濃い塗り＋縁＋光芒で分ける ——
+ * **見分けが色相ではなく明度と光芒に乗る**ので、色覚に依存しない（要件書 §8）。
+ *
+ * 既定（`DEFAULT_LAMP_COLOR`）の黄は、この機能が入る前の `--lamp-on` と
+ * 同じ値にしてある。色を選んでいない既存の回路は 1px も見た目が変わらない。
+ */
 .lampGlass {
-  fill: var(--lamp-off);
+  --lens: var(--lamp-on);
+  --lens-edge: var(--lamp-on-border);
+  --lens-off: var(--lamp-off);
+  fill: var(--lens-off);
   transition:
     fill 0.12s ease-out,
     filter 0.12s ease-out;
+}
+
+.lampGlass[data-color="yellow"] {
+  --lens: #fbbf24;
+  --lens-edge: #b45309;
+  --lens-off: #fef3c7;
+}
+
+.lampGlass[data-color="red"] {
+  --lens: #ef4444;
+  --lens-edge: #b91c1c;
+  --lens-off: #fee2e2;
+}
+
+.lampGlass[data-color="green"] {
+  --lens: #22c55e;
+  --lens-edge: #15803d;
+  --lens-off: #dcfce7;
+}
+
+.lampGlass[data-color="blue"] {
+  --lens: #3b82f6;
+  --lens-edge: #1d4ed8;
+  --lens-off: #dbeafe;
+}
+
+/*
+ * 白は塗りだけでは紙の上で消える。**縁を消灯中から付ける**ことで
+ * 「白いレンズ」と「何も無い」を分ける（他の色は塗りだけで足りる）。
+ */
+.lampGlass[data-color="white"] {
+  --lens: #ffffff;
+  --lens-edge: #64748b;
+  --lens-off: #f8fafc;
+  /*
+   * **白だけ光芒の色を塗りから外す。** 白い本体の上に白く光らせても
+   * 何も起きていないのと同じに見え、点灯が読めない。実機の白色表示灯も
+   * 電球色に灯るので、暖色の光芒を回すのは図としても嘘にならない。
+   */
+  --lens-glow: #facc15;
+  stroke: var(--border);
 }
 
 /*
@@ -62,9 +117,11 @@
  * SVG の filter は要素単位で効くので、×印の線には掛からない。
  */
 .lampGlass[data-lit="true"] {
-  fill: var(--lamp-on);
-  stroke: var(--lamp-on-border);
-  filter: drop-shadow(0 0 5px var(--lamp-on));
+  fill: var(--lens);
+  stroke: var(--lens-edge);
+  /* 点灯の合図を**塗り以外にも乗せる。** 淡い色のレンズでも縁の太さで分かる */
+  stroke-width: 2;
+  filter: drop-shadow(0 0 5px var(--lens-glow, var(--lens)));
 }
 
 /*
@@ -251,4 +308,24 @@
   color: #fff;
   border-color: var(--accent);
   background: var(--accent);
+}
+
+/*
+ * 経路確認モードの操作子（design.md §8.14）。
+ *
+ * **配線と同じ約束で「予測」を表す** —— 色相は変えず、破線にして塗りを
+ * 落とす。実行中の塗り（`--accent` のべた塗り）をそのまま使うと、
+ * 電源を入れていないのに「今この状態で動いている」と読まれる。
+ *
+ * `data-pressed` の指定より後に置く。倒している間もここが勝って、
+ * 破線のままであることが「まだ ▶ を押していない」の合図になる。
+ */
+.pressButton[data-preview="true"] {
+  border-style: dashed;
+}
+
+.pressButton[data-preview="true"][data-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-tint);
 }

@@ -7,8 +7,8 @@
 
 export { simulate } from "./simulate";
 export { inspectWiring } from "./wiring";
-export { previewAtRest } from "./preview";
-export type { AtRestPreview, PreviewBlocker } from "./preview";
+export { previewPaths } from "./preview";
+export type { PathPreview, PreviewBlocker } from "./preview";
 export {
   AT_REST,
   NONE_ENERGIZED,
@@ -16,7 +16,7 @@ export {
   computeNetStates,
   conductingPairs,
   openPairs,
-  solveAtRest,
+  solveWithoutRelays,
   stateAt,
 } from "./graph";
 export type { NetAssignment, NetLookup, OpenContacts } from "./graph";

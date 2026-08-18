@@ -102,6 +102,23 @@ const STRAIGHT_ROOM = STRAIGHT_LANE_STEP * 2;
 /** 迂回の折れ 2 つが収まる最小の走行長。これを下回るなら曲げない */
 const MIN_JOG_RUN = 24;
 
+/**
+ * 部品の本体から空ける距離（design.md §8.7）。
+ *
+ * **`HANDLE_GAP`（20）より小さく取る。** 端子から出る 20px の助走と同じ位置に
+ * 迂回した線を立てると、助走の折れ目と迂回の直線が重なって 1 本に見える。
+ */
+const COMPONENT_CLEARANCE = 16;
+
+/**
+ * 部品を避けるために動かせる上限（px）。
+ *
+ * いちばん大きい部品（MY4N は 260×240）を回り込めるだけの幅が要る。
+ * これを超えるなら**避けずに諦める** —— それ以上引き回すと、線がどの端子から
+ * 出ているのか追えなくなり、跨いでいるより読みにくい。
+ */
+const MAX_DETOUR = 320;
+
 /** 端子の辺 → 配線が出ていく向き（`getSmoothStepPath` の `handleDirections` と同じ） */
 const SIDE_DIRECTION: Record<TerminalSide, Point> = {
   left: { x: -1, y: 0 },
@@ -125,6 +142,14 @@ type Trunk = {
   room: number;
   /** レーン 1 本ぶんの間隔。迂回させる走行だけ広く取る（`STRAIGHT_LANE_STEP`） */
   step: number;
+  /**
+   * 部品を避けるために動かせる上限。**`room` とは別に持つ。**
+   *
+   * `room` は「重なりを解くために動かしてよい範囲」で、超えると経路が折り返す。
+   * 自前で組む走行（`straightRunPath`）は逃がしても折り返さないので、部品を
+   * 回り込めるだけの幅を許す。中点で動かす幹線は `room` が限界のまま。
+   */
+  detour: number;
 };
 
 /** 端子 1 個のキャンバス座標と、配線が出ていく辺 */
@@ -227,6 +252,8 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       end: Math.max(fromGap[axis], toGap[axis]),
       room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
       step: STRAIGHT_LANE_STEP,
+      // 迂回の折れ 2 つが収まらない短い走行は、そもそも曲げられない
+      detour: run >= MIN_JOG_RUN ? MAX_DETOUR : 0,
     };
   }
 
@@ -245,6 +272,23 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
     ),
     step: LANE_STEP,
+    /*
+     * 部品を避けるために動かせる幅。**回り込む形だけは広く取る。**
+     *
+     * - **相手を向いて出る形**（`alongAxis`）—— 幹線は両端の間に立つので、
+     *   そこから出すと経路が折り返す。`room` が限界
+     * - **相手に背を向けて出る形**（回り込み）—— 幹線は両端の外を通る
+     *   迂回線そのもので、どこへ置いても形が崩れない。**両端の座標が
+     *   揃っていると `room` が 0 になる**（`|Δ|/2` が 0）が、これはむしろ
+     *   本体を真っ直ぐ突っ切る配置 —— 同じ部品の上辺と下辺を結ぶ線が
+     *   まさにこれで、動かす幅が無いのではなく**いちばん動かす必要がある**
+     */
+    detour: alongAxis
+      ? Math.max(
+          0,
+          Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
+        )
+      : MAX_DETOUR,
   };
 };
 
@@ -392,9 +436,18 @@ const overlaps = (a: Trunk, b: Trunk): boolean =>
  * 開始位置の順に見て、**すでに置いた同じレーンの幹線と重ならない最小のレーン**を
  * 取る。重なっていない配線は 0 のままなので、混み合った場所だけがずれる。
  */
+/**
+ * 配線 1 本に配られたレーン。**部品を避けるときに要る**（`clearShift`）——
+ * 同じ部品を回り込む配線どうしを、レーン番号ぶん外へ積んで離すため。
+ *
+ * `step` は束の中で揃えた間隔で、`Trunk.step` とは限らない（`assignCluster`）。
+ */
+type Placement = { lane: number; step: number };
+
 const assignCluster = (
   cluster: readonly Trunk[],
   shifts: Map<string, number>,
+  placements: Map<string, Placement>,
 ): void => {
   // 1 本しか通っていない道はずらす理由が無い
   if (cluster.length < 2) return;
@@ -419,6 +472,7 @@ const assignCluster = (
       lane += 1;
     }
     placed.push({ lane, trunk });
+    placements.set(trunk.id, { lane, step });
 
     // 部品が近すぎてずらす余地が無いときは動かさない。ここで無理に押し込むと
     // 経路が折り返して、重なり以上に読みにくい線になる（design.md §8.7）
@@ -429,7 +483,11 @@ const assignCluster = (
 };
 
 /** 幹線の位置が近いものを 1 つの束にまとめ、束ごとにレーンを配る */
-const assignLanes = (trunks: Trunk[], shifts: Map<string, number>): void => {
+const assignLanes = (
+  trunks: Trunk[],
+  shifts: Map<string, number>,
+  placements: Map<string, Placement>,
+): void => {
   const sorted = [...trunks].sort(
     (a, b) => a.coord - b.coord || (a.id < b.id ? -1 : 1),
   );
@@ -439,12 +497,155 @@ const assignLanes = (trunks: Trunk[], shifts: Map<string, number>): void => {
     // 束の先頭を基準にする。1 本ずつ連鎖で判定すると、少しずつずれた幹線が
     // 延々と 1 つの束につながって画面の端まで巻き込む
     if (cluster.length > 0 && trunk.coord - cluster[0].coord > LANE_TOLERANCE) {
-      assignCluster(cluster, shifts);
+      assignCluster(cluster, shifts, placements);
       cluster = [];
     }
     cluster.push(trunk);
   }
-  assignCluster(cluster, shifts);
+  assignCluster(cluster, shifts, placements);
+};
+
+/**
+ * 部品 1 個が図面で占める矩形。
+ *
+ * 端子の丸は縁の上に乗るので、矩形そのものは `visual` の寸法どおりでよい
+ * （避ける余白は `COMPONENT_CLEARANCE` で別に取る）。
+ */
+type Rect = { left: number; right: number; top: number; bottom: number };
+
+/** 幹線を立てられない座標の区間（幹線の `coord` と同じ軸） */
+type Interval = { min: number; max: number };
+
+const componentRects = (
+  document: CircuitDocument,
+  registry: ComponentDefinitionRegistry,
+): Rect[] => {
+  const rects: Rect[] = [];
+  for (const instance of document.components) {
+    const definition = registry.get(instance.definitionId);
+    // 定義が引けない部品は描画もされない（`toDeviceNodes`）。避ける対象にもしない
+    if (!definition) continue;
+    rects.push({
+      left: instance.position.x,
+      right: instance.position.x + definition.visual.width,
+      top: instance.position.y,
+      bottom: instance.position.y + definition.visual.height,
+    });
+  }
+  return rects;
+};
+
+/**
+ * この幹線が横切ってしまう部品の区間を集める（design.md §8.7）。
+ *
+ * **区間は矩形そのもので、余白を足さない。** 余白まで含めて「当たっている」と
+ * すると、部品の脇を数 px 離れて走っているだけの線まで動かすことになり、
+ * 混んでもいない場所の線が図面から浮く。`COMPONENT_CLEARANCE` は
+ * **逃がす先を決めるときにだけ**使う（横切っていると分かってから）。
+ *
+ * 自分の両端の部品も除外しない。**同じ部品の上の端子と下の端子を結ぶ線**は
+ * 本体を真っ直ぐ突っ切るので、まさに避けたい形になる。端子から出る助走
+ * （`HANDLE_GAP`）のぶんだけ幹線は本体の外から始まるので、脇を走るだけの線が
+ * 自分の部品に引っかかることはない。
+ */
+const blockedIntervals = (trunk: Trunk, rects: readonly Rect[]): Interval[] => {
+  const intervals: Interval[] = [];
+  for (const rect of rects) {
+    // 幹線が伸びている範囲（縦なら y、横なら x）に部品がかかっているか
+    const spanMin = trunk.vertical ? rect.top : rect.left;
+    const spanMax = trunk.vertical ? rect.bottom : rect.right;
+    if (spanMin >= trunk.end || trunk.start >= spanMax) continue;
+
+    intervals.push(
+      trunk.vertical
+        ? { min: rect.left, max: rect.right }
+        : { min: rect.top, max: rect.bottom },
+    );
+  }
+  return intervals;
+};
+
+/** 重なり合う区間を 1 つに畳む。隣り合う部品をまとめて跨げるようにする */
+const mergeIntervals = (intervals: readonly Interval[]): Interval[] => {
+  const sorted = [...intervals].sort((a, b) => a.min - b.min);
+  const merged: Interval[] = [];
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && interval.min <= last.max) {
+      last.max = Math.max(last.max, interval.max);
+    } else {
+      merged.push({ ...interval });
+    }
+  }
+  return merged;
+};
+
+/**
+ * `start` から `direction` の向きへ、どの部品も横切らない最初の位置まで進める。
+ *
+ * 抜けた先が別の部品に当たることがある（部品が並んでいる場合）ので、
+ * 当たらなくなるまで繰り返す。区間の数だけ進めば必ず外へ出る。
+ */
+const escapeTo = (
+  merged: readonly Interval[],
+  start: number,
+  direction: 1 | -1,
+): number => {
+  let value = start;
+  for (let guard = 0; guard <= merged.length; guard += 1) {
+    const hit = merged.find(
+      (interval) => value > interval.min && value < interval.max,
+    );
+    if (!hit) return value;
+    value =
+      direction === 1
+        ? hit.max + COMPONENT_CLEARANCE
+        : hit.min - COMPONENT_CLEARANCE;
+  }
+  return value;
+};
+
+/**
+ * 部品を横切っている幹線を、本体の外へ逃がす（design.md §8.7）。
+ *
+ * **横切っていなければ `base` をそのまま返す。** レーン分離が決めた位置が
+ * 空いていれば 1px も動かさない —— 混んでいない場所の線を動かす理由が無い。
+ *
+ * 逃がす向きは**素の位置から見て近いほう。** `base`（レーンのずらし量を
+ * 足した位置）からではなく素の位置で決めるのは、**同じ部品を避ける配線どうしで
+ * 向きを揃えるため。** 1 本ずつ近いほうを選ぶと、レーン 1 本ぶんの差で
+ * 反対側へ飛ぶ線が出て、束が左右に割れる。
+ *
+ * 逃がしたあとに**レーン番号ぶん外へ積む。** 同じ部品を避ける配線が複数あると
+ * 全部が本体のすぐ外の同じ位置へ寄ってしまい、せっかく解いた重なりが戻る。
+ *
+ * `detour` を超えないと抜けられないなら **`base` のまま諦める。** 無理に
+ * 引き回した線は、跨いでいる線より読みにくい（design.md §8.7）。
+ */
+const clearShift = (
+  trunk: Trunk,
+  base: number,
+  blocked: readonly Interval[],
+  lane: number,
+  step: number,
+): number => {
+  if (trunk.detour <= 0 || blocked.length === 0) return base;
+
+  const merged = mergeIntervals(blocked);
+  const target = trunk.coord + base;
+  if (!merged.some((interval) => target > interval.min && target < interval.max)) {
+    return base;
+  }
+
+  const up = escapeTo(merged, trunk.coord, 1) - trunk.coord;
+  const down = escapeTo(merged, trunk.coord, -1) - trunk.coord;
+  const direction: 1 | -1 = Math.abs(up) <= Math.abs(down) ? 1 : -1;
+
+  // レーンぶん積んだ先がまた部品に当たることがあるので、もう一度抜けさせる
+  const stacked = (direction === 1 ? up : down) + direction * lane * step;
+  const shift = escapeTo(merged, trunk.coord + stacked, direction) - trunk.coord;
+
+  return Math.abs(shift) > trunk.detour ? base : shift;
 };
 
 const NO_LANES: ReadonlyMap<string, number> = new Map();
@@ -462,8 +663,7 @@ export const buildWireLanes = (
   document: CircuitDocument,
   registry: ComponentDefinitionRegistry,
 ): ReadonlyMap<string, number> => {
-  // 1 本きりなら重なりようが無い
-  if (document.connections.length < 2) return NO_LANES;
+  if (document.connections.length === 0) return NO_LANES;
 
   const anchorOf = anchorLookup(document, registry);
   const vertical: Trunk[] = [];
@@ -479,8 +679,42 @@ export const buildWireLanes = (
   }
 
   const shifts = new Map<string, number>();
-  // 縦の幹線と横の幹線は別の道なので、束ねるときも混ぜない
-  assignLanes(vertical, shifts);
-  assignLanes(horizontal, shifts);
+  const placements = new Map<string, Placement>();
+
+  // ① 重なりを解く。1 本きりなら重なりようが無いので飛ばす
+  if (document.connections.length > 1) {
+    // 縦の幹線と横の幹線は別の道なので、束ねるときも混ぜない
+    assignLanes(vertical, shifts, placements);
+    assignLanes(horizontal, shifts, placements);
+  }
+
+  /*
+   * ② 部品を跨いでいる幹線を外へ逃がす（design.md §8.7）。
+   *
+   * **重なりを解いたあとに掛ける。** 順序を逆にすると、避けて決めた位置を
+   * レーンのずらし量が上書きして部品の上へ戻す。こちらを後に置けば、
+   * レーンが配った位置を出発点にしていちばん近い空きへ抜けられる。
+   *
+   * **跨いでいなければ何もしない。** ①で決まった位置が空いていれば
+   * `clearShift` はそのまま返すので、混んでいない場所の線は 1px も動かない。
+   */
+  const rects = componentRects(document, registry);
+  if (rects.length > 0) {
+    for (const trunk of [...vertical, ...horizontal]) {
+      const base = shifts.get(trunk.id) ?? 0;
+      const placement = placements.get(trunk.id);
+      const cleared = clearShift(
+        trunk,
+        base,
+        blockedIntervals(trunk, rects),
+        placement?.lane ?? 0,
+        placement?.step ?? trunk.step,
+      );
+      if (cleared === base) continue;
+      if (cleared === 0) shifts.delete(trunk.id);
+      else shifts.set(trunk.id, cleared);
+    }
+  }
+
   return shifts;
 };

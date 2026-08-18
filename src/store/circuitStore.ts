@@ -25,7 +25,9 @@ import type {
   CircuitDocument,
   ComponentCategory,
   ComponentDefinition,
+  LampColor,
 } from "@/circuit/types";
+import { DEFAULT_LAMP_COLOR, isLampColor } from "@/circuit/types";
 import type { Connection } from "@xyflow/react";
 
 type Point = { x: number; y: number };
@@ -141,6 +143,15 @@ export type CircuitStore = {
    * 範囲外の値は定義の上下限へ丸める（判定はエンジンの `presetMsOf`）。
    */
   setComponentPreset: (componentId: string, presetMs: number) => void;
+
+  /**
+   * 表示ランプのレンズの色を変える（design.md §4.11）。
+   *
+   * **Undo の対象にする。** 盤面では色そのものが意味を持つ（赤＝異常・
+   * 緑＝運転）ので、押し間違いを戻せないと図の意味が変わったままになる。
+   * ランプ以外の部品には書き込まない —— 誰も読まない値を保存 JSON に残さない。
+   */
+  setComponentLampColor: (componentId: string, color: LampColor) => void;
 
   /**
    * インスタンスの `definitionId` だけを差し替える（同じ ID・位置・ラベルは維持）。
@@ -424,6 +435,32 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           return { ...component, presetMs: next };
         });
         // 同じ値への設定・タイマー以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentLampColor: (componentId, color) => {
+      if (!isLampColor(color)) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          // ランプ以外にレンズは無い
+          if (electrical?.kind !== "lamp") return component;
+
+          // 既定色は持たない形に戻す（`flipped` と同じ）。保存 JSON に
+          // 「既定と同じ値」を書き残すと、既定を変えたときに古い回路だけ取り残される
+          const next = color === DEFAULT_LAMP_COLOR ? undefined : color;
+          if (component.lampColor === next) return component;
+          changed = true;
+          const { lampColor: _dropped, ...rest } = component;
+          return next === undefined ? rest : { ...rest, lampColor: next };
+        });
+        // 同じ色への設定・ランプ以外への設定で履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });

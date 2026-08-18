@@ -1,17 +1,18 @@
 /**
- * 静止状態の到達範囲の検証（design.md §5.15）。
+ * 電位の到達範囲の検証（design.md §5.15）。
  *
- * ここで守りたいのは 4 点。
+ * ここで守りたいのは 5 点。
  * ①収束ループを回さずに（`simulate()` を呼ばずに）電位の届く範囲が決まること
  * ②「電位がどこで止まっているか」が端子の組で取れること
  * ③b 接点の直列チェーン（起動経路）は静止状態で**通っている**と出ること
  * ④閉じれば短絡になる接点を「あと少しで励磁します」の顔で出さないこと
+ * ⑤**スイッチを倒すと先へ進むが、リレーの接点は動かない**こと（§8.14）
  */
 
 import { describe, expect, it } from "vitest";
 
 import { componentRegistry } from "@/circuit/definitions";
-import { previewAtRest } from "@/circuit/engine";
+import { previewPaths } from "@/circuit/engine";
 import type { CircuitConnection, CircuitDocument } from "@/circuit/types";
 import { terminalKey } from "@/circuit/types";
 
@@ -61,7 +62,7 @@ const document: CircuitDocument = {
 
 /** 端子が属するネットの電位状態を引く小道具 */
 const stateOf = (
-  preview: ReturnType<typeof previewAtRest>,
+  preview: ReturnType<typeof previewPaths>,
   componentId: string,
   terminalId: string,
 ) => {
@@ -69,9 +70,9 @@ const stateOf = (
   return netId === undefined ? undefined : preview.netState.get(netId);
 };
 
-describe("previewAtRest — 電位の到達範囲", () => {
+describe("previewPaths — 電位の到達範囲", () => {
   it("電源に直結した端子まで電位が届く", () => {
-    const preview = previewAtRest(document, componentRegistry);
+    const preview = previewPaths(document, componentRegistry);
 
     expect(stateOf(preview, "s1", "1")?.plusFrom.has("ps")).toBe(true);
     expect(stateOf(preview, "ry1", "9")?.plusFrom.has("ps")).toBe(true);
@@ -80,7 +81,7 @@ describe("previewAtRest — 電位の到達範囲", () => {
   });
 
   it("A 接点・押しボタンの先には届かない", () => {
-    const preview = previewAtRest(document, componentRegistry);
+    const preview = previewPaths(document, componentRegistry);
 
     // S1 を押していないので 2 番の先（コイル 14）には来ない
     expect(stateOf(preview, "s1", "2")?.plusFrom.size).toBe(0);
@@ -90,7 +91,7 @@ describe("previewAtRest — 電位の到達範囲", () => {
   });
 
   it("押しボタン式の回路では静止状態で何も励磁しない", () => {
-    const preview = previewAtRest(document, componentRegistry);
+    const preview = previewPaths(document, componentRegistry);
 
     expect(preview.energizedCoils.size).toBe(0);
     expect(preview.litLamps.size).toBe(0);
@@ -104,7 +105,7 @@ describe("previewAtRest — 電位の到達範囲", () => {
         wire("w-coil-zero", ["ry1", "13"], ["ps", "zero"]),
       ],
     };
-    const preview = previewAtRest(direct, componentRegistry);
+    const preview = previewPaths(direct, componentRegistry);
 
     expect([...preview.energizedCoils]).toEqual(["ry1"]);
   });
@@ -119,14 +120,14 @@ describe("previewAtRest — 電位の到達範囲", () => {
         wire("w-lamp-zero", ["l1", "2"], ["ps", "zero"]),
       ],
     };
-    const preview = previewAtRest(chain, componentRegistry);
+    const preview = previewPaths(chain, componentRegistry);
 
     expect(stateOf(preview, "ry1", "1")?.plusFrom.has("ps")).toBe(true);
     expect([...preview.litLamps]).toEqual(["l1"]);
   });
 
   it("部品が 1 つも無くても空の解を返す", () => {
-    const preview = previewAtRest(
+    const preview = previewPaths(
       { version: 1, components: [], connections: [], viewport: document.viewport },
       componentRegistry,
     );
@@ -136,9 +137,9 @@ describe("previewAtRest — 電位の到達範囲", () => {
   });
 });
 
-describe("previewAtRest — 電位が止まっている箇所", () => {
+describe("previewPaths — 電位が止まっている箇所", () => {
   it("押していない押しボタンを + 側の先端として拾う", () => {
-    const preview = previewAtRest(document, componentRegistry);
+    const preview = previewPaths(document, componentRegistry);
 
     expect(preview.blockers).toContainEqual({
       componentId: "s1",
@@ -149,7 +150,7 @@ describe("previewAtRest — 電位が止まっている箇所", () => {
   });
 
   it("非励磁の A 接点も先端として拾う", () => {
-    const preview = previewAtRest(document, componentRegistry);
+    const preview = previewPaths(document, componentRegistry);
 
     // COM(9) に + が来ていて、NO(5) へは行かない
     expect(preview.blockers).toContainEqual({
@@ -172,7 +173,7 @@ describe("previewAtRest — 電位が止まっている箇所", () => {
       ...document,
       connections: [wire("w-orphan", ["ry1", "10"], ["l1", "1"])],
     };
-    const preview = previewAtRest(floating, componentRegistry);
+    const preview = previewPaths(floating, componentRegistry);
 
     expect(preview.blockers).toEqual([]);
   });
@@ -186,7 +187,7 @@ describe("previewAtRest — 電位が止まっている箇所", () => {
         wire("w-s1-zero", ["s1", "2"], ["ps", "zero"]),
       ],
     };
-    const preview = previewAtRest(shorting, componentRegistry);
+    const preview = previewPaths(shorting, componentRegistry);
 
     expect(
       preview.blockers.filter((blocker) => blocker.componentId === "s1"),
@@ -211,12 +212,116 @@ describe("previewAtRest — 電位が止まっている箇所", () => {
         wire("w-lamp-zero", ["l1", "2"], ["ps", "zero"]),
       ],
     };
-    const preview = previewAtRest(nc, componentRegistry);
+    const preview = previewPaths(nc, componentRegistry);
 
     expect(
       preview.blockers.filter((blocker) => blocker.componentId === "s2"),
     ).toEqual([]);
     // 閉じているので静止状態でランプが点く
     expect([...preview.litLamps]).toEqual(["l1"]);
+  });
+});
+
+/**
+ * スイッチの操作（design.md §8.14）。
+ *
+ * **このモードの境目そのもの。** 人が倒すスイッチは入力として効き、
+ * 回路を解いた結果でしかないリレーの接点は動かない。ここが崩れると
+ * 「時間の進まない ▶」になり、`simulate()` と役割が二重になる。
+ */
+describe("previewPaths — スイッチを倒す", () => {
+  const pressing = { pressedSwitches: new Set(["s1"]) };
+
+  it("倒すと、その先のコイルまで電位が届く", () => {
+    const rest = previewPaths(document, componentRegistry);
+    // 倒す前は S1 の 2 番から先へ行かない
+    expect(stateOf(rest, "ry1", "14")?.plusFrom.size).toBe(0);
+
+    const preview = previewPaths(document, componentRegistry, pressing);
+    expect(stateOf(preview, "ry1", "14")?.plusFrom.has("ps")).toBe(true);
+    expect(preview.energizedCoils.has("ry1")).toBe(true);
+  });
+
+  it("**リレーの接点は動かない** —— コイルが励磁してもランプは点かない", () => {
+    const preview = previewPaths(document, componentRegistry, pressing);
+    // コイルは成立している
+    expect(preview.energizedCoils.has("ry1")).toBe(true);
+    // それでも第1接点（9 → 5）は開いたまま。ランプへは届かない
+    expect(preview.litLamps.has("l1")).toBe(false);
+    expect(stateOf(preview, "l1", "1")?.plusFrom.size).toBe(0);
+  });
+
+  it("倒して閉じたスイッチは「止まっている箇所」から消える", () => {
+    const rest = previewPaths(document, componentRegistry);
+    expect(rest.blockers.some((blocker) => blocker.componentId === "s1")).toBe(
+      true,
+    );
+
+    const preview = previewPaths(document, componentRegistry, pressing);
+    expect(
+      preview.blockers.some((blocker) => blocker.componentId === "s1"),
+    ).toBe(false);
+  });
+
+  it("倒したことで先端が進み、リレーの接点が新しい止まり所になる", () => {
+    const preview = previewPaths(document, componentRegistry, pressing);
+    // 9 番には電源が直結しているので、倒す前から RY1 は止まり所ではある。
+    // 倒した後もそれは変わらない（接点が動かないため）
+    const onRelay = preview.blockers.filter(
+      (blocker) => blocker.componentId === "ry1",
+    );
+    expect(onRelay.length).toBeGreaterThan(0);
+  });
+
+  it("関係のないスイッチを倒しても到達範囲は変わらない", () => {
+    const rest = previewPaths(document, componentRegistry);
+    const other = previewPaths(document, componentRegistry, {
+      pressedSwitches: new Set(["存在しない部品"]),
+    });
+    expect(stateOf(other, "ry1", "14")?.plusFrom.size).toBe(
+      stateOf(rest, "ry1", "14")?.plusFrom.size,
+    );
+    expect(other.blockers.length).toBe(rest.blockers.length);
+  });
+});
+
+describe("previewPaths — b 接点のスイッチを倒す", () => {
+  /** `+24V → S1(B接点) → ランプ → 0V`。倒すと開いて消える */
+  const ncDocument: CircuitDocument = {
+    version: 1,
+    components: [
+      { id: "ps", definitionId: "power-dc24v", position: at(0, 0) },
+      {
+        id: "sb",
+        definitionId: "switch-pushbutton-nc",
+        label: "S2",
+        position: at(200, 0),
+      },
+      { id: "l1", definitionId: "lamp-dc24v", position: at(420, 0) },
+    ],
+    connections: [
+      wire("w1", ["ps", "plus"], ["sb", "1"]),
+      wire("w2", ["sb", "2"], ["l1", "1"]),
+      wire("w3", ["l1", "2"], ["ps", "zero"]),
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+
+  it("倒していなければ閉じていて、ランプが点く", () => {
+    const preview = previewPaths(ncDocument, componentRegistry);
+    expect(preview.litLamps.has("l1")).toBe(true);
+    expect(preview.blockers.some((blocker) => blocker.componentId === "sb")).toBe(
+      false,
+    );
+  });
+
+  it("倒すと開いて、そこが電位の止まり所になる", () => {
+    const preview = previewPaths(ncDocument, componentRegistry, {
+      pressedSwitches: new Set(["sb"]),
+    });
+    expect(preview.litLamps.has("l1")).toBe(false);
+    expect(preview.blockers.some((blocker) => blocker.componentId === "sb")).toBe(
+      true,
+    );
   });
 });

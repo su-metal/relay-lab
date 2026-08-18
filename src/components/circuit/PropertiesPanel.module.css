@@ -461,3 +461,90 @@
 .gateCondition {
   color: var(--text-muted);
 }
+
+/*
+ * レンズの色（design.md §4.11）。
+ *
+ * 排他選択なので連結したセグメントで見せる（操作バーの範囲選択と同じ・§8.6）。
+ * **色見本と色名を必ず並べる。** 見本だけにすると、選ばれている色を目視の
+ * 色だけで判断させることになる（要件書 §8「色覚に依存しない表現」）。
+ */
+.lampColors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lampColor {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease-out,
+    color 0.12s ease-out,
+    background 0.12s ease-out;
+}
+
+.lampColor:hover {
+  border-color: var(--accent);
+}
+
+/* 選ばれている色は枠と文字で示す。塗り分けは見本の丸に任せる */
+.lampColor[data-active] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+/* 色見本。ノードのレンズと同じ値を使う（見本と実物がずれない） */
+.lampColorDot {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--lens-edge);
+  border-radius: 50%;
+  background: var(--lens);
+}
+
+.lampColor[data-color="yellow"] .lampColorDot {
+  --lens: #fbbf24;
+  --lens-edge: #b45309;
+}
+
+.lampColor[data-color="red"] .lampColorDot {
+  --lens: #ef4444;
+  --lens-edge: #b91c1c;
+}
+
+.lampColor[data-color="green"] .lampColorDot {
+  --lens: #22c55e;
+  --lens-edge: #15803d;
+}
+
+.lampColor[data-color="blue"] .lampColorDot {
+  --lens: #3b82f6;
+  --lens-edge: #1d4ed8;
+}
+
+.lampColor[data-color="white"] .lampColorDot {
+  --lens: #ffffff;
+  --lens-edge: #64748b;
+}
+
+.lampColorName {
+  line-height: 1;
+}
+
+/* 指で押せる大きさにする（design.md §8.12） */
+@media (pointer: coarse) {
+  .lampColor {
+    min-height: 36px;
+  }
+}

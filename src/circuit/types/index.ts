@@ -20,7 +20,12 @@ export type {
 export type { CircuitConnection, TerminalRef } from "./connection";
 export { terminalKey, terminalRefKey } from "./connection";
 
-export type { CircuitComponentInstance, CircuitDocument } from "./circuit";
+export type {
+  CircuitComponentInstance,
+  CircuitDocument,
+  LampColor,
+} from "./circuit";
+export { DEFAULT_LAMP_COLOR, LAMP_COLORS, isLampColor } from "./circuit";
 
 export type {
   NetState,

@@ -283,3 +283,70 @@ describe("タイマーの設定時間（design.md §5.13）", () => {
     expect(result.document.components[0]?.presetMs).toBeUndefined();
   });
 });
+
+/**
+ * 表示ランプのレンズの色（design.md §4.11）。
+ *
+ * **見た目だけの属性なので、壊れていても部品ごと捨てない**（`flipped` と同じ）。
+ * ランプ以外に付いていたら落とす —— 保存 JSON に誰も読まない値を残さない。
+ */
+describe("表示ランプのレンズの色（design.md §4.11）", () => {
+  const withLamp = (lampColor?: unknown): unknown => ({
+    version: 1,
+    components: [
+      {
+        id: "cmp-lamp",
+        definitionId: "lamp-dc24v",
+        label: "L1",
+        position: { x: 0, y: 0 },
+        ...(lampColor === undefined ? {} : { lampColor }),
+      },
+    ],
+    connections: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+
+  it("色を保存して読み戻す", () => {
+    const result = roundTrip(withLamp("red"));
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.lampColor).toBe("red");
+  });
+
+  it("色を選んでいなければ持たない（既定色へ倒れる）", () => {
+    const result = roundTrip(withLamp());
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.lampColor).toBeUndefined();
+  });
+
+  it("知らない色名は既定へ倒す（部品ごと捨てない）", () => {
+    const result = roundTrip(withLamp("むらさき"));
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.lampColor).toBeUndefined();
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("ランプ以外に付いていても落とす（誰も読まない値を残さない）", () => {
+    const result = roundTrip({
+      ...document,
+      components: document.components.map((component) => ({
+        ...component,
+        lampColor: "green",
+      })),
+    });
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    for (const component of result.document.components) {
+      const definition = componentRegistry.get(component.definitionId);
+      if (definition?.electrical.kind !== "lamp") {
+        expect(component.lampColor).toBeUndefined();
+      }
+    }
+  });
+});
