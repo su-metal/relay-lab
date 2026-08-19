@@ -37,6 +37,7 @@ export {
   closedContactPairs,
   evaluateCoil,
   openContactPairs,
+  triggerPercentOf,
 } from "./relay";
 export type { CoilEvaluation, TerminalPair } from "./relay";
 export {

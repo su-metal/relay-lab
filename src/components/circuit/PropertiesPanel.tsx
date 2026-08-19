@@ -31,7 +31,12 @@ import type {
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
-import { channelVoltsOf, fadeMsOf, presetMsOf } from "@/circuit/engine";
+import {
+  channelVoltsOf,
+  fadeMsOf,
+  presetMsOf,
+  triggerPercentOf,
+} from "@/circuit/engine";
 import type {
   DimmerSettings,
   ComponentDefinition,
@@ -74,6 +79,9 @@ export function PropertiesPanel() {
   );
   const setComponentDimmerSettings = useCircuitStore(
     (state) => state.setComponentDimmerSettings,
+  );
+  const setComponentTriggerPercent = useCircuitStore(
+    (state) => state.setComponentTriggerPercent,
   );
   const setComponentChannelVolts = useCircuitStore(
     (state) => state.setComponentChannelVolts,
@@ -196,6 +204,9 @@ export function PropertiesPanel() {
           onDimmerSettingsChange={(patch) =>
             setComponentDimmerSettings(inspection.instance.id, patch)
           }
+          onTriggerPercentChange={(contactId, percent) =>
+            setComponentTriggerPercent(inspection.instance.id, contactId, percent)
+          }
         />
       )}
     </aside>
@@ -232,6 +243,7 @@ type DetailsProps = {
   onChannelVoltsChange: (channelId: string, volts: number) => void;
   onLampColorChange: (color: LampColor) => void;
   onDimmerSettingsChange: (patch: Partial<DimmerSettings>) => void;
+  onTriggerPercentChange: (contactId: string, percent: number) => void;
 };
 
 function ComponentDetails({
@@ -245,6 +257,7 @@ function ComponentDetails({
   onFadeMsChange,
   onLampColorChange,
   onDimmerSettingsChange,
+  onTriggerPercentChange,
 }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
@@ -263,6 +276,17 @@ function ComponentDetails({
    * あって % へ直す側ではないので、ここには入らない（§4.15）。
    */
   const settings = instance.dimmerSettings ?? {};
+
+  /**
+   * アナログ量で動く接点（カットリレー・design.md §4.16）。
+   *
+   * 実機の CUT ADJ.（回路ごとのつまみ）にあたるので、**接点ごとに欄を出す。**
+   * 4 回路をそれぞれ別の動作点に設定して使うものなので、1 つにまとめない。
+   */
+  const triggerContacts =
+    definition.electrical.kind === "relay"
+      ? definition.electrical.relay.contacts.filter((c) => c.trigger)
+      : [];
 
   const dimmerTarget =
     definition.electrical.kind === "dimmer" ||
@@ -463,6 +487,50 @@ function ComponentDetails({
           **とくに極性。** 0V = 100% はこの盤の設定であって機器の仕様では
           ないので、ここで切り替えられないと順特性の盤が描けない。
         */}
+        {/*
+          カットリレーの動作点（design.md §4.16）。**接点ごとに出す。**
+
+          実機の CUT ADJ. は回路ごとのつまみで、4 回路それぞれ別の動作点に
+          設定して使う。ここで入れられないと、定義の既定値から動かせない。
+
+          **% で入れさせる。** 実機の「0〜50% で動作」という表記がそのまま
+          設定になる。V にすると、極性を反転した盤で動作点の意味が裏返る。
+        */}
+        {triggerContacts.map((contact) => {
+          const trigger = contact.trigger;
+          if (!trigger) return null;
+          return (
+            <label key={contact.id} className={styles.labelField}>
+              <span className={styles.fieldName}>
+                {triggerContacts.length === 1
+                  ? "動作点"
+                  : `動作点 ${contact.id.replace(/^c/, "")}`}
+              </span>
+              <span className={styles.presetField}>
+                <input
+                  className={styles.presetInput}
+                  type="number"
+                  inputMode="decimal"
+                  step={1}
+                  min={trigger.minPercent}
+                  max={trigger.maxPercent}
+                  value={triggerPercentOf(
+                    trigger,
+                    instance.triggerPercents?.[contact.id],
+                  )}
+                  onChange={(event) => {
+                    const percent = Number(event.target.value);
+                    // 入力途中の空欄では書き込まない。範囲外は circuitStore が丸める
+                    if (!Number.isFinite(percent)) return;
+                    onTriggerPercentChange(contact.id, percent);
+                  }}
+                />
+                <span className={styles.presetUnit}>% 以下で動作</span>
+              </span>
+            </label>
+          );
+        })}
+
         {dimmerTarget && (
           <div className={styles.labelField}>
             <span className={styles.fieldName}>調光の設定</span>
