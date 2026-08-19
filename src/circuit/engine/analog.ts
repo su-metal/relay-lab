@@ -37,6 +37,8 @@ import type {
   ElectricalDefinition,
   AnalogCurve,
 } from "@/circuit/types";
+import type { CommunicatedLevels } from "./communication";
+import { EMPTY_COMMUNICATED_LEVELS } from "./communication";
 import {
   analogInputKey,
   EMPTY_ANALOG_RESULT,
@@ -129,6 +131,47 @@ export const analogPercent = (curve: AnalogCurve, volts: number): number => {
   return curve.percentAtMin + (curve.percentAtMax - curve.percentAtMin) * clamped;
 };
 
+/**
+ * 明るさ（%）→ 電圧（V）。`analogPercent()` の逆（design.md §4.17）。
+ *
+ * 通信は「フェーダーが 70%」という値を運ぶだけで、それが何 V になるかは
+ * **出す側の機器の設定**（`outputCurve` とインスタンスの極性）。実機も
+ * 調整ボリュームで「消灯時 10V・点灯時 0V」に合わせる。
+ */
+export const voltsForPercent = (curve: AnalogCurve, percent: number): number => {
+  const span = curve.percentAtMax - curve.percentAtMin;
+  // 両端が同じ % の定義（幅ゼロ）は逆算できない。下端の電圧を返す
+  if (span === 0) return curve.minVolts;
+  const ratio = (percent - curve.percentAtMin) / span;
+  const clamped = Math.min(Math.max(ratio, 0), 1);
+  return curve.minVolts + (curve.maxVolts - curve.minVolts) * clamped;
+};
+
+/**
+ * チャンネル 1 本の**目標**電圧（design.md §4.17）。
+ *
+ * **通信が届いていれば通信が勝ち、届いていなければ手動設定のまま。**
+ * この順にしてあるのは、操作卓を置かない回路と保存済みの回路が
+ * 今までどおり動くことを優先したため（requirements.md US-AX）。
+ *
+ * フェードはこの値を目標として動く —— 通信で来た変化にもフェードがかかる
+ * のは実機どおり（シーン切替に時間をかけるのがフェード）。
+ */
+export const targetVoltsOf = (
+  source: Extract<ElectricalDefinition, { kind: "analog-source" }>,
+  channelId: string,
+  instance: CircuitComponentInstance,
+  communicated?: ReadonlyMap<string, number>,
+): number => {
+  const percent = communicated?.get(channelId);
+  if (percent !== undefined && source.outputCurve) {
+    const curve = effectiveCurve(source.outputCurve, instance.dimmerSettings);
+    const volts = voltsForPercent(curve, percent);
+    return Math.min(Math.max(volts, source.minVolts), source.maxVolts);
+  }
+  return channelVoltsOf(source, channelId, instance.channelVolts);
+};
+
 /** 定義とインスタンスの組。両方を一度に引き回すための最小の型 */
 type Placed = {
   instance: CircuitComponentInstance;
@@ -174,6 +217,7 @@ const collectSignals = (
   placed: readonly Placed[],
   netOf: ReadonlyMap<string, number>,
   effectiveVolts: ReadonlyMap<string, number>,
+  communicated: CommunicatedLevels,
 ): Map<number, AnalogSignal> => {
   const signals = new Map<number, AnalogSignal>();
 
@@ -210,7 +254,12 @@ const collectSignals = (
        */
       const outputVolts =
         effectiveVolts.get(fadeKey(instance.id, channel.id)) ??
-        channelVoltsOf(electrical, channel.id, instance.channelVolts);
+        targetVoltsOf(
+          electrical,
+          channel.id,
+          instance,
+          communicated.get(instance.id),
+        );
       const signal: AnalogSignal = {
         volts: pulledToReference ? 0 : outputVolts,
         referenceNet,
@@ -349,9 +398,17 @@ export const resolveAnalog = (
    * フェードのためにこの 3 つを書き換えずに済む。
    */
   effectiveVolts: ReadonlyMap<string, number> = new Map(),
+  /**
+   * 通信で決まったチャンネルの値（design.md §4.17）。
+   *
+   * **省略できる。** 停止中の配線チェック・役割配色・経路確認モードは
+   * 通信を解いておらず、そこでは手動設定のままでよい（`effectiveVolts`
+   * と同じ扱い）。
+   */
+  communicated: CommunicatedLevels = EMPTY_COMMUNICATED_LEVELS,
 ): AnalogResult => {
   const placed = placedComponents(document, definitions);
-  const signals = collectSignals(placed, netOf, effectiveVolts);
+  const signals = collectSignals(placed, netOf, effectiveVolts, communicated);
 
   const levels = new Map<string, DimmingLevel>();
   const netLevels = new Map<number, DimmingLevel>();

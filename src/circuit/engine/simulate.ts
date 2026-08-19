@@ -23,7 +23,7 @@ import type {
 import { fadeKey } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
-import { channelVoltsOf, resolveAnalog } from "./analog";
+import { resolveAnalog, targetVoltsOf } from "./analog";
 import { detectSelfInterruptingCoils } from "./chatter";
 import {
   advanceFade,
@@ -40,6 +40,10 @@ import {
   type OperatedContacts,
 } from "./graph";
 import { polarityAcross } from "./potential";
+import {
+  resolveCommunication,
+  type CommunicatedLevels,
+} from "./communication";
 import { evaluateCoil, operatedContactsOf } from "./relay";
 import {
   advanceTimer,
@@ -242,6 +246,7 @@ const advanceFades = (
   definitions: ComponentDefinitionRegistry,
   previous: ReadonlyMap<string, FadeState>,
   nowMs: number,
+  communicated: CommunicatedLevels,
 ): FadeEvaluation => {
   const fades = new Map<string, FadeState>();
   const effectiveVolts = new Map<string, number>();
@@ -255,7 +260,14 @@ const advanceFades = (
       const key = fadeKey(instance.id, channel.id);
       const state = advanceFade(
         previous.get(key),
-        channelVoltsOf(electrical, channel.id, instance.channelVolts),
+        // 通信で来た値もフェードの目標になる（design.md §4.17）——
+        // シーン切替に時間をかけるのが実機のフェードそのもの
+        targetVoltsOf(
+          electrical,
+          channel.id,
+          instance,
+          communicated.get(instance.id),
+        ),
         fadeMs,
         nowMs,
       );
@@ -367,11 +379,32 @@ export const simulate = (
    * `changedAtMs` が打ち直されて電圧が動かない。目標（`channelVolts`）は
    * 1 回の `simulate()` の中で変わらないので、ここで決めきってよい。
    */
+  /*
+   * **通信はループの外で 1 回だけ解く**（design.md §5.19）。
+   *
+   * 通信の相手を知るにはネットが要るので、入ってきた励磁状態で一度だけ
+   * 組む。タイマー（`previousTimers`）やフェードと同じ「呼び出し 1 回の
+   * あいだ固定」の扱いで、反復のたびに解き直すと**フェードの目標が
+   * 揺れて時間が進まない。**
+   *
+   * **既知の割り切り**：通信線をリレー接点で切り替える配線は、その接点が
+   * 収束の途中で動いても通信に反映されない。実機の通信線は常時接続で、
+   * 接点で切る配線を見たことが無いため、この単純化を採る（§6）。
+   */
+  const entryNets = buildNets(document, definitions, input, energized);
+  const communication = resolveCommunication(
+    document,
+    definitions,
+    entryNets.netOf,
+    input,
+  );
+
   const { fades, effectiveVolts } = advanceFades(
     document,
     definitions,
     input.previousFades ?? new Map<string, FadeState>(),
     nowMs,
+    communication.levels,
   );
 
   let status: SimulationStatus = "not-converged";
@@ -416,6 +449,7 @@ export const simulate = (
       definitions,
       nets.netOf,
       effectiveVolts,
+      communication.levels,
     );
     const nextOperated = operatedContactsOf(
       document,
@@ -468,6 +502,8 @@ export const simulate = (
   const analog = last.analog;
 
   const warnings: Warning[] = [
+    // 通信線の配線の不備（§5.19）。ループの外で解いた結果をそのまま出す
+    ...communication.warnings,
     ...detectPowerShortCircuits(document, definitions, lookup),
     ...detectDiodeOrientation(document, definitions, lookup),
     ...last.coilWarnings,

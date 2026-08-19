@@ -174,6 +174,14 @@ export const dimmingController16ch: ComponentDefinition = {
       };
     }),
     commonTerminals: [...CONTROLLER_GND],
+    /**
+     * 通信で受けた % を V へ直す規則（design.md §4.17）。
+     *
+     * **仕様書の「消灯時 10V、点灯時 0V」がこれ。** 実機も調整ボリュームで
+     * ここを合わせる。インスタンスの `dimmerSettings.inverted` で反転でき、
+     * 順特性の盤でも同じ機器を置ける。
+     */
+    outputCurve: INVERTED_0_10V_CURVE,
     minVolts: 0,
     maxVolts: 10,
     /**
@@ -195,6 +203,33 @@ export const dimmingController16ch: ComponentDefinition = {
      * 上限 60 秒は実機のシーンフェードで使う範囲を覆う値。
      */
     fade: { minFadeMs: 0, maxFadeMs: 60_000, defaultFadeMs: 0 },
+  },
+  /**
+   * 通信（design.md §4.17）。操作卓から受けた値を 0–10V の出力へ配る。
+   *
+   * **端子 1–8 がフェーダー、9–16 が照明スイッチ**という仕様書の
+   * 対応表をそのまま写している。名前（`fader1`・`light1`）は送り手の
+   * 操作子 ID と一致していればよく、エンジンはどちらの機器かを見ない。
+   *
+   * **ON/OFF 出力（24–39）はまだ割り当てない。** あちらは接点で、
+   * `analog-source` の機器に接点を持たせる構造判断が要る（次スコープ）。
+   */
+  communication: {
+    port: {
+      plusTerminal: "22",
+      minusTerminal: "23",
+      commonTerminals: [...CONTROLLER_GND],
+    },
+    receives: [
+      ...Array.from({ length: 8 }, (_, i) => ({
+        signalId: `fader${i + 1}`,
+        channelId: String(i + 1),
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        signalId: `light${i + 1}`,
+        channelId: String(i + 9),
+      })),
+    ],
   },
   // 上辺 16・下辺 16 の端子番号が重ならない幅。実機どおり横長
   visual: { width: 760, height: 260 },
@@ -639,7 +674,35 @@ export const dimmingConsole: ComponentDefinition = {
     kind: "relay",
     relay: {
       // **コイルは持たない。** 接点を動かすのは人が押す電源ボタン
-      operations: [{ id: "power", label: "電源" }],
+      operations: [
+        { id: "power", label: "電源" },
+        /*
+         * フェーダー 1–8（design.md §4.17）。**連続量**なので
+         * `kind: "level"`。接点は動かさず、通信で送る値になる。
+         *
+         * 既定 0%（消灯側）にしてあるのは、置いた直後に全灯しないため ——
+         * この盤は 0V = 100% の逆特性なので、%
+         * の既定を 100 にすると繋いだ瞬間に全部点く。
+         */
+        ...Array.from({ length: 8 }, (_, i) => ({
+          id: `fader${i + 1}`,
+          label: `フェーダー ${i + 1}`,
+          kind: "level" as const,
+          defaultPercent: 0,
+        })),
+        /*
+         * 照明スイッチ 1–8。入り切りなので既定の `"switch"`。
+         *
+         * ラベルを "照明 1" と短くしてあるのは表示都合 —— ボタンが 8 個
+         * 並ぶので、"照明スイッチ 1" のままだと 1 行 1 個になり、
+         * ノードからはみ出したぶんが切り取られる（`.content` は
+         * `overflow: hidden`）。
+         */
+        ...Array.from({ length: 8 }, (_, i) => ({
+          id: `light${i + 1}`,
+          label: `照明 ${i + 1}`,
+        })),
+      ],
       contacts: [
         {
           id: "c1",
@@ -661,7 +724,26 @@ export const dimmingConsole: ComponentDefinition = {
       ],
     },
   },
-  visual: { width: 250, height: 260 },
+  /**
+   * 通信（design.md §4.17）。フェーダーと照明スイッチをコントローラへ送る。
+   *
+   * **電源ボタンは送らない。** こちらは自分の無電圧接点（4-5-6）を
+   * 動かすもので、コントローラ側の割り当て（端子 32・38・39）は
+   * 今回のスコープ外（requirements.md 含まないもの）。
+   */
+  communication: {
+    port: {
+      plusTerminal: "7",
+      minusTerminal: "8",
+      commonTerminals: ["9", "12"],
+    },
+    transmits: [
+      ...Array.from({ length: 8 }, (_, i) => `fader${i + 1}`),
+      ...Array.from({ length: 8 }, (_, i) => `light${i + 1}`),
+    ],
+  },
+  // フェーダー 8 本とスイッチ 8 個が入る箱。横はボタンが 2 個並ぶ幅
+  visual: { width: 320, height: 520 },
   source: IN_HOUSE_SPEC_SOURCE,
   verified: true,
 };

@@ -271,8 +271,72 @@ export type AnalogTrigger = {
 export type DeviceOperation = {
   /** 定義内で一意な ID */
   id: string;
-  /** 画面に出す名前（"電源"） */
+  /** 画面に出す名前（"電源"・"フェーダー 1"） */
   label: string;
+  /**
+   * 操作子の性質（design.md §4.17）。省略は `"switch"`。
+   *
+   * - `"switch"` … 入り切り。接点を動かす（既存の操作卓の電源ボタン）
+   * - `"level"` … 0–100% の連続量。**フェーダー。** 接点ではなく
+   *   通信で送る値になる
+   *
+   * **入り切りと連続量を別の型に分けない。** どちらも「人が倒す盤の状態」
+   * であり、保存しない・停止で戻るという扱いも同じ。分けると
+   * `SimulationInput` も store も UI も 2 本になる。
+   */
+  kind?: "switch" | "level";
+  /** `"level"` のときの既定値（%）。省略は 0 */
+  defaultPercent?: number;
+};
+
+/**
+ * 通信ポート（design.md §4.17）。
+ *
+ * **電気モデルには参加しない。** 通信線が運ぶのは電位ではなく値で、
+ * ネットの分割にも `NetState` にも関係が無い。だから
+ * `ElectricalDefinition` の中ではなく、`ComponentDefinition` に
+ * `electrical` と並ぶ別の面として持たせる。
+ */
+export type CommunicationPort = {
+  /** ＋側（A）の端子 */
+  plusTerminal: string;
+  /** −側（B）の端子 */
+  minusTerminal: string;
+  /**
+   * 信号の基準（GND）となる端子。
+   *
+   * **差動信号は基準を共有していないと成立しない。** 0–10V の調光信号と
+   * まったく同じ話で（design.md §5.17）、繋ぎ忘れは実務で最も多い誤配線の
+   * 1 つ。エンジンはここが共通かどうかを見て、共通でなければ通信を
+   * 成立させない。
+   */
+  commonTerminals: readonly string[];
+};
+
+/**
+ * 受け取った値を自分の出力へ割り当てる指定（design.md §4.17）。
+ *
+ * **名前で対応させる。** 送り手と受け手は `signalId`（"fader1"）という
+ * 共有した名前だけで繋がり、エンジンはどちらの機器かを見ない
+ * （CLAUDE.md 設計原則 2）。
+ */
+export type CommunicationBinding = {
+  /** 受け取る値の名前。送り手の `DeviceOperation.id` と一致させる */
+  signalId: string;
+  /** 割り当て先の調光出力チャンネル（`analog-source` の `channels` の id） */
+  channelId: string;
+};
+
+/** 機器の通信の面（design.md §4.17） */
+export type CommunicationDefinition = {
+  port: CommunicationPort;
+  /**
+   * この機器が送る操作子の ID（`RelayDefinition.operations` の id）。
+   * 操作卓が持つ。
+   */
+  transmits?: readonly string[];
+  /** 受け取った値を出力へ割り当てる指定。コントローラが持つ */
+  receives?: readonly CommunicationBinding[];
 };
 
 /**
@@ -431,6 +495,18 @@ export type ElectricalDefinition =
       /** 既定の出力電圧。インスタンスの `channelVolts` で回路ごとに上書きできる */
       defaultVolts: number;
       /**
+       * 通信で受けた **% を V へ直す規則**（design.md §4.17）。
+       *
+       * 通信は「フェーダーが 70%」という値を運ぶだけで、それが何 V に
+       * なるかは**出す側の機器の設定**。実機も調整ボリュームで
+       * 「消灯時 10V・点灯時 0V」に合わせる。
+       *
+       * 省略すると通信を受けても電圧に直せないので、`receives` を持つ
+       * 機器は必ず持つ。インスタンスの `dimmerSettings.inverted` で
+       * 反転でき、そこは他の機器とまったく同じ扱い。
+       */
+      outputCurve?: AnalogCurve;
+      /**
        * フェード（design.md §5.18）。**持たない機器は即座に目標値を出す。**
        *
        * フェードするのは**出力する電圧そのもの**で、受け側の入力段は
@@ -497,6 +573,13 @@ export type ComponentDefinition = {
    * 汎用部品は実端子番号ではない旨を記す。
    */
   source?: string;
+  /**
+   * 通信の面（design.md §4.17）。持たない機器では `undefined`。
+   *
+   * **`electrical` と並べる。** 通信は電位を運ばないので電気モデルの
+   * 一部ではなく、ネットの分割にも配線色にも影響しない。
+   */
+  communication?: CommunicationDefinition;
   /**
    * 実機／公式データシートで端子データを検証済みか。
    * 未検証の型番を検証済みとして扱わないこと（CLAUDE.md 設計原則 5）。

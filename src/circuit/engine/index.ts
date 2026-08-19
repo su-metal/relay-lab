@@ -64,8 +64,18 @@ export {
   effectiveCurve,
   shapePercent,
   outputVoltsOf,
+  targetVoltsOf,
+  voltsForPercent,
   resolveAnalog,
 } from "./analog";
+export {
+  resolveCommunication,
+  EMPTY_COMMUNICATED_LEVELS,
+} from "./communication";
+export type {
+  CommunicatedLevels,
+  CommunicationFault,
+} from "./communication";
 export { collectDiodeEdges, inspectDiodes, spreadThroughDiodes } from "./diode";
 export type {
   DiodeBias,

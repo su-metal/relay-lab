@@ -21,6 +21,8 @@ import type { SimulationResult } from "@/circuit/types";
 
 import { useCircuitStore } from "./circuitStore";
 
+const EMPTY_LEVELS: ReadonlyMap<string, number> = new Map();
+
 const EMPTY_PRESSED: ReadonlySet<string> = new Set();
 
 /**
@@ -55,6 +57,14 @@ export type SimulationStore = {
    * 混ぜると「倒したのに動かない」が静かに起きる。
    */
   operatedDevices: ReadonlySet<string>;
+  /**
+   * 人が動かしている連続量の操作子（フェーダー・design.md §4.17）。
+   * キーは `operationKey()`、値は 0–100(%)。
+   *
+   * **`operatedDevices` と分けて持つ。** 値の型が違うだけで扱いは同じ ——
+   * 保存せず、停止すると既定へ戻る。
+   */
+  deviceLevels: ReadonlyMap<string, number>;
   /** 最新の結果。停止中は null */
   result: SimulationResult | null;
   /**
@@ -106,6 +116,16 @@ export type SimulationStore = {
   toggleOperation: (componentId: string, operationId: string) => void;
 
   /**
+   * 連続量の操作子を動かす（フェーダー・design.md §4.17）。
+   * 停止中は無視する（`toggleOperation` と同じ理由）。
+   */
+  setOperationLevel: (
+    componentId: string,
+    operationId: string,
+    percent: number,
+  ) => void;
+
+  /**
    * 現在の回路と入力で解き直す。
    * 入力（回路 / 押下状態 / 実行状態）が変わるたびに `useSimulationSync` が呼ぶ。
    */
@@ -134,6 +154,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
   running: false,
   pressedSwitches: EMPTY_PRESSED,
       operatedDevices: EMPTY_PRESSED,
+      deviceLevels: EMPTY_LEVELS,
     result: null,
   nowMs: 0,
   pathPreview: false,
@@ -148,6 +169,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       running: true,
       pressedSwitches: EMPTY_PRESSED,
       operatedDevices: EMPTY_PRESSED,
+      deviceLevels: EMPTY_LEVELS,
         result: null,
       nowMs: 0,
       // 実行が始まったら予測の色は下ろす。排他はここ 1 箇所で守る
@@ -161,6 +183,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       running: false,
       pressedSwitches: EMPTY_PRESSED,
       operatedDevices: EMPTY_PRESSED,
+      deviceLevels: EMPTY_LEVELS,
         result: null,
       nowMs: 0,
     });
@@ -179,6 +202,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
         pathPreview: false,
         pressedSwitches: EMPTY_PRESSED,
         operatedDevices: EMPTY_PRESSED,
+        deviceLevels: EMPTY_LEVELS,
       });
       return;
     }
@@ -188,6 +212,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       running: false,
       pressedSwitches: EMPTY_PRESSED,
       operatedDevices: EMPTY_PRESSED,
+      deviceLevels: EMPTY_LEVELS,
         result: null,
       nowMs: 0,
     });
@@ -220,6 +245,18 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       return { pressedSwitches: next };
     }),
 
+  setOperationLevel: (componentId, operationId, percent) =>
+    set((state) => {
+      if (!state.running && !state.pathPreview) return {};
+      if (!Number.isFinite(percent)) return {};
+      const key = operationKey(componentId, operationId);
+      const value = Math.min(Math.max(percent, 0), 100);
+      if (state.deviceLevels.get(key) === value) return {};
+      const next = new Map(state.deviceLevels);
+      next.set(key, value);
+      return { deviceLevels: next };
+    }),
+
   toggleOperation: (componentId, operationId) =>
     set((state) => {
       if (!state.running && !state.pathPreview) return {};
@@ -230,7 +267,13 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
     }),
 
   evaluate: () => {
-    const { running, pressedSwitches, operatedDevices, result } = get();
+    const {
+      running,
+      pressedSwitches,
+      operatedDevices,
+      deviceLevels,
+      result,
+    } = get();
 
     if (!running) {
       stopTicking();
@@ -249,6 +292,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       {
         pressedSwitches,
         operatedDevices,
+        deviceLevels,
         previousEnergizedRelays: result?.energizedRelays,
         previousTimers: result?.timers,
         // `previousTimers` と同じ性質。渡し忘れると調光出力の電圧が動かず、

@@ -48,6 +48,15 @@ export type SimulationInput = {
    * ■ で停止すると OFF 位置へ戻る（design.md §4.7）。
    */
   operatedDevices?: ReadonlySet<string>;
+  /**
+   * 人が動かしている連続量の操作子（フェーダー・design.md §4.17）。
+   * キーは `operationKey()`、値は 0–100(%)。
+   *
+   * **`operatedDevices` と同じく保存しない。** フェーダーの位置は盤の
+   * 状態であって配線ではないので、■ で停止すると既定へ戻る（§4.7）。
+   * 入り切りと分けて持つのは値の型が違うからで、扱いは同じ。
+   */
+  deviceLevels?: ReadonlyMap<string, number>;
 };
 
 /**
@@ -250,7 +259,16 @@ export type WarningCode =
    * 調光信号は繋がっているのに、基準（0V コモン）が共通でない。
    * 0–10V は基準に対する電圧なので信号が成立しない（design.md §5.17）
    */
-  | "analog-reference-mismatch";
+  | "analog-reference-mismatch"
+  /**
+   * 通信線の配線に不備がある（design.md §5.19）。
+   * 片側しか繋いでいない・＋と − が逆・基準（GND）が共通でない。
+   *
+   * **通信が成立しないだけで、電気的には何も起きない。** 短絡のように
+   * 危険なわけではないので `warning` だが、「繋いだのに操作卓が効かない」
+   * の原因はほぼこれ
+   */
+  | "communication-wiring";
 
 /**
  * 深刻度。

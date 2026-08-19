@@ -405,3 +405,66 @@
   gap: 4px;
   justify-content: center;
 }
+
+/*
+ * 連続量の操作子（フェーダー・design.md §4.17）。
+ *
+ * **1 本を 1 行に収める。** 操作卓は 8 本並ぶので、名前を上に置いて
+ * 2 行にすると 16 行になり、ノードの高さ（`visual.height`）に入らない。
+ * `.content` は `overflow: hidden` なので、はみ出したぶんは切り取られて
+ * 「フェーダーが 5 本しかない機器」に見える。
+ *
+ * 名前と % の幅を固定するのは `.pressButton` と同じ理由 —— 0% と 100% で
+ * 桁数が変わるたびにつまみの位置がずれると、狙った値で止められない。
+ */
+.faders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.fader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.faderName {
+  flex: 0 0 auto;
+  width: 64px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.faderRange {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  touch-action: none;
+}
+
+/*
+ * 指で動かす端末では、つまみだけが当たり判定だと掴めない（§8.12）。
+ * **箱は大きくせず**、レールの上下へ透明に広げる。
+ */
+@media (pointer: coarse) {
+  .faderRange {
+    height: 24px;
+  }
+}
+
+.faderValue {
+  flex: 0 0 auto;
+  width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
