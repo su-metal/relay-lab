@@ -66,8 +66,6 @@ describe("部品定義レジストリ", () => {
       "switch-pushbutton-nc",
       "switch-selector-no",
       "switch-selector-nc",
-      // 操作卓は人が倒すもの。パレットではスイッチに並ぶ（§4.16）
-      "dimming-console",
     ]);
     expect(listComponentDefinitions("relay").map((d) => d.id)).toEqual([
       "omron-my2n-dc24",
@@ -78,8 +76,6 @@ describe("部品定義レジストリ", () => {
       // 電磁接触器も電気的にはリレー。パレットのカテゴリも分けていないので
       // relay 側に並ぶ（design.md §4.12）
       "contactor-generic-3p-1a1b",
-      // カットリレーは接点を持つのでリレー。コイルが無いだけ（§4.16）
-      "light-controller-4ch",
     ]);
     // タイマーは電気的にはリレーだが、パレットのカテゴリは分けている
     // （design.md §5.13）。`category` で絞ると relay 側には出てこない
@@ -103,6 +99,12 @@ describe("部品定義レジストリ", () => {
       "dimmer-0-10v",
       "dimming-controller-16ch",
       "dimmer-phase-control-ac100v",
+      /*
+       * **電気的にはリレー／スイッチだが、探す場所は調光**（design.md §4.16）。
+       * MY4N を探している人のリレー一覧に調光の機器を混ぜない。
+       */
+      "light-controller-4ch",
+      "dimming-console",
     ]);
     expect(listComponentDefinitions()).toHaveLength(24);
   });

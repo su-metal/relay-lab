@@ -53,7 +53,8 @@ describe("部品検索", () => {
       "lamp-ac100v",
       "lamp-dimmable-ac100v",
     ]);
-    expect(ids("リレー")).toHaveLength(7);
+    // 調光の機器はリレー一覧に混ざらない（design.md §4.16）
+    expect(ids("リレー")).toHaveLength(6);
   });
 
   it("空白区切りの語は AND で絞り込む", () => {

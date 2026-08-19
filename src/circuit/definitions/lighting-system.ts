@@ -321,7 +321,15 @@ const LIGHT_CONTROLLER_CHANNELS = 4;
 export const lightController4ch: ComponentDefinition = {
   id: "light-controller-4ch",
   model: "ライトコントローラ（4回路）",
-  category: "relay",
+  /*
+   * **電気的にはリレーだが、カテゴリは調光。**
+   *
+   * パレットは電気的な分類ではなく**探す場所**。MY4N を探している人の
+   * リレー一覧に調光の機器が混ざると、リレー回路だけを組みたい人の
+   * 邪魔になる。`kind` は `relay` のままなので、エンジンから見た扱いは
+   * 何も変わらない（`category` は表示都合だけ・design.md §3.1）。
+   */
+  category: "dimmer",
   terminals: [
     // 調光信号入力 1–4 ＋ コモン。上辺
     ...Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => {
@@ -466,7 +474,8 @@ export const lightController4ch: ComponentDefinition = {
 export const dimmingConsole: ComponentDefinition = {
   id: "dimming-console",
   model: "調光操作卓",
-  category: "switch",
+  // 人が倒す機器だが、探す場所は調光（`lightController4ch` と同じ理由）
+  category: "dimmer",
   terminals: [
     {
       id: "1",

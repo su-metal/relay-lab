@@ -20,7 +20,7 @@ export const CATEGORY_LABELS: Record<ComponentCategory, string> = {
   diode: "ダイオード",
   terminal: "端子台",
   timer: "タイマー",
-  dimmer: "調光出力",
+  dimmer: "調光",
 };
 
 /** パレットに並べる順序。`componentDefinitions` の並びより優先する */
