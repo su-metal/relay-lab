@@ -425,6 +425,12 @@ export const buildLadder = (
             });
           }
         }
+        /*
+         * **コイルが無ければラダー図の出力にならない**（design.md §4.16）。
+         * カットリレーや操作卓のボタンは接点を持つが、母線間に置く
+         * 「出力」ではない —— 接点は上の枝として既に出ている。
+         */
+        if (!relay.coil) break;
         loads.push({
           componentId: instance.id,
           a: node(relay.coil.positiveTerminal),

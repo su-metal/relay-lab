@@ -53,7 +53,7 @@ describe("部品検索", () => {
       "lamp-ac100v",
       "lamp-dimmable-ac100v",
     ]);
-    expect(ids("リレー")).toHaveLength(6);
+    expect(ids("リレー")).toHaveLength(7);
   });
 
   it("空白区切りの語は AND で絞り込む", () => {

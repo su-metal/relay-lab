@@ -73,6 +73,21 @@ export type CoilPolarity =
 export type RelayContact = {
   /** リレー定義内で一意な接点 ID。`TerminalDefinition.contactGroup` と対応する */
   id: string;
+  /**
+   * アナログ量で動く接点（カットリレー・design.md §4.16）。
+   *
+   * **接点はコイルだけで動くものではない。** 明るさが動作点を下回ると
+   * 動作する接点が実機にある。省略時はコイル（または `operationId`）で動く。
+   */
+  trigger?: AnalogTrigger;
+  /**
+   * 人の操作で動く接点（操作卓のボタン・design.md §4.16）。
+   * `RelayDefinition.operations` の ID を指す。
+   *
+   * **1 台の機器の中で接点ごとに駆動源が違ってよい。** 操作卓は
+   * ボタンごとに別の接点を動かす。
+   */
+  operationId?: string;
   commonTerminal: string;
   /** a 接点の端子。b 接点のみ（`SPST-NC`）のリレーには存在しない */
   noTerminal?: string;
@@ -82,13 +97,27 @@ export type RelayContact = {
 };
 
 export type RelayDefinition = {
-  coil: {
+  /**
+   * コイル。**省略可能。**
+   *
+   * カットリレー（アナログ量で動く）にも操作卓のボタン（人が倒す）にも
+   * コイルは無い。実機に無いコイル端子を作って埋めるのは、`ncTerminal` を
+   * 空文字で埋めるのと同じ誤り（CLAUDE.md 設計原則 6）。
+   *
+   * 省略すると、コイルの極性違反もコイルの未接続も出なくなる ——
+   * 存在しないものは検査しない。
+   */
+  coil?: {
     voltage: number;
     currentType: "DC" | "AC";
     positiveTerminal: string;
     negativeTerminal: string;
     polarity: CoilPolarity;
   };
+  /** 人が操作できる状態。`RelayContact.operationId` から参照する */
+  operations?: readonly DeviceOperation[];
+  /** 接点を動かすために受ける調光入力。`AnalogTrigger.inputId` から参照する */
+  analogInputs?: readonly AnalogInputChannel[];
   contacts: RelayContact[];
 };
 
@@ -186,6 +215,58 @@ export type AnalogOutputChannel = {
  * ここを定義側の `AnalogCurve` に焼き付けると、順特性で使っている
  * 同じ機器を置けなくなる。
  */
+/**
+ * アナログ量で接点を動かす条件（design.md §4.16）。
+ *
+ * **見るのは % であって V ではない。** 実機の「0〜50% で動作」という
+ * 表記がそのまま設定になる。V で持つと、極性を反転した盤で動作点が
+ * 裏返り、同じ「30% で動作」が別の意味になってしまう。
+ */
+export type AnalogTrigger = {
+  /** どの調光入力を見るか（`RelayDefinition.analogInputs` の ID） */
+  inputId: string;
+  /**
+   * この明るさ（%）**以下**で動作する。実機の CUT ADJ. にあたる既定値で、
+   * インスタンスの `triggerPercents` で回路ごとに上書きできる。
+   */
+  defaultBelowPercent: number;
+  /** 設定できる下限・上限（実機のつまみの目盛りに相当） */
+  minPercent: number;
+  maxPercent: number;
+};
+
+/**
+ * 機器が持つ、人が操作できる状態（design.md §4.16）。
+ *
+ * **保存しない。** オルタネートスイッチと同じで、盤の状態は配線ではない
+ * （design.md §4.7）。■ で停止すると OFF 位置へ戻る。
+ */
+export type DeviceOperation = {
+  /** 定義内で一意な ID */
+  id: string;
+  /** 画面に出す名前（"電源"） */
+  label: string;
+};
+
+/**
+ * 機器が受ける調光入力の 1 回路（design.md §4.16）。
+ *
+ * `DimmingInput` と同じ形だが、**こちらは自分が点るためではなく
+ * 接点を動かすために受ける。** ライトコントローラの INPUT がこれ。
+ */
+export type AnalogInputChannel = {
+  /** 定義内で一意な ID。原則として端子番号と同じ文字列 */
+  id: string;
+  /** 調光信号（0–10V）を受ける端子 */
+  signalTerminal: string;
+  /** 信号の基準（0V コモン）となる端子 */
+  commonTerminal: string;
+  /** V → % の対応 */
+  curve: AnalogCurve;
+  /** 信号線が未接続のときに入力段が示すレベル（V） */
+  unconnectedVolts: number;
+};
+
 export type DimmerSettings = {
   /**
    * 極性を反転する（実機の DIP）。

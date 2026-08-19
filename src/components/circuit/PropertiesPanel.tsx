@@ -981,6 +981,12 @@ function ElectricalSection({
 
     case "relay": {
       const { coil } = electrical.relay;
+      /*
+       * **コイルの無い機器では「コイル」の節ごと出さない**（design.md §4.16）。
+       * カットリレーや操作卓のボタンに定格も極性も無いのに枠だけ出すと、
+       * 実機に無いものがあるように読める。接点の節（下）は変わらず出る。
+       */
+      if (!coil) return null;
       /**
        * コイル端子に +/− の印字があるか。
        *

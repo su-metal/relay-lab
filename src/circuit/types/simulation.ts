@@ -32,6 +32,14 @@ export type SimulationInput = {
    * オンディレイの接点が永久に動かない。
    */
   previousTimers?: ReadonlyMap<string, TimerState>;
+  /**
+   * 人が倒している機器の操作（`operationKey()` の文字列・design.md §4.16）。
+   *
+   * **保存しない。** 操作卓のボタンは盤の状態であって配線ではないので、
+   * オルタネートスイッチと同じく `CircuitDocument` には持たず、
+   * ■ で停止すると OFF 位置へ戻る（design.md §4.7）。
+   */
+  operatedDevices?: ReadonlySet<string>;
 };
 
 /**
@@ -158,6 +166,15 @@ export type AnalogResult = {
    * 「繋いだ信号線が効かない」という読めない挙動になる。
    */
   netLevelOf: ReadonlyMap<number, DimmingLevel>;
+  /**
+   * 接点を動かすために受けている調光入力（design.md §4.16）。
+   * キーは `analogInputKey()`（`componentId:inputId`）。
+   *
+   * **`levelOf`（自分の明るさ）とは別に持つ。** カットリレーは自分が
+   * 点るわけでも暗くなるわけでもなく、**受けた明るさで接点を動かす**だけ。
+   * 同じ Map に混ぜると、部品一覧に「明るさ」の無い機器の明るさが並ぶ。
+   */
+  inputLevelOf: ReadonlyMap<string, DimmingLevel>;
 };
 
 /** アナログ信号が 1 本も無い回路の解。毎回空の Map を作らないための共有値 */
@@ -165,6 +182,7 @@ export const EMPTY_ANALOG_RESULT: AnalogResult = {
   signalOf: new Map(),
   levelOf: new Map(),
   netLevelOf: new Map(),
+  inputLevelOf: new Map(),
 };
 
 /** 警告の種別（design.md §5.7 の 7 種に対応） */
@@ -235,6 +253,15 @@ export type SimulationResult = {
    * ここには入らない。
    */
   litLamps: ReadonlySet<string>;
+  /**
+   * コイル以外の駆動源で動いている接点（design.md §4.16）。
+   * componentId → 動作している接点 ID の集合。
+   *
+   * **`energizedRelays` と分けて持つ。** あちらは機器 1 台まるごとの話で、
+   * こちらは接点ごと —— 1 台の中で回路 1 のカットリレーだけが動作して
+   * いる、という状態が普通にある。
+   */
+  operatedContacts: ReadonlyMap<string, ReadonlySet<string>>;
   /**
    * アナログ層の解（design.md §5.17）。
    * 調光を使っていない回路では空（`EMPTY_ANALOG_RESULT`）。

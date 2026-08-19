@@ -69,6 +69,14 @@ export class UnionFind {
   }
 }
 
+/**
+ * componentId → 動作している接点 ID の集合（design.md §4.16）。
+ *
+ * コイル以外の駆動源（アナログ量・人の操作）で動く接点だけが入る。
+ * コイルで動く接点は `energizedRelays` が受け持つ。
+ */
+export type OperatedContacts = ReadonlyMap<string, ReadonlySet<string>>;
+
 export type NetAssignment = {
   /** `terminalKey(componentId, terminalId)` → ネット ID（0 始まりの連番） */
   netOf: Map<string, number>;
@@ -125,6 +133,7 @@ export const conductingPairs = (
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
   openContacts?: OpenContacts,
+  operatedContacts?: OperatedContacts,
 ): TerminalPair[] => {
   switch (electrical.kind) {
     case "switch": {
@@ -139,6 +148,7 @@ export const conductingPairs = (
         electrical.relay,
         energizedRelays.has(componentId),
         openContacts?.get(componentId),
+        operatedContacts?.get(componentId),
       );
     case "terminal":
       // 端子台は全端子が常時導通する。先頭端子に順に繋げば連結成分は 1 つになる
@@ -188,6 +198,7 @@ export const buildNets = (
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
   openContacts?: OpenContacts,
+  operatedContacts?: OperatedContacts,
 ): NetAssignment => {
   const dsu = new UnionFind();
   const orderedKeys: string[] = [];
@@ -229,6 +240,7 @@ export const buildNets = (
       input,
       energizedRelays,
       openContacts,
+      operatedContacts,
     )) {
       dsu.union(
         register(terminalKey(instance.id, a)),
@@ -356,6 +368,7 @@ export const openPairs = (
   electrical: ElectricalDefinition,
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
+  operatedContacts?: OperatedContacts,
 ): TerminalPair[] => {
   switch (electrical.kind) {
     case "switch": {
@@ -367,6 +380,7 @@ export const openPairs = (
       return openContactPairs(
         electrical.relay,
         energizedRelays.has(componentId),
+        operatedContacts?.get(componentId),
       );
     case "terminal":
     case "power":

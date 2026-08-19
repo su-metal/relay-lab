@@ -127,10 +127,12 @@ export const detectSelfInterruptingCoils = (
       );
       const netState = computeNetStates(document, definitions, nets);
       const lookup: NetLookup = { netOf: nets.netOf, netState };
+      const { coil } = relay;
+      if (!coil) return false;
       return evaluateCoil(
-        relay.coil,
-        stateAt(lookup, instance.id, relay.coil.positiveTerminal),
-        stateAt(lookup, instance.id, relay.coil.negativeTerminal),
+        coil,
+        stateAt(lookup, instance.id, coil.positiveTerminal),
+        stateAt(lookup, instance.id, coil.negativeTerminal),
       ).energized;
     };
 
@@ -167,7 +169,7 @@ export const detectSelfInterruptingCoils = (
       severity: "warning",
       message: `${name} のコイルが ${where}（${name} 自身の b 接点）を通して給電されています。${name} が動作した瞬間にこの接点が開いてコイル自身の給電が切れるため、実機では吸引と復帰を繰り返して唸ります（チャタリング）。自己保持の a 接点が別にあっても、接点が切り替わる一瞬は b も a も開くので止まりません。起動経路からこの接点を外してください（逆流を止める目的で入れているなら、代わりにダイオードを使います）。`,
       componentId: instance.id,
-      terminalId: culprits[0]?.nc ?? relay.coil.positiveTerminal,
+      terminalId: culprits[0]?.nc ?? relay.coil?.positiveTerminal,
     });
   }
 

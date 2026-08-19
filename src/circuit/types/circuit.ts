@@ -98,6 +98,15 @@ export type CircuitComponentInstance = {
    * （`kind: "dimmer"` と `dimming` を持つランプ）で効く。
    */
   dimmerSettings?: DimmerSettings;
+  /**
+   * アナログ量で動く接点の動作点（%）を**接点 ID ごとに**（design.md §4.16）。
+   * 省略時は定義の `defaultBelowPercent`。
+   *
+   * 実機の CUT ADJ.（回路ごとのつまみ）にあたる。**定義に固定しない** ——
+   * 4 回路それぞれ別の動作点に設定して使うものなので、固定すると
+   * 実機の使い方が再現できない（`presetMs` と同じ考え方）。
+   */
+  triggerPercents?: Readonly<Record<string, number>>;
 };
 
 export type CircuitDocument = {

@@ -160,6 +160,8 @@ const coilNetIndex = (
     if (electrical.kind !== "relay") continue;
 
     const { coil } = electrical.relay;
+    // コイルの無い機器（カットリレー・操作卓）に還流ダイオードは付かない
+    if (!coil) continue;
     const plusNet = netOf.get(terminalKey(instance.id, coil.positiveTerminal));
     const minusNet = netOf.get(terminalKey(instance.id, coil.negativeTerminal));
     if (plusNet === undefined || minusNet === undefined) continue;

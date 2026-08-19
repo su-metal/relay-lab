@@ -121,12 +121,15 @@ const energizedLoads = (
      */
     if (electrical.kind === "relay" && coilEnergized(result, instance.id, electrical)) {
       const { coil } = electrical.relay;
-      const load = orientLoad(
-        result,
-        instance.id,
-        coil.positiveTerminal,
-        coil.negativeTerminal,
-      );
+      // コイルの無い機器（カットリレー・操作卓）に電流の向きは描けない
+      const load =
+        coil &&
+        orientLoad(
+          result,
+          instance.id,
+          coil.positiveTerminal,
+          coil.negativeTerminal,
+        );
       if (load) loads.push(load);
     }
 

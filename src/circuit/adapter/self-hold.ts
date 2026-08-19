@@ -122,14 +122,11 @@ export const buildSelfHold = (
      * コイル（MY2N / MY4N）は逆接でも励磁するので、定義上の
      * `positiveTerminal` が 0V 側にいることがある（design.md §5.3）。
      */
-    const coilPlus = terminalKey(
-      instance.id,
-      electrical.relay.coil.positiveTerminal,
-    );
-    const coilMinus = terminalKey(
-      instance.id,
-      electrical.relay.coil.negativeTerminal,
-    );
+    const { coil } = electrical.relay;
+    // コイルが無ければ自己保持のしようがない（design.md §4.16）
+    if (!coil) continue;
+    const coilPlus = terminalKey(instance.id, coil.positiveTerminal);
+    const coilMinus = terminalKey(instance.id, coil.negativeTerminal);
     const plusState = result.netState.get(result.netOf.get(coilPlus) ?? -1);
     const reversed = !reachesPlus(plusState);
 

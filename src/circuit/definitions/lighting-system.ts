@@ -26,6 +26,9 @@ import { INVERTED_0_10V_CURVE } from "./dimming";
 const IN_HOUSE_SPEC_SOURCE =
   "社内仕様書（ver.1.1・平成20年3月21日作成）の端子番号表と照合済み。型番・製造元は伏せてある";
 
+const PC_CONTROLLER_SPEC_SOURCE =
+  "社内仕様書（02.4.9 作成）の接続図と仕様表と照合済み。型番・製造元は伏せてある";
+
 const AC_DIMMER_SPEC_SOURCE =
   "社内仕様書（17/05/06 作成）の接続図と仕様表と照合済み。型番・製造元は伏せてある";
 
@@ -292,5 +295,354 @@ export const phaseControlDimmer: ComponentDefinition = {
   // 上辺 3・下辺 3 の端子と、本体に出す明るさ（"0.0V ／ 100%"）が収まる幅
   visual: { width: 260, height: 190 },
   source: AC_DIMMER_SPEC_SOURCE,
+  verified: true,
+};
+
+// ---------------------------------------------------------------------------
+// ライトコントローラ（4 回路・カットリレー付き）
+// ---------------------------------------------------------------------------
+
+const LIGHT_CONTROLLER_CHANNELS = 4;
+
+/**
+ * ライトコントローラ（4 回路・DC24V）。
+ *
+ * 0–10V の調光信号を受け、**明るさが動作点を下回るとカットリレーが動作する。**
+ * 実機は受けた信号を PWM へ変換して出すが、**波形は扱わない**（design.md §6）
+ * —— この盤で読みたいのは「絞ったらリレーが落ちる」という連動のほうなので、
+ * PWM 出力は端子として出すだけにしてある。
+ *
+ * **コイルを持たない。** カットリレーの接点はコイルではなくアナログ量で
+ * 動く。実機に無いコイル端子を作って埋めない（CLAUDE.md 設計原則 6）。
+ *
+ * 動作点は実機の CUT ADJ.（回路ごとのつまみ）にあたり、インスタンスの
+ * `triggerPercents` が持つ。4 回路それぞれ別の動作点に設定できる。
+ */
+export const lightController4ch: ComponentDefinition = {
+  id: "light-controller-4ch",
+  model: "ライトコントローラ（4回路）",
+  category: "relay",
+  terminals: [
+    // 調光信号入力 1–4 ＋ コモン。上辺
+    ...Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => {
+      const id = `IN${i + 1}`;
+      return {
+        id,
+        label: String(i + 1),
+        number: String(i + 1),
+        role: "analog_signal" as const,
+        description: `INPUT ${i + 1} / 調光信号入力（0–10V）`,
+        position: { x: (i + 1) / (LIGHT_CONTROLLER_CHANNELS + 2), y: 0 },
+        side: "top" as const,
+      };
+    }),
+    {
+      id: "ING",
+      label: "G",
+      number: "G",
+      role: "analog_common",
+      description: "INPUT G / 調光信号の基準",
+      position: {
+        x: (LIGHT_CONTROLLER_CHANNELS + 1) / (LIGHT_CONTROLLER_CHANNELS + 2),
+        y: 0,
+      },
+      side: "top",
+    },
+    // カットリレー接点 1–4 ＋ コモン。下辺
+    ...Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => {
+      const id = `CR${i + 1}`;
+      return {
+        id,
+        label: String(i + 1),
+        number: String(i + 1),
+        role: "normally_open" as const,
+        contactGroup: `c${i + 1}`,
+        description: `CUT RELAY ${i + 1} / カットリレー接点（第${i + 1}回路）`,
+        position: { x: (i + 1) / (LIGHT_CONTROLLER_CHANNELS + 2), y: 1 },
+        side: "bottom" as const,
+      };
+    }),
+    {
+      id: "CRG",
+      label: "G",
+      number: "G",
+      role: "common",
+      description: "CUT RELAY G / カットリレー接点のコモン（4 回路共通）",
+      position: {
+        x: (LIGHT_CONTROLLER_CHANNELS + 1) / (LIGHT_CONTROLLER_CHANNELS + 2),
+        y: 1,
+      },
+      side: "bottom",
+    },
+    // PWM 出力。右辺。波形は扱わないので端子だけ
+    ...Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => ({
+      id: `OUT${i + 1}`,
+      label: `${i + 1}`,
+      number: `${i + 1}`,
+      role: "generic" as const,
+      description: `出力 ${i + 1} / PWM 出力（波形は扱わない）`,
+      position: { x: 1, y: (i + 1) / (LIGHT_CONTROLLER_CHANNELS + 1) },
+      side: "right" as const,
+      optional: true,
+    })),
+    // 電源。左辺
+    {
+      id: "24V",
+      label: "24V",
+      number: "24V",
+      role: "power_positive",
+      description: "24V / 電源 DC24V",
+      position: { x: 0, y: 0.35 },
+      side: "left",
+    },
+    {
+      id: "GND",
+      label: "GND",
+      number: "GND",
+      role: "power_zero",
+      description: "GND / 電源 0V",
+      position: { x: 0, y: 0.65 },
+      side: "left",
+    },
+  ],
+  electrical: {
+    kind: "relay",
+    relay: {
+      // **コイルは持たない。** 接点はアナログ量で動く（design.md §4.16）
+      analogInputs: Array.from(
+        { length: LIGHT_CONTROLLER_CHANNELS },
+        (_, i) => ({
+          id: `in${i + 1}`,
+          signalTerminal: `IN${i + 1}`,
+          commonTerminal: "ING",
+          curve: INVERTED_0_10V_CURVE,
+          // 入力段はプルダウン。逆特性のこの盤では未接続＝100%（全灯）
+          unconnectedVolts: 0,
+        }),
+      ),
+      contacts: Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => ({
+        id: `c${i + 1}`,
+        commonTerminal: "CRG",
+        noTerminal: `CR${i + 1}`,
+        // b 接点は実機に無い。a 接点のみ（G7L と同じ形）
+        type: "SPST-NO" as const,
+        trigger: {
+          inputId: `in${i + 1}`,
+          // 仕様書の「0〜50% で動作（調整可）」。既定は中ほどに置く
+          defaultBelowPercent: 25,
+          minPercent: 0,
+          maxPercent: 50,
+        },
+      })),
+    },
+  },
+  // 上辺 5・下辺 5・左右に端子が出るぶんの幅
+  visual: { width: 340, height: 230 },
+  source: PC_CONTROLLER_SPEC_SOURCE,
+  verified: true,
+};
+
+// ---------------------------------------------------------------------------
+// 調光操作卓
+// ---------------------------------------------------------------------------
+
+/**
+ * 調光操作卓（15 端子・AC100V）。
+ *
+ * 8 フェーダー・8 シーン記憶を持つ操作卓だが、**このシミュレーターが扱うのは
+ * 端子に出てくるものだけ。** シーンの記憶やフェーダーの操作は機器の中の話で、
+ * 配線からは読めない（design.md §6）。
+ *
+ * 端子として意味を持つのは電源の状態に連動する接点で、2 種類ある。
+ *
+ * - **無電圧接点**（4-5-6）… COM が NC / NO のどちらかへ倒れる c 接点
+ * - **オープンコレクタ出力**（2・3）… 動作すると GND へ落ちる。
+ *   GND（9）をコモンにした c 接点として表す —— 実機で「落とす」先が
+ *   GND なのだから、コモンに GND を置くのがいちばん実機に近い
+ *
+ * **コイルを持たない。** 接点を動かすのは人が押す電源ボタンで、
+ * これは `operations` として持つ。倒した状態は保存しない（§4.7 と同じ）。
+ */
+export const dimmingConsole: ComponentDefinition = {
+  id: "dimming-console",
+  model: "調光操作卓",
+  category: "switch",
+  terminals: [
+    {
+      id: "1",
+      label: "1",
+      number: "1",
+      role: "power_positive",
+      description: "端子 1 / ＋12V 出力（100mA）",
+      position: { x: 1, y: 0.12 },
+      side: "right",
+      optional: true,
+    },
+    {
+      id: "2",
+      label: "2",
+      number: "2",
+      role: "normally_open",
+      contactGroup: "c2",
+      description: "端子 2 / AUX1 オープンコレクタ出力（電源 ノーマルオープン）",
+      position: { x: 1, y: 0.32 },
+      side: "right",
+    },
+    {
+      id: "3",
+      label: "3",
+      number: "3",
+      role: "normally_closed",
+      contactGroup: "c2",
+      description: "端子 3 / AUX2 オープンコレクタ出力（電源 ノーマルクローズ）",
+      position: { x: 1, y: 0.52 },
+      side: "right",
+    },
+    {
+      id: "4",
+      label: "4",
+      number: "4",
+      role: "normally_closed",
+      contactGroup: "c1",
+      description: "端子 4 / 電源 ノーマルクローズ（無電圧接点）",
+      position: { x: 0, y: 0.2 },
+      side: "left",
+    },
+    {
+      id: "5",
+      label: "5",
+      number: "5",
+      role: "common",
+      contactGroup: "c1",
+      description: "端子 5 / 電源 コモン（無電圧接点）",
+      position: { x: 0, y: 0.4 },
+      side: "left",
+    },
+    {
+      id: "6",
+      label: "6",
+      number: "6",
+      role: "normally_open",
+      contactGroup: "c1",
+      description: "端子 6 / 電源 ノーマルオープン（無電圧接点）",
+      position: { x: 0, y: 0.6 },
+      side: "left",
+    },
+    {
+      id: "7",
+      label: "7",
+      number: "7",
+      role: "generic",
+      description: "端子 7 / 通信線 ＋",
+      position: { x: 1, y: 0.72 },
+      side: "right",
+      optional: true,
+    },
+    {
+      id: "8",
+      label: "8",
+      number: "8",
+      role: "generic",
+      description: "端子 8 / 通信線 −",
+      position: { x: 1, y: 0.88 },
+      side: "right",
+      optional: true,
+    },
+    {
+      id: "9",
+      label: "9",
+      number: "9",
+      role: "power_zero",
+      description: "端子 9 / GND（オープンコレクタ出力のコモン）",
+      position: { x: 0, y: 0.8 },
+      side: "left",
+    },
+    {
+      id: "10",
+      label: "10",
+      number: "10",
+      role: "generic",
+      description: "端子 10 / フォトカプラ入力 ＋（DC12〜24V）",
+      position: { x: 0.2, y: 1 },
+      side: "bottom",
+      optional: true,
+    },
+    {
+      id: "11",
+      label: "11",
+      number: "11",
+      role: "generic",
+      description: "端子 11 / フォトカプラ入力 −（0V）",
+      position: { x: 0.35, y: 1 },
+      side: "bottom",
+      optional: true,
+    },
+    {
+      id: "12",
+      label: "12",
+      number: "12",
+      role: "power_zero",
+      description: "端子 12 / GND",
+      position: { x: 0.5, y: 1 },
+      side: "bottom",
+      optional: true,
+    },
+    {
+      id: "13",
+      label: "13",
+      number: "13",
+      role: "generic",
+      description: "端子 13 / FG（接地）",
+      position: { x: 0.65, y: 1 },
+      side: "bottom",
+      optional: true,
+    },
+    {
+      id: "14",
+      label: "14",
+      number: "14",
+      role: "power_line",
+      description: "端子 14 / AC100V（L）",
+      position: { x: 0.8, y: 1 },
+      side: "bottom",
+    },
+    {
+      id: "15",
+      label: "15",
+      number: "15",
+      role: "power_neutral",
+      description: "端子 15 / AC100V（N）",
+      position: { x: 0.93, y: 1 },
+      side: "bottom",
+    },
+  ],
+  electrical: {
+    kind: "relay",
+    relay: {
+      // **コイルは持たない。** 接点を動かすのは人が押す電源ボタン
+      operations: [{ id: "power", label: "電源" }],
+      contacts: [
+        {
+          id: "c1",
+          operationId: "power",
+          commonTerminal: "5",
+          noTerminal: "6",
+          ncTerminal: "4",
+          type: "SPDT",
+        },
+        {
+          // オープンコレクタ出力。落とす先が GND なので GND をコモンに置く
+          id: "c2",
+          operationId: "power",
+          commonTerminal: "9",
+          noTerminal: "2",
+          ncTerminal: "3",
+          type: "SPDT",
+        },
+      ],
+    },
+  },
+  visual: { width: 250, height: 260 },
+  source: IN_HOUSE_SPEC_SOURCE,
   verified: true,
 };

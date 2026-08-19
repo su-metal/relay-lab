@@ -33,3 +33,20 @@ export const terminalKey = (componentId: string, terminalId: string): string =>
 /** `TerminalRef` から文字列キーを作る */
 export const terminalRefKey = (ref: TerminalRef): string =>
   terminalKey(ref.componentId, ref.terminalId);
+
+/**
+ * 機器の操作を指すキー（design.md §4.16）。
+ *
+ * `terminalKey()` と同じ理由でここに閉じる —— 各所で `` `${a}:${b}` `` を
+ * 手書きすると、書式がずれた瞬間に「倒したのに動かない」が静かに起きる。
+ */
+export const operationKey = (componentId: string, operationId: string): string =>
+  `${componentId}:${operationId}`;
+
+/** 接点を指すキー。1 台の機器の中で接点ごとに駆動源が違うため要る */
+export const contactKey = (componentId: string, contactId: string): string =>
+  `${componentId}:${contactId}`;
+
+/** 接点を動かすために受けている調光入力を指すキー */
+export const analogInputKey = (componentId: string, inputId: string): string =>
+  `${componentId}:${inputId}`;

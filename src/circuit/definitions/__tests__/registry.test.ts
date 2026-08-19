@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("22 定義が登録されている", () => {
+  it("24 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
@@ -38,10 +38,12 @@ describe("部品定義レジストリ", () => {
       "dimmer-0-10v",
       "dimming-controller-16ch",
       "dimmer-phase-control-ac100v",
+      "light-controller-4ch",
+      "dimming-console",
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(22);
+    expect(componentRegistry.size).toBe(24);
   });
 
   it("型番から定義を取得できる", () => {
@@ -64,6 +66,8 @@ describe("部品定義レジストリ", () => {
       "switch-pushbutton-nc",
       "switch-selector-no",
       "switch-selector-nc",
+      // 操作卓は人が倒すもの。パレットではスイッチに並ぶ（§4.16）
+      "dimming-console",
     ]);
     expect(listComponentDefinitions("relay").map((d) => d.id)).toEqual([
       "omron-my2n-dc24",
@@ -74,6 +78,8 @@ describe("部品定義レジストリ", () => {
       // 電磁接触器も電気的にはリレー。パレットのカテゴリも分けていないので
       // relay 側に並ぶ（design.md §4.12）
       "contactor-generic-3p-1a1b",
+      // カットリレーは接点を持つのでリレー。コイルが無いだけ（§4.16）
+      "light-controller-4ch",
     ]);
     // タイマーは電気的にはリレーだが、パレットのカテゴリは分けている
     // （design.md §5.13）。`category` で絞ると relay 側には出てこない
@@ -98,7 +104,7 @@ describe("部品定義レジストリ", () => {
       "dimming-controller-16ch",
       "dimmer-phase-control-ac100v",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(22);
+    expect(listComponentDefinitions()).toHaveLength(24);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -172,8 +178,17 @@ describe("部品定義レジストリ", () => {
                           electrical.cutoffTerminal,
                         ]
                       : [
-                        electrical.relay.coil.positiveTerminal,
-                        electrical.relay.coil.negativeTerminal,
+                        // コイルの無い機器（カットリレー・操作卓）もある（§4.16）
+                        ...(electrical.relay.coil
+                          ? [
+                              electrical.relay.coil.positiveTerminal,
+                              electrical.relay.coil.negativeTerminal,
+                            ]
+                          : []),
+                        // 調光入力を持つ機器はその端子も参照する
+                        ...(electrical.relay.analogInputs ?? []).flatMap(
+                          (input) => [input.signalTerminal, input.commonTerminal],
+                        ),
                         // NC 端子は a 接点のみのリレーには存在しない。
                         // 未定義を混ぜると「実在しない端子を参照している」判定になる
                         ...electrical.relay.contacts.flatMap((c) =>
@@ -331,10 +346,13 @@ describe("OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）", () => {
     if (d2.electrical.kind !== "relay" || my4n.electrical.kind !== "relay") {
       throw new Error("relay ではない");
     }
-    expect(d2.electrical.relay.coil.polarity).toBe("strict");
-    expect(my4n.electrical.relay.coil.polarity).toBe("none");
-    expect({ ...d2.electrical.relay.coil, polarity: null }).toEqual({
-      ...my4n.electrical.relay.coil,
+    const d2Coil = d2.electrical.relay.coil;
+    const my4nCoil = my4n.electrical.relay.coil;
+    if (!d2Coil || !my4nCoil) throw new Error("コイルを持つはず");
+    expect(d2Coil.polarity).toBe("strict");
+    expect(my4nCoil.polarity).toBe("none");
+    expect({ ...d2Coil, polarity: null }).toEqual({
+      ...my4nCoil,
       polarity: null,
     });
   });

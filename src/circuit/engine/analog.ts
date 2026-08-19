@@ -37,7 +37,11 @@ import type {
   ElectricalDefinition,
   AnalogCurve,
 } from "@/circuit/types";
-import { EMPTY_ANALOG_RESULT, terminalKey } from "@/circuit/types";
+import {
+  analogInputKey,
+  EMPTY_ANALOG_RESULT,
+  terminalKey,
+} from "@/circuit/types";
 
 /**
  * 調光出力が実際に出す電圧。範囲外は定義の上下限へ丸める。
@@ -379,8 +383,40 @@ export const resolveAnalog = (
     }
   }
 
-  if (signals.size === 0 && levels.size === 0) return EMPTY_ANALOG_RESULT;
-  return { signalOf: signals, levelOf: levels, netLevelOf: netLevels };
+  /*
+   * ③ 接点を動かすために受けている調光入力（カットリレー・design.md §4.16）。
+   *
+   * **`levelOf` には入れない。** カットリレーは自分が点るわけでも暗くなる
+   * わけでもなく、受けた明るさで接点を動かすだけ。混ぜると部品一覧に
+   * 「明るさ」の無い機器の明るさが並ぶ。
+   */
+  const inputLevels = new Map<string, DimmingLevel>();
+  for (const { instance, definition } of placed) {
+    const { electrical } = definition;
+    if (electrical.kind !== "relay") continue;
+    for (const input of electrical.relay.analogInputs ?? []) {
+      inputLevels.set(
+        analogInputKey(instance.id, input.id),
+        inputLevel(
+          input,
+          instance.dimmerSettings,
+          instance.id,
+          netOf,
+          signals,
+        ),
+      );
+    }
+  }
+
+  if (signals.size === 0 && levels.size === 0 && inputLevels.size === 0) {
+    return EMPTY_ANALOG_RESULT;
+  }
+  return {
+    signalOf: signals,
+    levelOf: levels,
+    netLevelOf: netLevels,
+    inputLevelOf: inputLevels,
+  };
 };
 
 /**

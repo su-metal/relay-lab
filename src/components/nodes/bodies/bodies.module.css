@@ -397,3 +397,11 @@
   font-size: 9px;
   opacity: 0.6;
 }
+
+/* 機器の操作ボタン（操作卓・design.md §4.16）。複数あるので折り返す */
+.operations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}

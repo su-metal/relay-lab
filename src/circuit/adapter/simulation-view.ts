@@ -139,6 +139,11 @@ export type DeviceSimulationState = {
    */
   dimming?: DimmingLevel;
   /**
+   * コイル以外の駆動源で動いている接点の ID（design.md §4.16）。
+   * カットリレーと操作卓のボタンで動く接点が入る。
+   */
+  operatedContacts?: ReadonlySet<string>;
+  /**
    * 調光出力が出している電圧（V）を**チャンネルごとに**（design.md §5.17）。
    * `kind: "analog-source"` 以外は持たない。
    *
@@ -208,7 +213,11 @@ export const loadNetIds = (
     if (!definition) continue;
     const { electrical } = definition;
 
-    if (electrical.kind === "relay" && energizedCoils.has(instance.id)) {
+    if (
+      electrical.kind === "relay" &&
+      electrical.relay.coil &&
+      energizedCoils.has(instance.id)
+    ) {
       add(instance.id, electrical.relay.coil.positiveTerminal);
       add(instance.id, electrical.relay.coil.negativeTerminal);
     }
@@ -390,6 +399,7 @@ export const buildSimulationView = (
       cutOff,
       timer: timerDisplayOf(instance, definition, result, nowMs),
       dimming: result.analog.levelOf.get(instance.id),
+      operatedContacts: result.operatedContacts.get(instance.id),
       channelVolts:
         definition.electrical.kind === "analog-source"
           ? definition.electrical.channels.map((channel) => ({

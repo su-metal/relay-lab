@@ -8,11 +8,14 @@ export type {
 
 export type {
   AnalogCurve,
+  AnalogInputChannel,
+  AnalogTrigger,
   AnalogOutputChannel,
   CoilPolarity,
   ComponentCategory,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  DeviceOperation,
   DimmerSettings,
   DimmingInput,
   ElectricalDefinition,
@@ -22,7 +25,10 @@ export type {
 } from "./component";
 
 export type { CircuitConnection, TerminalRef } from "./connection";
-export { terminalKey, terminalRefKey } from "./connection";
+export { terminalKey,
+  operationKey,
+  contactKey,
+  analogInputKey, terminalRefKey } from "./connection";
 
 export type {
   CircuitComponentInstance,

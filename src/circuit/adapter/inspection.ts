@@ -271,12 +271,16 @@ const restingNets = (
 export const inspectContacts = (
   relay: RelayDefinition,
   energized: boolean | undefined,
+  operatedContacts?: ReadonlySet<string>,
 ): ContactInspection[] => {
   // COM の相手を引ける形にする。COM 端子はリレー内で一意なのでキーにできる
   const closedOf =
     energized === undefined
       ? undefined
-      : new Map<string, string>(closedContactPairs(relay, energized));
+      : new Map<string, string>(
+          // コイル以外の駆動源で動く接点も同じ規則で読む（design.md §4.16）
+          closedContactPairs(relay, energized, undefined, operatedContacts),
+        );
 
   const sideOf = (contact: RelayContact): ClosedSide | undefined => {
     if (!closedOf) return undefined;

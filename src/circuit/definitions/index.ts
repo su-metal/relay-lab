@@ -30,7 +30,9 @@ import { genericContactor } from "./contactors";
 import { dimmableLampAc100v, dimmerOutput0to10v } from "./dimming";
 import { genericDiode } from "./diodes";
 import {
+  dimmingConsole,
   dimmingController16ch,
+  lightController4ch,
   phaseControlDimmer,
 } from "./lighting-system";
 import { ac100vLamp, dc24vLamp } from "./lamps";
@@ -71,6 +73,8 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   dimmerOutput0to10v,
   dimmingController16ch,
   phaseControlDimmer,
+  lightController4ch,
+  dimmingConsole,
   genericDiode,
   genericTerminalBlock,
 ];
@@ -120,6 +124,8 @@ export const listComponentDefinitions = (
 
 export {
   ac100vLamp,
+  dimmingConsole,
+  lightController4ch,
   ac100vPowerSupply,
   dimmingController16ch,
   phaseControlDimmer,
