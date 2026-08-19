@@ -26,10 +26,15 @@ npm test  534 passed (37 files)
 
 ```
 origin/main      27eecb5   Step 20〜22 マージ済み・本番デプロイ済み
-origin/dev_v0.1  f64cf9c   design.md の配布経路の記述だけが main 未反映
+origin/dev_v0.1  main を取り込み済み。main に未反映なのは下の 2 件だけ
 ```
 
-**`dev_v0.1` と `main` は枝分かれしている。** `dev_v0.1` に main のマージコミット（`27eecb5`）が入っていない。中身は同じだが、次に `dev_v0.1` → `main` の PR を出す前に **`git merge origin/main` で揃えておくこと** —— 前回これを怠って `design.md` の Step 番号が衝突した（`git log` の「main を取り込む」コミット参照）。
+`dev_v0.1` にあって `main` に無いもの（＝次のリリースで出る分）。**どちらもドキュメントだけで、コードは main と同じ。**
+
+- `design.md` §9.1 … 配布経路を GitHub Actions の 1 本に決めた理由
+- `requirements.md` … この引き継ぎ
+
+**`dev_v0.1` は main を取り込み済み**（マージコミットあり）。この状態を保つこと —— 以前これを怠って `design.md` の Step 番号が衝突した（`git log` の「main を取り込む」コミット参照）。`dev_v0.1` → `main` の PR を出す前には毎回 `git merge origin/main` で揃える。
 
 作業ブランチは `dev_v0.1`。`main` への push はそのまま本番デプロイ。
 
