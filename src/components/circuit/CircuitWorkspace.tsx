@@ -24,6 +24,7 @@ import { useSimulationStore } from "@/store/simulationStore";
 import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
 import { HelpDialog } from "./HelpDialog";
+import { LadderDialog } from "./LadderDialog";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { PathPreviewList } from "./PathPreviewList";
@@ -83,6 +84,13 @@ function Workspace() {
 
   // ヘルプの開閉も画面の状態。保存対象でも履歴の対象でもない（design.md §8.10）
   const [helpOpen, setHelpOpen] = useState(false);
+
+  /*
+   * ラダー図の開閉（design.md §8.15）。ヘルプと同じく画面の状態で、
+   * **図そのものは保存しない** —— 配線から毎回組み直せる派生物なので、
+   * 持つと配線と食い違ったまま残る
+   */
+  const [ladderOpen, setLadderOpen] = useState(false);
 
   /**
    * 画面モード（design.md §8.12）。**幅と入力は別々に見る。**
@@ -179,6 +187,7 @@ function Workspace() {
         onExportFile={persistence.exportToFile}
         onImportFile={persistence.importFromFile}
         onOpenHelp={() => setHelpOpen(true)}
+        onOpenLadder={() => setLadderOpen(true)}
       />
 
       {persistence.notices.length > 0 && (
@@ -232,6 +241,8 @@ function Workspace() {
       )}
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      <LadderDialog open={ladderOpen} onClose={() => setLadderOpen(false)} />
     </div>
   );
 }

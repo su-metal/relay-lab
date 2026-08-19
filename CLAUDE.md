@@ -26,6 +26,8 @@
 
 8. **`energizedRelays` は「接点が切り替わっている」であって「コイルが励磁している」ではない。** 遅延なしのリレーでは一致するが、タイマーは設定時間のあいだ「コイルは入っているが接点はまだ」の状態にいる。コイルの側を見たいときは `coilEnergized()` を使う —— 取り違えると、計測中のタイマーのコイル配線が非通電（灰色）に見える（`design.md` §5.13）。
 
+9. **ラダー図は配線から導く派生物で、保存対象ではない。** `CircuitDocument` にも履歴にも持たない（`design.md` §5.16）。持った瞬間に「図と実配線のどちらが正か」という問いが生まれ、片方だけ直った状態が残る。同じ理由で、変換は実体配線 → ラダー図の 1 方向だけ。**接点は開閉に関わらず枝として残す** —— ラダー図は回路の論理であって今の状態のスナップショットではないので、`conductingPairs()`（今どちらへ倒れているか）を使わない。
+
 ## ドキュメント更新トリガー
 
 該当する変更を入れたら、**同じ作業の中で**ドキュメントも更新する。
@@ -62,3 +64,13 @@ Stop フックは 2 本ある（`.claude/settings.json`）。
 | `check-docs-fresh.mjs` | 上記のドキュメント更新漏れを検出する。初回コミット以降のみ動作 |
 
 タスク分解と進捗は `TodoWrite` で管理する（`tasklist.md` は作らない）。記述はすべて日本語。
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
