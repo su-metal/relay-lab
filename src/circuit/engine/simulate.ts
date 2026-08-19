@@ -9,6 +9,7 @@
  */
 
 import type {
+  AnalogResult,
   CircuitDocument,
   ComponentDefinitionRegistry,
   NetState,
@@ -20,6 +21,7 @@ import type {
 } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
+import { resolveAnalog } from "./analog";
 import { detectSelfInterruptingCoils } from "./chatter";
 import {
   buildNets,
@@ -27,9 +29,10 @@ import {
   stateAt,
   type NetAssignment,
   type NetLookup,
+  type OperatedContacts,
 } from "./graph";
 import { polarityAcross } from "./potential";
-import { evaluateCoil } from "./relay";
+import { evaluateCoil, operatedContactsOf } from "./relay";
 import {
   advanceTimer,
   presetMsOf,
@@ -38,6 +41,7 @@ import {
 } from "./timer";
 import {
   describeComponent,
+  detectAnalogReferenceMismatch,
   detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,
@@ -53,6 +57,23 @@ const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => {
   for (const id of a) if (!b.has(id)) return false;
   return true;
 };
+
+/**
+ * 動作している接点の集合を比較用の文字列にする（design.md §4.16）。
+ *
+ * `signature()` と同じ役割で、こちらは接点ごとに見る。**発振の検出に
+ * 要る** —— アナログ量で動く接点が自分の明るさを変える配線
+ * （調光信号を自分の接点で切り替える等）は、コイルの自励発振と同じ
+ * 周期に入りうる。
+ */
+const operatedSignature = (operated: OperatedContacts): string =>
+  [...operated]
+    .map(([componentId, contacts]) => `${componentId}:${[...contacts].sort().join(",")}`)
+    .sort()
+    .join("|");
+
+const sameOperated = (a: OperatedContacts, b: OperatedContacts): boolean =>
+  operatedSignature(a) === operatedSignature(b);
 
 type RelayEvaluation = {
   /**
@@ -92,8 +113,8 @@ const evaluateRelays = (
     const { coil } = electrical.relay;
     const evaluation = evaluateCoil(
       coil,
-      stateAt(lookup, instance.id, coil.positiveTerminal),
-      stateAt(lookup, instance.id, coil.negativeTerminal),
+      coil && stateAt(lookup, instance.id, coil.positiveTerminal),
+      coil && stateAt(lookup, instance.id, coil.negativeTerminal),
     );
 
     if (electrical.delay) {
@@ -111,7 +132,7 @@ const evaluateRelays = (
       energized.add(instance.id);
     }
 
-    if (evaluation.reversed) {
+    if (evaluation.reversed && coil) {
       const name = describeComponent(instance, definition);
       warnings.push({
         code: "coil-polarity-reversed",
@@ -134,11 +155,16 @@ const evaluateRelays = (
  *
  * ランプは負荷なのでグラフ上で union されていない（design.md §5.2）。
  * 「両端が異なる電源ネットに属するか」だけが点灯条件で、極性は問わない。
+ *
+ * **調光ランプでも点灯条件は同じ。** 違うのは、電源が来ていても
+ * 明るさが 0% なら光っていないという 1 点だけ（design.md §5.17）。
+ * 調光を持たないランプはこの追加条件を通らない（`level` が無い）。
  */
 const collectLitLamps = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   lookup: NetLookup,
+  analog: AnalogResult,
 ): Set<string> => {
   const lit = new Set<string>();
 
@@ -152,7 +178,11 @@ const collectLitLamps = (
       stateAt(lookup, instance.id, electrical.terminalA),
       stateAt(lookup, instance.id, electrical.terminalB),
     );
-    if (across !== "none") lit.add(instance.id);
+    if (across === "none") continue;
+
+    const level = analog.levelOf.get(instance.id);
+    if (level && level.percent <= 0) continue;
+    lit.add(instance.id);
   }
 
   return lit;
@@ -162,7 +192,11 @@ const collectLitLamps = (
 type Iteration = {
   /** このグラフを組み立てるのに使った切替状態 */
   energized: ReadonlySet<string>;
+  /** 同じく、コイル以外の駆動源で動いていた接点（design.md §4.16） */
+  operatedContacts: OperatedContacts;
   nets: NetAssignment;
+  /** このネットに対応するアナログ層の解（design.md §5.17） */
+  analog: AnalogResult;
   netState: Map<number, NetState>;
   coilWarnings: Warning[];
   timers: Map<string, TimerState>;
@@ -220,6 +254,13 @@ export const simulate = (
   let energized: ReadonlySet<string> = new Set(
     input.previousEnergizedRelays ?? [],
   );
+  /*
+   * コイル以外の駆動源で動く接点（design.md §4.16）。
+   *
+   * **初期値は空。** 自己保持のような双安定性はここには無い ——
+   * アナログ量も人の操作も、そのときのネットと入力から一意に決まる。
+   */
+  let operatedContacts: OperatedContacts = new Map();
   const history: string[] = [];
 
   const nowMs = input.nowMs ?? 0;
@@ -237,7 +278,14 @@ export const simulate = (
   while (iterations < MAX_ITERATIONS) {
     iterations += 1;
 
-    const nets = buildNets(document, definitions, input, energized);
+    const nets = buildNets(
+      document,
+      definitions,
+      input,
+      energized,
+      undefined,
+      operatedContacts,
+    );
     const netState = computeNetStates(document, definitions, nets);
     const lookup: NetLookup = { netOf: nets.netOf, netState };
     const relays = evaluateRelays(
@@ -247,28 +295,54 @@ export const simulate = (
       nowMs,
       previousTimers,
     );
+    /*
+     * **アナログを反復の中で解く（Step 22 で変更）。**
+     *
+     * §5.17 は当初「アナログ量は接点を動かさないので収束ループの中には
+     * 入れない」としていた。カットリレー（design.md §4.16）がこれを崩す ——
+     * 明るさが接点を動かし、接点がネットの形を変え、ネットの形が明るさを
+     * 決める。コイルと接点の相互依存とまったく同じ構造なので、同じ
+     * 不動点反復で解く。
+     *
+     * **層の分け方は変えていない。** `NetState` に電圧は混ざらず、
+     * アナログは今もネットの上に重ねる第 2 パスのまま。変わったのは
+     * 解く順番だけ（CLAUDE.md 設計原則 9）。
+     */
+    const analog = resolveAnalog(document, definitions, nets.netOf);
+    const nextOperated = operatedContactsOf(
+      document,
+      definitions,
+      analog,
+      input.operatedDevices,
+    );
 
     last = {
       energized,
+      operatedContacts,
       nets,
       netState,
+      analog,
       coilWarnings: relays.warnings,
       timers: relays.timers,
     };
 
-    if (sameSet(relays.energized, energized)) {
+    if (
+      sameSet(relays.energized, energized) &&
+      sameOperated(nextOperated, operatedContacts)
+    ) {
       status = "stable";
       break;
     }
 
-    const key = signature(relays.energized);
+    const key = `${signature(relays.energized)}#${operatedSignature(nextOperated)}`;
     if (history.includes(key)) {
-      // 同じ励磁状態が再出現した＝周期に入った。反復上限とは区別する（design.md §5.5）
+      // 同じ状態が再出現した＝周期に入った。反復上限とは区別する（design.md §5.5）
       status = "oscillating";
       break;
     }
     history.push(key);
     energized = relays.energized;
+    operatedContacts = nextOperated;
   }
 
   // MAX_ITERATIONS が 1 以上である限り last は必ず入る
@@ -277,6 +351,13 @@ export const simulate = (
   }
 
   const lookup: NetLookup = { netOf: last.nets.netOf, netState: last.netState };
+
+  /*
+   * アナログ層は**反復の中で解いたものをそのまま使う**（design.md §5.17）。
+   * カットリレーが接点を動かす以上、収束したネットに対応する解でなければ
+   * 「接点はこの明るさで動いたのに、画面に出る明るさは別」がありえる。
+   */
+  const analog = last.analog;
 
   const warnings: Warning[] = [
     ...detectPowerShortCircuits(document, definitions, lookup),
@@ -288,15 +369,18 @@ export const simulate = (
      * （design.md §5.14）
      */
     ...detectSelfInterruptingCoils(document, definitions, input, last.energized),
+    ...detectAnalogReferenceMismatch(document, definitions, analog),
     ...statusWarnings(status),
     ...detectUnconnectedTerminals(document, definitions),
   ];
 
   return {
     energizedRelays: last.energized,
+    operatedContacts: last.operatedContacts,
     timers: last.timers,
     nextEventAtMs: nextEventOf(document, definitions, last.timers, nowMs),
-    litLamps: collectLitLamps(document, definitions, lookup),
+    litLamps: collectLitLamps(document, definitions, lookup, analog),
+    analog,
     netOf: last.nets.netOf,
     netState: last.netState,
     warnings,

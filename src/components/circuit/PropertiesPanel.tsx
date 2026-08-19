@@ -31,8 +31,9 @@ import type {
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
-import { presetMsOf } from "@/circuit/engine";
+import { channelVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
+  DimmerSettings,
   ComponentDefinition,
   ElectricalDefinition,
   LampColor,
@@ -54,6 +55,15 @@ import { useSimulationStore } from "@/store/simulationStore";
 import { usePathPreview } from "./usePathPreview";
 import styles from "./PropertiesPanel.module.css";
 
+/** 実機の DIP で選べる調光上限（design.md §4.15） */
+const DIMMER_MAX_PERCENTS = [100, 90, 80, 70] as const;
+
+/** 実機で切り替えられる調光カーブの形 */
+const DIMMER_CURVE_SHAPES = [
+  { value: "linear", label: "リニヤー" },
+  { value: "square", label: "2乗特性" },
+] as const;
+
 export function PropertiesPanel() {
   const document = useCircuitStore((state) => state.document);
   const selectedComponentIds = useCircuitStore(
@@ -61,6 +71,12 @@ export function PropertiesPanel() {
   );
   const setComponentPreset = useCircuitStore(
     (state) => state.setComponentPreset,
+  );
+  const setComponentDimmerSettings = useCircuitStore(
+    (state) => state.setComponentDimmerSettings,
+  );
+  const setComponentChannelVolts = useCircuitStore(
+    (state) => state.setComponentChannelVolts,
   );
   const setComponentLampColor = useCircuitStore(
     (state) => state.setComponentLampColor,
@@ -165,8 +181,14 @@ export function PropertiesPanel() {
           onPresetChange={(presetMs) =>
             setComponentPreset(inspection.instance.id, presetMs)
           }
+          onChannelVoltsChange={(channelId, volts) =>
+            setComponentChannelVolts(inspection.instance.id, channelId, volts)
+          }
           onLampColorChange={(color) =>
             setComponentLampColor(inspection.instance.id, color)
+          }
+          onDimmerSettingsChange={(patch) =>
+            setComponentDimmerSettings(inspection.instance.id, patch)
           }
         />
       )}
@@ -198,7 +220,10 @@ type DetailsProps = {
   /** タイマーの設定時間（ms）。タイマー以外では呼ばれない */
   onPresetChange: (presetMs: number) => void;
   /** 表示ランプのレンズの色。ランプ以外では呼ばれない */
+  /** 調光出力の電圧（V）。調光出力以外では呼ばれない */
+  onChannelVoltsChange: (channelId: string, volts: number) => void;
   onLampColorChange: (color: LampColor) => void;
+  onDimmerSettingsChange: (patch: Partial<DimmerSettings>) => void;
 };
 
 function ComponentDetails({
@@ -208,7 +233,9 @@ function ComponentDetails({
   onFlip,
   onReplace,
   onPresetChange,
+  onChannelVoltsChange,
   onLampColorChange,
+  onDimmerSettingsChange,
 }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
@@ -219,6 +246,24 @@ function ComponentDetails({
       : undefined;
   // レンズの色（design.md §4.11）。ランプ以外では欄ごと出さない
   const lamp = definition.electrical.kind === "lamp";
+  // 調光出力の電圧（design.md §5.17）。持たない部品では欄ごと出さない
+  /**
+   * 調光の設定（極性・上下限・カーブ・DIRECT）を出す対象。
+   *
+   * **調光入力を持つ部品だけ。** 調光出力（`analog-source`）は V を出す側で
+   * あって % へ直す側ではないので、ここには入らない（§4.15）。
+   */
+  const settings = instance.dimmerSettings ?? {};
+
+  const dimmerTarget =
+    definition.electrical.kind === "dimmer" ||
+    (definition.electrical.kind === "lamp" &&
+      definition.electrical.dimming !== undefined);
+
+  const source =
+    definition.electrical.kind === "analog-source"
+      ? definition.electrical
+      : undefined;
   // 交換候補は同じカテゴリ内だけ（design.md §8.3）。カテゴリを跨ぐと
   // ElectricalDefinition.kind ごと変わり、部品交換ではなく作り直しになる
   const replaceCandidates = componentDefinitions.filter(
@@ -281,6 +326,46 @@ function ComponentDetails({
         )}
 
         {/*
+          調光出力の電圧（design.md §5.17）。**V で入力させる。**
+
+          % ではないのは、V → % の対応が受け側の機器の性質だから
+          （`AnalogCurve`）。ここを % にすると、逆特性という受け側の性質を
+          出力側の性質だと読ませてしまう。
+
+          タイマーの設定時間と同じく Undo の対象にしてある —— 繋いだ負荷の
+          明るさそのものが変わるので、間違えたときに戻せないと困る。
+        */}
+        {source?.channels.map((channel) => (
+          <label key={channel.id} className={styles.labelField}>
+            <span className={styles.fieldName}>
+              {/* 1 回路の機器では回路番号を出さない（情報が増えない） */}
+              {source.channels.length === 1
+                ? "出力"
+                : (channel.label ?? `回路 ${channel.id}`)}
+            </span>
+            <span className={styles.presetField}>
+              <input
+                className={styles.presetInput}
+                type="number"
+                inputMode="decimal"
+                step={0.1}
+                min={source.minVolts}
+                max={source.maxVolts}
+                value={channelVoltsOf(source, channel.id, instance.channelVolts)}
+                onChange={(event) => {
+                  const volts = Number(event.target.value);
+                  // 入力途中の空欄・記号だけの状態では書き込まない。
+                  // 範囲外は circuitStore が上下限へ丸める
+                  if (!Number.isFinite(volts)) return;
+                  onChannelVoltsChange(channel.id, volts);
+                }}
+              />
+              <span className={styles.presetUnit}>V</span>
+            </span>
+          </label>
+        ))}
+
+        {/*
           レンズの色（design.md §4.11）。**ランプのときだけ出す。**
 
           盤面では色そのものが意味を持つ（赤＝異常・緑＝運転）ので、
@@ -319,6 +404,113 @@ function ComponentDetails({
                   </button>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/*
+          調光の設定（design.md §4.15）。**調光入力を持つ部品だけに出す。**
+
+          実機の DIP スイッチと可変抵抗にあたるもので、同じ機器を盤の中で
+          別々に設定して使う。だから定義ではなくインスタンスが持ち、
+          タイマーの設定時間と同じく Undo の対象にしてある。
+
+          **とくに極性。** 0V = 100% はこの盤の設定であって機器の仕様では
+          ないので、ここで切り替えられないと順特性の盤が描けない。
+        */}
+        {dimmerTarget && (
+          <div className={styles.labelField}>
+            <span className={styles.fieldName}>調光の設定</span>
+            <div className={styles.dimmerSettings}>
+              <label className={styles.dimmerToggle}>
+                <input
+                  type="checkbox"
+                  checked={settings.inverted === true}
+                  onChange={(event) =>
+                    onDimmerSettingsChange({ inverted: event.target.checked })
+                  }
+                />
+                極性を反転（0V を消灯側にする）
+              </label>
+
+              <label className={styles.dimmerToggle}>
+                <input
+                  type="checkbox"
+                  checked={settings.direct === true}
+                  onChange={(event) =>
+                    onDimmerSettingsChange({ direct: event.target.checked })
+                  }
+                />
+                DIRECT（信号によらず全点灯）
+              </label>
+
+              <span className={styles.dimmerRow}>
+                <span className={styles.dimmerRowName}>上限</span>
+                <span className={styles.lampColors} role="group" aria-label="調光上限">
+                  {DIMMER_MAX_PERCENTS.map((percent) => {
+                    const active = (settings.maxPercent ?? 100) === percent;
+                    return (
+                      <button
+                        key={percent}
+                        type="button"
+                        className={styles.dimmerSegment}
+                        data-active={active || undefined}
+                        aria-pressed={active}
+                        onClick={() =>
+                          onDimmerSettingsChange({ maxPercent: percent })
+                        }
+                      >
+                        {percent}%
+                      </button>
+                    );
+                  })}
+                </span>
+              </span>
+
+              <label className={styles.dimmerRow}>
+                <span className={styles.dimmerRowName}>下限</span>
+                <span className={styles.presetField}>
+                  <input
+                    className={styles.presetInput}
+                    type="number"
+                    inputMode="decimal"
+                    step={1}
+                    min={0}
+                    max={50}
+                    value={settings.minPercent ?? 0}
+                    onChange={(event) => {
+                      const percent = Number(event.target.value);
+                      if (!Number.isFinite(percent)) return;
+                      onDimmerSettingsChange({ minPercent: percent });
+                    }}
+                  />
+                  <span className={styles.presetUnit}>%</span>
+                </span>
+              </label>
+
+              <span className={styles.dimmerRow}>
+                <span className={styles.dimmerRowName}>カーブ</span>
+                <span className={styles.lampColors} role="group" aria-label="調光カーブ">
+                  {DIMMER_CURVE_SHAPES.map((entry) => {
+                    const active =
+                      (settings.curveShape ?? "linear") === entry.value;
+                    return (
+                      <button
+                        key={entry.value}
+                        type="button"
+                        className={styles.dimmerSegment}
+                        data-active={active || undefined}
+                        aria-pressed={active}
+                        onClick={() =>
+                          onDimmerSettingsChange({ curveShape: entry.value })
+                        }
+                      >
+                        {entry.label}
+                      </button>
+                    );
+                  })}
+                </span>
+              </span>
             </div>
           </div>
         )}
@@ -758,7 +950,7 @@ function ContactPair({
 /**
  * カテゴリごとの電気仕様と実行時の状態。
  *
- * 分岐は `ElectricalDefinition.kind` の 6 通りだけで、
+ * 分岐は `ElectricalDefinition.kind` の 7 通りだけで、
  * **型番では分岐しない**（CLAUDE.md 設計原則 2）。新型番を足しても
  * このコンポーネントは変わらない。
  */
@@ -769,7 +961,7 @@ function ElectricalSection({
   electrical: ElectricalDefinition;
   inspection: ComponentInspection;
 }) {
-  const { device, conducting } = inspection;
+  const { device, conducting, instance } = inspection;
 
   switch (electrical.kind) {
     case "power":
@@ -789,6 +981,12 @@ function ElectricalSection({
 
     case "relay": {
       const { coil } = electrical.relay;
+      /*
+       * **コイルの無い機器では「コイル」の節ごと出さない**（design.md §4.16）。
+       * カットリレーや操作卓のボタンに定格も極性も無いのに枠だけ出すと、
+       * 実機に無いものがあるように読める。接点の節（下）は変わらず出る。
+       */
+      if (!coil) return null;
       /**
        * コイル端子に +/− の印字があるか。
        *
@@ -870,10 +1068,13 @@ function ElectricalSection({
         </section>
       );
 
-    case "lamp":
+    case "lamp": {
+      // 調光入力（design.md §5.17）。持たないランプでは行ごと出さない
+      const { dimming } = electrical;
+      const level = device?.dimming;
       return (
         <section className={styles.section}>
-          <h3 className={styles.heading}>ランプ</h3>
+          <h3 className={styles.heading}>{dimming ? "調光ランプ" : "ランプ"}</h3>
           <dl className={styles.rows}>
             <Row name="定格">
               {electrical.currentType}
@@ -885,9 +1086,42 @@ function ElectricalSection({
             <Row name="状態">
               <StateBadge on={device?.lit} onLabel="点灯" offLabel="消灯" />
             </Row>
+            {dimming && (
+              <>
+                <Row name="調光入力">
+                  {dimming.signalTerminal}–{dimming.commonTerminal}
+                </Row>
+                {/*
+                  **明るさは % で、入力電圧は V で出す。** V → % の対応は
+                  この機器の性質（`AnalogCurve`）で、同じ 5V でも順特性の
+                  機器なら別の明るさになる。両方出さないと「なぜこの
+                  明るさなのか」が読めない
+                */}
+                <Row name="明るさ">
+                  {level ? (
+                    <span
+                      className={styles.stateBadge}
+                      data-on={String(level.percent > 0)}
+                    >
+                      {Math.round(level.percent)}%（{level.volts.toFixed(1)}V）
+                    </span>
+                  ) : (
+                    <span className={styles.idle}>—（停止中）</span>
+                  )}
+                </Row>
+              </>
+            )}
           </dl>
+          {dimming && (
+            <p className={styles.hint}>
+              {level?.referenceMismatch
+                ? `調光の基準（${dimming.commonTerminal}）が調光出力のコモンと繋がっていません。0–10V は基準に対する電圧なので信号が成立せず、未接続と同じ ${dimming.unconnectedVolts}V として扱われます。`
+                : `${dimming.curve.minVolts}V で ${dimming.curve.percentAtMin}%、${dimming.curve.maxVolts}V で ${dimming.curve.percentAtMax}%。調光信号が未接続だと ${dimming.unconnectedVolts}V として扱われます。`}
+            </p>
+          )}
         </section>
       );
+    }
 
     case "diode": {
       const { diode } = inspection;
@@ -944,6 +1178,49 @@ function ElectricalSection({
             <Row name="端子">{electrical.terminals.join(" / ")}</Row>
           </dl>
           <p className={styles.hint}>列挙した全端子が常時導通します。</p>
+        </section>
+      );
+
+    case "analog-source":
+      return (
+        <section className={styles.section}>
+          <h3 className={styles.heading}>調光出力</h3>
+          <dl className={styles.rows}>
+            <Row name="範囲">
+              {electrical.minVolts}–{electrical.maxVolts}V
+            </Row>
+            <Row name="回路数">{electrical.channels.length}</Row>
+            <Row name="基準">
+              {electrical.commonTerminals.join("・")}
+              {electrical.commonTerminals.length > 1 && "（機器の中で導通）"}
+            </Row>
+            {/* 出力は停止中も決まっている値なので `StateBadge` にしない */}
+            {electrical.channels.map((channel) => (
+              <Row
+                key={channel.id}
+                name={
+                  electrical.channels.length === 1
+                    ? "出力"
+                    : `${channel.signalTerminal}${
+                        channel.label ? `（${channel.label}）` : ""
+                      }`
+                }
+              >
+                {channelVoltsOf(
+                  electrical,
+                  channel.id,
+                  instance.channelVolts,
+                ).toFixed(1)}
+                V
+              </Row>
+            ))}
+          </dl>
+          <p className={styles.hint}>
+            出すのは基準（{electrical.commonTerminals.join("・")}
+            ）に対する電圧だけです。明るさへの対応は繋いだ機器側が持つので、
+            基準を共通にしないと信号が成立しません。接点で信号線を基準へ
+            落とすと 0V になります。
+          </p>
         </section>
       );
   }

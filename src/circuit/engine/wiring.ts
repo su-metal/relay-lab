@@ -30,8 +30,10 @@ import type {
   Warning,
 } from "@/circuit/types";
 
+import { resolveAnalog } from "./analog";
 import { solveWithoutRelays } from "./graph";
 import {
+  detectAnalogReferenceMismatch,
   detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,
@@ -58,7 +60,21 @@ export const inspectWiring = (
     // 還流ダイオードの向きは「コイルと並列に、どちら向きに入っているか」で
     // 決まる。`validation.ts` が明言しているとおり通電の有無を見ない
     ...detectDiodeOrientation(document, definitions, lookup),
-    // 配線に現れない端子。ネットすら見ない純粋に静的な指摘
+    // 配線に現れない端子。ネットすら見ない純粋に静的な指摘。
+    // **調光信号の未接続はここで「出力は 100% になります」と言う**（§5.17）——
+    // 挿し忘れると消えるのではなく全灯するので、通電させる前に気付かせたい
     ...detectUnconnectedTerminals(document, definitions),
+    /*
+     * 調光の基準（0V コモン）が共通でない（§5.17）。
+     *
+     * **静止状態で答えが決まる。** 「調光出力のコモンとランプのコモンが
+     * 同じネットに居るか」は接点の開閉に左右されない配線そのものの性質で、
+     * 除外した `coil-polarity-reversed` のように出たり出なかったりしない。
+     */
+    ...detectAnalogReferenceMismatch(
+      document,
+      definitions,
+      resolveAnalog(document, definitions, lookup.netOf),
+    ),
   ];
 };

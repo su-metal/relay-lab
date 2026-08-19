@@ -6,7 +6,13 @@
  * 新型番が増えてもこのファイルは変わらない。
  */
 
-import type { NetState, RelayDefinition } from "@/circuit/types";
+import type {
+  AnalogResult,
+  AnalogTrigger,
+  CircuitDocument,
+  ComponentDefinitionRegistry,
+  RelayContact, NetState, RelayDefinition } from "@/circuit/types";
+import { analogInputKey, operationKey } from "@/circuit/types";
 
 import { polarityAcross } from "./potential";
 
@@ -34,12 +40,35 @@ export const closedContactPairs = (
   relay: RelayDefinition,
   energized: boolean,
   openContacts?: ReadonlySet<string>,
+  operatedContacts?: ReadonlySet<string>,
 ): TerminalPair[] =>
   relay.contacts.flatMap((contact) => {
     if (openContacts?.has(contact.id)) return [];
-    const other = energized ? contact.noTerminal : contact.ncTerminal;
+    const other = contactOperated(contact, energized, operatedContacts)
+      ? contact.noTerminal
+      : contact.ncTerminal;
     return other === undefined ? [] : [[contact.commonTerminal, other]];
   });
+
+/**
+ * この接点が動作しているか（design.md §4.16）。
+ *
+ * **接点はコイルだけで動くものではない。** アナログ量で動く接点
+ * （カットリレー）と人の操作で動く接点（操作卓のボタン）は、コイルの
+ * 励磁とは無関係に自分の駆動源を見る。駆動源を持たない接点だけが
+ * 従来どおりコイルに従う。
+ *
+ * **判定はここ 1 箇所。** `closedContactPairs()` と `openContactPairs()` が
+ * 同じ規則を 2 度書くと、片方だけ直す事故が起きる（§5.1 と同じ理由）。
+ */
+export const contactOperated = (
+  contact: RelayContact,
+  energized: boolean,
+  operatedContacts?: ReadonlySet<string>,
+): boolean =>
+  contact.trigger !== undefined || contact.operationId !== undefined
+    ? operatedContacts?.has(contact.id) === true
+    : energized;
 
 /**
  * 今は開いているが、**リレーの状態が反転すれば閉じる**端子ペアを返す。
@@ -58,9 +87,12 @@ export const closedContactPairs = (
 export const openContactPairs = (
   relay: RelayDefinition,
   energized: boolean,
+  operatedContacts?: ReadonlySet<string>,
 ): TerminalPair[] =>
   relay.contacts.flatMap((contact) => {
-    const other = energized ? contact.ncTerminal : contact.noTerminal;
+    const other = contactOperated(contact, energized, operatedContacts)
+      ? contact.ncTerminal
+      : contact.noTerminal;
     return other === undefined ? [] : [[contact.commonTerminal, other]];
   });
 
@@ -84,6 +116,16 @@ export const evaluateCoil = (
   positiveState: NetState | undefined,
   negativeState: NetState | undefined,
 ): CoilEvaluation => {
+  /*
+   * **コイルが無い機器は、コイルでは動かない**（design.md §4.16）。
+   *
+   * カットリレー（アナログ量で動く）や操作卓のボタンには実機にコイルが
+   * 無い。ここで「非励磁」を返すことで、極性の警告も未接続の指摘も
+   * 出なくなる —— 存在しないものは検査しない。接点は
+   * `closedContactPairs()` が `operated` 側から動かす。
+   */
+  if (!coil) return { energized: false, indicatorOn: false, reversed: false };
+
   const polarity = polarityAcross(positiveState, negativeState);
   const forward = polarity === "forward";
   const reverse = polarity === "reverse";
@@ -106,4 +148,72 @@ export const evaluateCoil = (
       // MY4N-D2。逆接では内蔵ダイオードが順方向になり励磁しない
       return { energized: forward, indicatorOn: forward, reversed: reverse };
   }
+};
+
+/**
+ * 回路中の「動作している接点」を求める（design.md §4.16）。
+ *
+ * componentId → 動作している接点 ID の集合。駆動源を持たない接点
+ * （コイルで動く普通の接点）はここに入らない —— あちらは
+ * `energizedRelays` が受け持つ。
+ *
+ * **アナログの側は明るさ（%）で見る。** 実機の「0〜50% で動作」という
+ * 表記がそのまま設定になる。V で持つと、極性を反転した盤で動作点が
+ * 裏返って同じ「30% で動作」が別の意味になる。
+ */
+export const operatedContactsOf = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  analog: AnalogResult,
+  operatedDevices: ReadonlySet<string> | undefined,
+): Map<string, Set<string>> => {
+  const operated = new Map<string, Set<string>>();
+
+  for (const instance of document.components) {
+    const definition = definitions.get(instance.definitionId);
+    if (!definition) continue;
+    const { electrical } = definition;
+    if (electrical.kind !== "relay") continue;
+
+    for (const contact of electrical.relay.contacts) {
+      let on = false;
+
+      if (contact.trigger) {
+        const level = analog.inputLevelOf.get(
+          analogInputKey(instance.id, contact.trigger.inputId),
+        );
+        // 信号が解けていない（入力が定義に無い等）なら動作しない
+        if (level) on = level.percent <= triggerPercentOf(contact.trigger, instance.triggerPercents?.[contact.id]);
+      } else if (contact.operationId) {
+        on =
+          operatedDevices?.has(operationKey(instance.id, contact.operationId)) ===
+          true;
+      } else {
+        // 駆動源を持たない接点はコイルの担当。ここでは触らない
+        continue;
+      }
+
+      if (!on) continue;
+      const set = operated.get(instance.id) ?? new Set<string>();
+      set.add(contact.id);
+      operated.set(instance.id, set);
+    }
+  }
+
+  return operated;
+};
+
+/**
+ * 動作点（%）。インスタンスの設定を先に見て、無ければ定義の既定値。
+ * 範囲外は定義の上下限へ丸める（`presetMsOf` とまったく同じ形）。
+ */
+export const triggerPercentOf = (
+  trigger: AnalogTrigger,
+  percent: number | undefined,
+): number => {
+  const value =
+    percent === undefined || !Number.isFinite(percent)
+      ? trigger.defaultBelowPercent
+      : percent;
+  return Math.min(Math.max(value, trigger.minPercent), trigger.maxPercent);
 };

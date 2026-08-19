@@ -107,3 +107,23 @@
     animation: none;
   }
 }
+
+/*
+ * 調光信号の電圧（design.md §5.17）。**レベルを線の濃淡に載せない**代わりに、
+ * 値そのものを線に添えて読ませる。0V が 100%（全灯）という仕様では、
+ * レベルを不透明度へ写した瞬間に「最も明るい線が最も薄い」ことになる。
+ *
+ * 背景色で縁取る（`paint-order: stroke`）のは、交差した配線の上でも
+ * 数字が読めるようにするため。halo と同じ考え方。
+ */
+.analogLabel {
+  fill: var(--wire-analog-text);
+  font-size: 10px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--canvas-bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}

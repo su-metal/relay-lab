@@ -1,5 +1,7 @@
 import { inspectContacts } from "@/circuit/adapter/inspection";
+import { operationKey } from "@/circuit/types";
 import { contactSummaryOf } from "@/lib/component-display";
+import { useSimulationStore } from "@/store/simulationStore";
 
 import { ContactDiagram } from "./ContactDiagram";
 import styles from "./bodies.module.css";
@@ -20,11 +22,17 @@ import type { BodyProps } from "./types";
  * 状態の主張ではなく、机の上に置いたリレーがそう見えるという事実
  * （`SwitchBody` が停止中も b 接点を閉じて描くのと同じ）。
  */
-export function RelayBody({ definition, simulation }: BodyProps) {
+export function RelayBody({ definition, componentId, simulation }: BodyProps) {
+  const toggleOperation = useSimulationStore((state) => state.toggleOperation);
+  const operatedDevices = useSimulationStore((state) => state.operatedDevices);
+  const running = useSimulationStore((state) => state.running);
+
   const relay =
     definition.electrical.kind === "relay" ? definition.electrical.relay : null;
   const energized = simulation?.energized ?? false;
-  const contacts = relay ? inspectContacts(relay, energized) : [];
+  const contacts = relay
+    ? inspectContacts(relay, energized, simulation?.operatedContacts)
+    : [];
 
   return (
     <div className={styles.stack}>
@@ -56,8 +64,10 @@ export function RelayBody({ definition, simulation }: BodyProps) {
       ) : (
         relay && (
           <span className={styles.caption}>
-            {contactSummaryOf(relay)} ／ コイル {relay.coil.currentType}
-            {relay.coil.voltage}V
+            {contactSummaryOf(relay)}
+            {/* コイルの無い機器（カットリレー・操作卓）に定格は無い（§4.16） */}
+            {relay.coil &&
+              ` ／ コイル ${relay.coil.currentType}${relay.coil.voltage}V`}
           </span>
         )
       )}

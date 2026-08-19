@@ -32,9 +32,11 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
     label,
     simulation,
     terminalStates,
+    terminalVolts,
     terminalConnections,
     presetMs,
     lampColor,
+    channelVolts,
     preview,
   } = data;
   const Body = bodyForCategory(definition.category);
@@ -131,6 +133,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
             preview={preview}
             presetMs={presetMs}
             lampColor={lampColor}
+            channelVolts={channelVolts}
           />
           {/*
             図記号へのホバーで出す主要ステータスの吹き出し。
@@ -162,6 +165,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
           key={terminal.id}
           terminal={terminal}
           state={terminalStates?.get(terminal.id)}
+          volts={terminalVolts?.get(terminal.id)}
           connections={terminalConnections?.get(terminal.id)}
         />
       ))}

@@ -48,6 +48,15 @@ export {
   timerNextEventAtMs,
   timerOutputOn,
 } from "./timer";
+export {
+  analogPercent,
+  analogSignalNets,
+  channelVoltsOf,
+  effectiveCurve,
+  shapePercent,
+  outputVoltsOf,
+  resolveAnalog,
+} from "./analog";
 export { collectDiodeEdges, inspectDiodes, spreadThroughDiodes } from "./diode";
 export type {
   DiodeBias,
@@ -57,6 +66,7 @@ export type {
 } from "./diode";
 export {
   describeComponent,
+  detectAnalogReferenceMismatch,
   detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,

@@ -158,3 +158,15 @@
     animation: none;
   }
 }
+
+/*
+ * 調光信号線（design.md §5.17）。キャンバスと同じ橙の点線。
+ * この色だけは停止中・実行中・経路確認中で意味が変わらない
+ * —— 導通の色の軸とは独立した量なので。
+ */
+.analog {
+  border-top-color: var(--wire-analog);
+  /* キャンバス側の `stroke-dasharray: 1 4` に相当する点線 */
+  border-top-style: dotted;
+  border-top-width: 2.5px;
+}

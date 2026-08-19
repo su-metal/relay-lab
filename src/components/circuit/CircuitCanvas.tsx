@@ -150,6 +150,8 @@ const WIRE_CLASS: Record<WireState, string | undefined> = {
   energized: styles.wireEnergized,
   "self-hold": styles.wireSelfHold,
   short: styles.wireShort,
+  // 調光信号線（design.md §5.17）。導通の配色から外した唯一の値
+  analog: styles.wireAnalog,
 };
 
 /**
@@ -162,6 +164,8 @@ const WIRE_ROLE_CLASS: Record<WireRole, string | undefined> = {
   plus: styles.wireRolePlus,
   zero: styles.wireRoleZero,
   control: styles.wireRoleControl,
+  // 調光信号線は停止中も実行中と同じ橙。役割と状態で色が変わらない
+  analog: styles.wireRoleAnalog,
   isolated: styles.wireRoleIsolated,
   short: styles.wireShort,
 };
@@ -365,6 +369,18 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
     [document, result, pressedSwitches],
   );
 
+  /**
+   * 調光信号線が 1 本でもあるか（design.md §5.17）。凡例の出し分けに使う。
+   *
+   * **停止中の役割（`wireRoles`）から数える。** 役割は実行中も計算して
+   * あり、調光線は停止中も実行中も同じ橙で描かれる —— つまり
+   * 「画面に橙の線があるか」はこの 1 本の判定で足りる。
+   */
+  const hasAnalogWire = useMemo(
+    () => [...wireRoles.values()].includes("analog"),
+    [wireRoles],
+  );
+
   // ホバー中の 1 本だけを最前面へ出すための表示状態。回路の一部ではないので
   // circuitStore（保存対象＋履歴）には入れない
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
@@ -376,6 +392,12 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
         selectedConnectionIds,
         wireLanes,
         currentFlow,
+        /*
+         * 調光信号の電圧（design.md §5.17）。経路確認モードでは
+         * そちらの解を使う —— 同じ画面に 2 つの解の値が混ざらないよう、
+         * 色（`wireOf`）と同じ側から取る
+         */
+        pathPreview ? preview.view.wireVoltsOf : view.wireVoltsOf,
       ).map((edge) => {
         const hovered = edge.id === hoveredWireId;
         const role = wireRoles.get(edge.id);
@@ -705,6 +727,7 @@ export function CircuitCanvas({ rangeSelectionTarget }: CircuitCanvasProps) {
               running={result !== null}
               pathPreview={pathPreview}
               collapsible={compact}
+              analog={hasAnalogWire}
             />
           </Panel>
         )}

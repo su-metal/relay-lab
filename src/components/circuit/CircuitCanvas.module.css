@@ -146,6 +146,29 @@
 }
 
 /*
+ * 0–10V の調光信号線（design.md §5.17）。
+ *
+ * **導通の配色から外した線。** ここに来るのは「導通の色では灰（非通電）に
+ * しかならないが、実際には効いている線」だけで、接点で 0V コモンへ落とした
+ * 信号線（"DIRECT"）は本当に 0V 線なので上の `.wireZero`（青）に行く。
+ *
+ * **濃さでレベルを表さない。** 0V が 100%（全灯）という仕様では、
+ * レベルを不透明度に写した瞬間に「全灯の線が最も薄い」ことになり、
+ * この色を独立させた意味が消える。不透明のまま引き、レベルは
+ * `WireEdge` が線に添える電圧の値で読ませる。
+ *
+ * 点線にするのは色だけに頼らないため（要件書 §8）。破線の
+ * `.wireUnreachable` / `.wireSelfHold` とは目盛りで見分けが付く。
+ */
+.canvas .wireAnalog :global(.react-flow__edge-path) {
+  stroke: var(--wire-analog);
+  stroke-width: 2.5;
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+  opacity: 1;
+}
+
+/*
  * 電源短絡。§5.6 の通り「通電」とは別扱いにする。
  * 緑と紛れないよう点滅させ、配線ミスとして目立たせる。
  */
@@ -190,6 +213,15 @@
 }
 
 /*
+ * 調光信号線は経路確認モードでも点線のまま。**予測の破線に置き換えない** ——
+ * 調光レベルは接点が動くかどうかに関わらず今この瞬間に決まっている値で、
+ * 「電源を入れたらこうなる」という予測ではない（§5.17）。
+ */
+.canvas[data-path-preview] .wireAnalog :global(.react-flow__edge-path) {
+  stroke-dasharray: 1 4;
+}
+
+/*
  * 電位が届いていない線。**役割色の灰（`.wireRoleIsolated`）と同じ破線には
  * しない。** あちらは「どう動作させても届かない＝配線漏れの手がかり」で、
  * こちらは「今は届いていないだけ」。実線のまま薄く引いて、破線を
@@ -225,6 +257,20 @@
  */
 .canvas .wireRoleIsolated :global(.react-flow__edge-path) {
   stroke-dasharray: 5 4;
+}
+
+/*
+ * 停止中の調光信号線（§5.8・§5.17）。実行中とまったく同じ見た目にする。
+ *
+ * 調光信号線はどう動作させても電源に届かない —— 電源に繋ぐ線ではないので
+ * 当然だが、それを配線漏れの灰破線で描くと**正しく描かれた調光配線が
+ * すべて直すべき線に見える。** 赤・青が停止中と実行中で同じ色なのと同じ理由で、
+ * ここも色を変えない。
+ */
+.canvas .wireRoleAnalog :global(.react-flow__edge-path) {
+  stroke: var(--wire-analog);
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
 }
 
 /*

@@ -114,6 +114,8 @@ const collectActiveLoads = (
 
     if (electrical.kind === "relay") {
       const { coil } = electrical.relay;
+      // コイルが無ければ電位では動かない（design.md §4.16）
+      if (!coil) continue;
       const evaluation = evaluateCoil(
         coil,
         stateAt(lookup, instance.id, coil.positiveTerminal),

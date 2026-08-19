@@ -20,8 +20,9 @@ import {
   isSameTerminalPair,
 } from "@/circuit/adapter/reactflow";
 import { getComponentDefinition } from "@/circuit/definitions";
-import { presetMsOf } from "@/circuit/engine";
+import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
+  DimmerSettings,
   CircuitDocument,
   ComponentCategory,
   ComponentDefinition,
@@ -63,6 +64,8 @@ const LABEL_PREFIX: Record<ComponentCategory, string> = {
   terminal: "TB",
   // 実務の図面ではタイマーは T / TR。リレーの RY と読み違えないよう分ける
   timer: "T",
+  // 調光は DIM。L（ランプ）とも D（ダイオード）とも読み違えない綴りにする
+  dimmer: "DIM",
 };
 
 /** 同じ接頭辞の最大番号 + 1 を返す（RY1 が居れば RY2） */
@@ -143,6 +146,32 @@ export type CircuitStore = {
    * 範囲外の値は定義の上下限へ丸める（判定はエンジンの `presetMsOf`）。
    */
   setComponentPreset: (componentId: string, presetMs: number) => void;
+
+  /**
+   * 調光出力の電圧を変える（design.md §5.17）。
+   *
+   * `setComponentPreset` とまったく同じ扱い —— **Undo の対象**にし、
+   * 範囲外は定義の上下限へ丸め（判定はエンジンの `outputVoltsOf`）、
+   * 調光出力以外の部品には書き込まない。回路の動き（繋いだ負荷の明るさ）を
+   * 変える値なので、間違えたときに戻せないと困る。
+   */
+  setComponentChannelVolts: (
+    componentId: string,
+    channelId: string,
+    volts: number,
+  ) => void;
+
+  /**
+   * 調光器の盤ごとの設定を変える（design.md §4.15）。
+   *
+   * 渡した項目だけを差し替える —— 極性を切り替えるたびに上限や下限が
+   * 既定へ戻ると、実機の DIP を 1 つ倒す操作とかけ離れる。
+   * 調光入力を持たない部品には書き込まない。
+   */
+  setComponentDimmerSettings: (
+    componentId: string,
+    patch: Partial<DimmerSettings>,
+  ) => void;
 
   /**
    * 表示ランプのレンズの色を変える（design.md §4.11）。
@@ -435,6 +464,63 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           return { ...component, presetMs: next };
         });
         // 同じ値への設定・タイマー以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentChannelVolts: (componentId, channelId, volts) => {
+      if (!Number.isFinite(volts)) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          // 調光出力以外には出力電圧が無い。書き込むと誰も読まない値が残る
+          if (electrical?.kind !== "analog-source") return component;
+          // 定義に無いチャンネルへは書かない（保存 JSON に幽霊の回路を残さない）
+          if (!electrical.channels.some((c) => c.id === channelId)) return component;
+
+          const next = outputVoltsOf(electrical, volts);
+          if (component.channelVolts?.[channelId] === next) return component;
+          changed = true;
+          return {
+            ...component,
+            channelVolts: { ...component.channelVolts, [channelId]: next },
+          };
+        });
+        // 同じ値への設定・調光出力以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentDimmerSettings: (componentId, patch) => {
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          const applies =
+            electrical?.kind === "dimmer" ||
+            (electrical?.kind === "lamp" && electrical.dimming !== undefined);
+          // 調光入力を持たない部品には書き込まない
+          if (!applies) return component;
+
+          const next: DimmerSettings = { ...component.dimmerSettings, ...patch };
+          const before: DimmerSettings = component.dimmerSettings ?? {};
+          const keys = Object.keys(next) as (keyof DimmerSettings)[];
+          const same =
+            keys.length === Object.keys(before).length &&
+            keys.every((key) => before[key] === next[key]);
+          if (same) return component;
+          changed = true;
+          return { ...component, dimmerSettings: next };
+        });
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });

@@ -16,6 +16,7 @@ import { terminalKey, terminalRefKey } from "@/circuit/types";
 
 import {
   collectDiodeEdges,
+  collectDimmerEdges,
   spreadThroughDiodes,
   type MutableNetState,
 } from "./diode";
@@ -68,6 +69,14 @@ export class UnionFind {
   }
 }
 
+/**
+ * componentId → 動作している接点 ID の集合（design.md §4.16）。
+ *
+ * コイル以外の駆動源（アナログ量・人の操作）で動く接点だけが入る。
+ * コイルで動く接点は `energizedRelays` が受け持つ。
+ */
+export type OperatedContacts = ReadonlyMap<string, ReadonlySet<string>>;
+
 export type NetAssignment = {
   /** `terminalKey(componentId, terminalId)` → ネット ID（0 始まりの連番） */
   netOf: Map<string, number>;
@@ -104,12 +113,27 @@ export type OpenContacts = ReadonlyMap<string, ReadonlySet<string>>;
  * 「どの端子どうしが直接つながっているか」が復元できず、adapter 側で同じ規則を
  * 書き直すと接点の開閉規則が 2 箇所に散る。判定はここ 1 箇所に閉じる。
  */
+/**
+ * 列挙した端子を 1 本の鎖で繋ぐペア。端子台と、調光出力のコモン群で使う。
+ *
+ * 総当たり（n²）ではなく隣どうしだけを返す。Union-Find は推移的なので
+ * 鎖で繋げば全体が 1 つのネットになり、端子が増えても線形で済む。
+ */
+const chainPairs = (terminals: readonly string[]): TerminalPair[] => {
+  const pairs: TerminalPair[] = [];
+  for (let i = 1; i < terminals.length; i += 1) {
+    pairs.push([terminals[i - 1], terminals[i]]);
+  }
+  return pairs;
+};
+
 export const conductingPairs = (
   componentId: string,
   electrical: ElectricalDefinition,
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
   openContacts?: OpenContacts,
+  operatedContacts?: OperatedContacts,
 ): TerminalPair[] => {
   switch (electrical.kind) {
     case "switch": {
@@ -124,6 +148,7 @@ export const conductingPairs = (
         electrical.relay,
         energizedRelays.has(componentId),
         openContacts?.get(componentId),
+        operatedContacts?.get(componentId),
       );
     case "terminal":
       // 端子台は全端子が常時導通する。先頭端子に順に繋げば連結成分は 1 つになる
@@ -136,6 +161,27 @@ export const conductingPairs = (
       // 電源の +/0V、ランプの 2 端子、ダイオードの 2 端子はいずれも非導通。
       // ダイオードは一方通行なので無向グラフでは表せない。導通は union ではなく
       // `computeNetStates()` の有向な電位伝搬で表現する（design.md §5.4）
+      return [];
+    case "analog-source":
+      // **信号端子とコモンは union しない。** union すると、接点で 0V へ落とす
+      // 配線（"DIRECT"）と繋がない配線が区別できなくなる。出している電圧は
+      // `analog.ts` が第 2 パスで重ねる（design.md §5.17）。
+      //
+      // **コモンの端子どうしだけは union する。** 実機の調光コントローラは
+      // GND を 4 本（21・44・45・46）出しており、機器の中で繋がっている。
+      // ここを繋がないと、GND 21 に繋いだ機器と GND 45 に繋いだ機器が
+      // 「基準が共通でない」と出て、正しい配線が成立しなくなる（§4.15）
+      return chainPairs(electrical.commonTerminals);
+    case "dimmer":
+      // **AC は通すが union はしない。** 入力と出力を同じネットにすると、
+      // 同じ電源から取った 2 台の調光器の出力回路まで 1 つに融合し、
+      // 片方を絞るともう片方まで暗くなる。ダイオードと同じく
+      // 「ネットは分けたまま電位だけ流す」形にしてあり、辺は
+      // `collectDimmerEdges()` が出す（design.md §4.15・§5.4）。
+      //
+      // **遮断と DIRECT を導通で表さない。** 出力段を開くモデルにすると
+      // アナログ量が接点（ネットの形）を動かすことになり、収束ループの
+      // 中へ入り込む。第 2 パスの前提が崩れるので、どちらもレベルで表す
       return [];
   }
 };
@@ -152,6 +198,7 @@ export const buildNets = (
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
   openContacts?: OpenContacts,
+  operatedContacts?: OperatedContacts,
 ): NetAssignment => {
   const dsu = new UnionFind();
   const orderedKeys: string[] = [];
@@ -193,6 +240,7 @@ export const buildNets = (
       input,
       energizedRelays,
       openContacts,
+      operatedContacts,
     )) {
       dsu.union(
         register(terminalKey(instance.id, a)),
@@ -261,10 +309,11 @@ export const computeNetStates = (
     mark(instance.id, electrical.zeroTerminal, "zeroFrom");
   }
 
-  spreadThroughDiodes(
-    states,
-    collectDiodeEdges(document, definitions, nets.netOf),
-  );
+  spreadThroughDiodes(states, [
+    ...collectDiodeEdges(document, definitions, nets.netOf),
+    // 調光器の AC の通り道。ネットは分けたまま電位だけ流す（design.md §4.15）
+    ...collectDimmerEdges(document, definitions, nets.netOf),
+  ]);
 
   return states;
 };
@@ -319,6 +368,7 @@ export const openPairs = (
   electrical: ElectricalDefinition,
   input: SimulationInput,
   energizedRelays: ReadonlySet<string>,
+  operatedContacts?: OperatedContacts,
 ): TerminalPair[] => {
   switch (electrical.kind) {
     case "switch": {
@@ -330,11 +380,15 @@ export const openPairs = (
       return openContactPairs(
         electrical.relay,
         energizedRelays.has(componentId),
+        operatedContacts?.get(componentId),
       );
     case "terminal":
     case "power":
     case "lamp":
     case "diode":
+    case "analog-source":
+    case "dimmer":
+      // 調光器の AC は常時導通なので「閉じれば繋がる」端子を持たない
       return [];
   }
 };

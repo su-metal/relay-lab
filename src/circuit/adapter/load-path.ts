@@ -219,6 +219,8 @@ const loadTerminalsOf = (
 ): [string, string] | null => {
   if (electrical.kind === "relay") {
     const { coil } = electrical.relay;
+    // コイルの無い機器は「負荷」ではない（design.md §4.16）
+    if (!coil) return null;
     return [coil.positiveTerminal, coil.negativeTerminal];
   }
   if (electrical.kind === "lamp") {

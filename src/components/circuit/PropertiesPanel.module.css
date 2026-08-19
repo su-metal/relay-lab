@@ -548,3 +548,63 @@
     min-height: 36px;
   }
 }
+
+/*
+ * 調光の設定（design.md §4.15）。実機の DIP と可変抵抗にあたる操作を
+ * 1 か所へまとめる。項目が 5 つあるので縦に積み、
+ * 「どれか 1 つ」を選ぶものだけ連結したセグメントで見せる。
+ */
+.dimmerSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dimmerToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--panel-text, #1e293b);
+  cursor: pointer;
+}
+
+.dimmerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.dimmerRowName {
+  min-width: 3em;
+  color: var(--panel-muted, #64748b);
+}
+
+.dimmerSegment {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--panel-border, #cbd5e1);
+  background: var(--panel-surface, #fff);
+  color: var(--panel-text, #1e293b);
+  cursor: pointer;
+}
+
+.dimmerSegment:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.dimmerSegment:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.dimmerSegment + .dimmerSegment {
+  border-left: none;
+}
+
+.dimmerSegment[data-active] {
+  background: var(--panel-accent, #2563eb);
+  border-color: var(--panel-accent, #2563eb);
+  color: #fff;
+}

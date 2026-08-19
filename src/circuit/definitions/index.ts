@@ -9,6 +9,12 @@
  * **エンジンの差分は 0 行**（requirements.md US-F）。
  * 切替スイッチ（オルタネート）も同じく定義データだけで足りている（design.md §4.7）。
  *
+ * 調光（`dimming.ts`）は 2 部品のうち**ランプ側が定義データだけで足りている** ——
+ * 調光ランプは `kind: "lamp"` に `dimming` を足しただけで、点灯判定も経路説明も
+ * 図記号もランプ用のコードがそのまま効く（design.md §5.17）。
+ * 調光出力（`analog-source`）だけが新しい `kind` で、これは電位を配るのでも
+ * 負荷になるのでもない別の振る舞いだから避けられなかった。
+ *
  * G7L（a 接点のみのパワーリレー）だけは、この原則を保ったまま
  * **接点の形の表現力を 1 段広げる**必要があった。`RelayContact.ncTerminal` を
  * 省略可能にした 1 点で、エンジンの分岐は増えていない（design.md §5.1）。
@@ -21,8 +27,15 @@ import type {
 } from "@/circuit/types";
 
 import { genericContactor } from "./contactors";
+import { dimmableLampAc100v, dimmerOutput0to10v } from "./dimming";
 import { genericDiode } from "./diodes";
-import { dc24vLamp } from "./lamps";
+import {
+  dimmingConsole,
+  dimmingController16ch,
+  lightController4ch,
+  phaseControlDimmer,
+} from "./lighting-system";
+import { ac100vLamp, dc24vLamp } from "./lamps";
 import { omronG7l1aBDc24 } from "./omron/g7l-1a-b-dc24";
 import { omronG7l2aBDc24 } from "./omron/g7l-2a-b-dc24";
 import { omronMy2nDc24 } from "./omron/my2n-dc24";
@@ -55,6 +68,13 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   onDelayTimer,
   offDelayTimer,
   dc24vLamp,
+  ac100vLamp,
+  dimmableLampAc100v,
+  dimmerOutput0to10v,
+  dimmingController16ch,
+  phaseControlDimmer,
+  lightController4ch,
+  dimmingConsole,
   genericDiode,
   genericTerminalBlock,
 ];
@@ -103,9 +123,16 @@ export const listComponentDefinitions = (
     : [...componentDefinitions];
 
 export {
+  ac100vLamp,
+  dimmingConsole,
+  lightController4ch,
   ac100vPowerSupply,
+  dimmingController16ch,
+  phaseControlDimmer,
   dc24vLamp,
   dc24vPowerSupply,
+  dimmableLampAc100v,
+  dimmerOutput0to10v,
   genericContactor,
   genericDiode,
   genericTerminalBlock,

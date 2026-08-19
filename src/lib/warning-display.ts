@@ -17,6 +17,7 @@ export const WARNING_CODE_LABELS: Record<WarningCode, string> = {
   "coil-self-interrupt": "チャタリング",
   oscillating: "発振",
   "not-converged": "収束しません",
+  "analog-reference-mismatch": "調光の基準（0V コモン）",
 };
 
 /**

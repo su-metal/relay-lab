@@ -22,7 +22,7 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { previewPaths } from "@/circuit/engine";
+import { analogSignalNets, previewPaths, resolveAnalog } from "@/circuit/engine";
 import type { PreviewBlocker } from "@/circuit/engine";
 import type {
   CircuitDocument,
@@ -177,6 +177,14 @@ export const buildPathPreview = (
   if (document.components.length === 0) return EMPTY_PATH_PREVIEW;
 
   const preview = previewPaths(document, definitions, { pressedSwitches });
+  /*
+   * アナログ層はこのモードでも重ねる（design.md §5.17）。接点が動かなくても
+   * 調光信号は乗っており、**外すと調光線だけが灰（非通電）に戻る** ——
+   * 実行中に見えていた「効いている線」が経路確認に切り替えた途端に
+   * 消えるのは、同じ色の語彙を共有している意味が無い。
+   */
+  const analog = resolveAnalog(document, definitions, preview.netOf);
+  const analogNets = analogSignalNets(analog);
   const energizedNets = loadNetIds(
     document,
     definitions,
@@ -186,19 +194,19 @@ export const buildPathPreview = (
   );
 
   const terminalOf = new Map<string, WireState>();
+  const terminalVoltsOf = new Map<string, number>();
   for (const instance of document.components) {
     const definition = definitions.get(instance.definitionId);
     if (!definition) continue;
     for (const terminal of definition.terminals) {
       const key = terminalKey(instance.id, terminal.id);
+      const netId = preview.netOf.get(key);
       terminalOf.set(
         key,
-        wireStateOfNet(
-          preview.netOf.get(key),
-          preview.netState,
-          energizedNets,
-        ),
+        wireStateOfNet(netId, preview.netState, energizedNets, analogNets),
       );
+      const signal = netId === undefined ? undefined : analog.signalOf.get(netId);
+      if (signal) terminalVoltsOf.set(key, signal.volts);
     }
   }
 
@@ -210,12 +218,15 @@ export const buildPathPreview = (
    * そもそも存在しない（スイッチを倒しても同じ）。
    */
   const wireOf = new Map<string, WireState>();
+  const wireVoltsOf = new Map<string, number>();
   for (const connection of document.connections) {
     const key = terminalKey(
       connection.from.componentId,
       connection.from.terminalId,
     );
     wireOf.set(connection.id, terminalOf.get(key) ?? "inactive");
+    const volts = terminalVoltsOf.get(key);
+    if (volts !== undefined) wireVoltsOf.set(connection.id, volts);
   }
 
   const blockers = describeBlockers(
@@ -226,7 +237,13 @@ export const buildPathPreview = (
   );
 
   return {
-    view: { wireOf, terminalOf, deviceOf: new Map() },
+    view: {
+      wireOf,
+      terminalOf,
+      deviceOf: new Map(),
+      wireVoltsOf,
+      terminalVoltsOf,
+    },
     blockers,
     blockedComponentIds: new Set(
       blockers.map((blocker) => blocker.componentId),

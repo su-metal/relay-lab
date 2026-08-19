@@ -30,11 +30,13 @@
  */
 
 import {
+  analogSignalNets,
   buildNets,
   computeNetStates,
   isShorted,
   reachesPlus,
   reachesZero,
+  resolveAnalog,
 } from "@/circuit/engine";
 import type {
   CircuitDocument,
@@ -56,6 +58,16 @@ export type WireRole =
   | "zero"
   /** 接点・スイッチを介して電源につながる制御線 */
   | "control"
+  /**
+   * 0–10V の調光信号線（design.md §5.17）。
+   *
+   * **`isolated` から救い出すためにある。** 調光信号線はどう動作させても
+   * 電源には届かない —— 電源に繋ぐ線ではないのだから当然で、
+   * それを「配線漏れ」の灰破線で描くと、**正しく描かれた調光配線が
+   * すべて直すべき線に見える。** 灰は「直すべき線」の合図であって、
+   * 「電源以外に繋がっている線」の意味ではない。
+   */
+  | "analog"
   /** どう動作させても電源に届かない（配線漏れの可能性） */
   | "isolated"
   /** + と 0V が同一ネット＝電源短絡 */
@@ -116,6 +128,7 @@ const roleAt = (
   rest: Nets,
   switched: Nets,
   operated: Nets,
+  analogNets: ReadonlySet<number>,
   key: string,
 ): WireRole => {
   const atRest = stateOf(rest, key);
@@ -124,6 +137,12 @@ const roleAt = (
   if (reachesZero(atRest)) return "zero";
   if (reachesPower(stateOf(switched, key))) return "control";
   if (reachesPower(stateOf(operated, key))) return "control";
+  /*
+   * 電源への到達を全部見たあとに聞く（§5.17）。接点で 0V コモンへ落とした
+   * 信号線は静止状態で電源の 0V に届くので、上の `zero` で青になっている。
+   */
+  const netId = rest.netOf.get(key);
+  if (netId !== undefined && analogNets.has(netId)) return "analog";
   return "isolated";
 };
 
@@ -144,6 +163,14 @@ export const buildWireRoles = (
   const everything = new Set(document.components.map((instance) => instance.id));
 
   const rest = netsWith(document, definitions, nothing, nothing);
+  /*
+   * アナログ層は**静止状態のネットの上でだけ**解く（§5.17）。調光信号線が
+   * どのネットに乗るかは接点で 0V へ落とすかどうかでしか変わらず、
+   * その接点は静止状態で開いている側が既定になる。
+   */
+  const analogNets = analogSignalNets(
+    resolveAnalog(document, definitions, rest.netOf),
+  );
   // スイッチは入っているがリレーはまだ動いていない＝起動の瞬間
   const switched = netsWith(document, definitions, everything, nothing);
   const operated = netsWith(document, definitions, everything, everything);
@@ -151,7 +178,13 @@ export const buildWireRoles = (
   for (const connection of document.connections) {
     roles.set(
       connection.id,
-      roleAt(rest, switched, operated, terminalRefKey(connection.from)),
+      roleAt(
+        rest,
+        switched,
+        operated,
+        analogNets,
+        terminalRefKey(connection.from),
+      ),
     );
   }
   return roles;

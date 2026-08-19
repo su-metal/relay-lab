@@ -160,6 +160,8 @@ const coilNetIndex = (
     if (electrical.kind !== "relay") continue;
 
     const { coil } = electrical.relay;
+    // コイルの無い機器（カットリレー・操作卓）に還流ダイオードは付かない
+    if (!coil) continue;
     const plusNet = netOf.get(terminalKey(instance.id, coil.positiveTerminal));
     const minusNet = netOf.get(terminalKey(instance.id, coil.negativeTerminal));
     if (plusNet === undefined || minusNet === undefined) continue;
@@ -225,4 +227,41 @@ export const inspectDiodes = (
             },
     };
   });
+};
+
+/**
+ * 位相制御調光器の AC の通り道を、伝搬用の有向辺として取り出す（design.md §4.15）。
+ *
+ * **union しない理由がここにある。** 入力と出力を同じネットにすると、
+ * 同じ電源から取った 2 台の調光器の**出力回路まで 1 つに融合する** ——
+ * 実機では別々の回路なのに、片方を絞るともう片方まで暗くなる。
+ *
+ * 代わりに、ダイオードと同じ「ネットは分けたまま電位だけ流す」形にする。
+ * ダイオードと違うのは**両方向に流す**こと（交流の通り道は一方通行ではない）。
+ * `spreadThroughDiodes` は `plusFrom` を anode → cathode、`zeroFrom` を
+ * cathode → anode へ流すので、両向きの辺を入れれば両方が両方向へ伝わる。
+ */
+export const collectDimmerEdges = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  netOf: ReadonlyMap<string, number>,
+): DiodeEdge[] => {
+  const edges: DiodeEdge[] = [];
+
+  for (const instance of document.components) {
+    const definition = definitions.get(instance.definitionId);
+    if (!definition) continue;
+    const { electrical } = definition;
+    if (electrical.kind !== "dimmer") continue;
+
+    const inNet = netOf.get(terminalKey(instance.id, electrical.inTerminal));
+    const outNet = netOf.get(terminalKey(instance.id, electrical.outTerminal));
+    if (inNet === undefined || outNet === undefined) continue;
+    if (inNet === outNet) continue;
+
+    edges.push({ componentId: instance.id, anodeNet: inNet, cathodeNet: outNet });
+    edges.push({ componentId: instance.id, anodeNet: outNet, cathodeNet: inNet });
+  }
+
+  return edges;
 };

@@ -7,6 +7,7 @@
  */
 
 import type {
+  AnalogResult,
   CircuitComponentInstance,
   CircuitDocument,
   ComponentDefinition,
@@ -17,6 +18,7 @@ import type {
 import { terminalKey, terminalRefKey } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
+import { analogPercent } from "./analog";
 import { inspectDiodes } from "./diode";
 import type { NetLookup } from "./graph";
 import { shortedSupplies } from "./potential";
@@ -142,10 +144,43 @@ export const detectDiodeOrientation = (
 };
 
 /**
+ * 明るさの表示（"100%"）。小数は出さない —— 端子には V を、部品には % を出す
+ * という切り分け（design.md §5.17）の中で、% 側は「どれくらい明るいか」が
+ * 読めれば足りる。
+ */
+const percentText = (percent: number): string => `${Math.round(percent)}%`;
+
+/**
+ * 未接続の調光信号端子に添える一言（requirements.md US-AL）。
+ *
+ * **これが本スコープで最も価値のある警告。** ユーザーの会社の調光仕様は
+ * 0V = 100% の逆特性なので、**信号線を挿し忘れると全灯する。** 一般的な
+ * 0–10V 機器（0V = 消灯）と真逆で、しかも「消えている」より気付きにくい。
+ *
+ * **何 V になるかはエンジンが決め打ちしない**（`unconnectedVolts` は
+ * 定義側が持つ）。プルアップかプルダウンかは実機の入力回路次第で、
+ * ここに 0 と書いた瞬間に順特性の機器で嘘になる。
+ */
+const unconnectedAnalogNote = (
+  definition: ComponentDefinition,
+  terminalId: string,
+): string | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "lamp" || !electrical.dimming) return undefined;
+  const { dimming } = electrical;
+  if (terminalId !== dimming.signalTerminal) return undefined;
+
+  const percent = analogPercent(dimming.curve, dimming.unconnectedVolts);
+  return `調光信号が未接続のため ${dimming.unconnectedVolts}V として扱われ、出力は ${percentText(percent)} になります。`;
+};
+
+/**
  * 未接続端子。どの `CircuitConnection` にも現れない端子。
  *
  * MY4N のように使わない接点が多い部品では大量に出るため severity は info。
  * UI では既定で折りたたむ想定（Step 6）。
+ *
+ * **調光信号の端子だけは一言添える**（`unconnectedAnalogNote`）。
  */
 export const detectUnconnectedTerminals = (
   document: CircuitDocument,
@@ -163,14 +198,69 @@ export const detectUnconnectedTerminals = (
     if (!definition) continue;
     for (const terminal of definition.terminals) {
       if (wired.has(terminalKey(instance.id, terminal.id))) continue;
+      /*
+       * 「使わないことが正常」な端子は指摘しない（design.md §3.1）。
+       *
+       * **端子が多い機器のための逃げ道。** 46 端子の調光コントローラで
+       * 未接続をすべて挙げると、本当に挿し忘れている 1 本が 40 本の雑音に
+       * 埋もれる。立てる側（定義）が「繋がないと働かない端子には立てない」
+       * ことで、捕まえたい挿し忘れは残る。
+       */
+      if (terminal.optional) continue;
+      const note = unconnectedAnalogNote(definition, terminal.id);
       warnings.push({
         code: "unconnected-terminal",
-        severity: "info",
-        message: `${describeComponent(instance, definition)} の端子 ${terminal.label} は未接続です。`,
+        // 挿し忘れると全灯する端子は、使わない接点の未接続と同じ重さではない
+        severity: note ? "warning" : "info",
+        message: `${describeComponent(instance, definition)} の端子 ${terminal.label} は未接続です。${note ?? ""}`,
         componentId: instance.id,
         terminalId: terminal.id,
       });
     }
+  }
+  return warnings;
+};
+
+/**
+ * 調光信号の基準（0V コモン）が共通でない（design.md §5.17）。
+ *
+ * 0–10V は基準に対する電圧なので、リターンが共通でないと電圧そのものが
+ * 意味を持たない。**「調光信号だけ引いて GND を共通にしていない」は
+ * 実務で踏みやすく、しかも 0V = 100% の仕様では全灯として現れる。**
+ *
+ * これは §5.3 の `supplyMismatch`（基準を共有していない 2 台の電源を
+ * またいだ負荷は通電しない）とまったく同じ話で、**接点の話をしない**
+ * ところまで同じ —— 直すべきなのはコモン線 1 本であって、接点ではない。
+ */
+export const detectAnalogReferenceMismatch = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  analog: AnalogResult,
+): Warning[] => {
+  if (analog.levelOf.size === 0) return [];
+
+  const warnings: Warning[] = [];
+  for (const instance of document.components) {
+    const definition = definitions.get(instance.definitionId);
+    if (!definition) continue;
+    const { electrical } = definition;
+    if (electrical.kind !== "lamp" || !electrical.dimming) continue;
+
+    const level = analog.levelOf.get(instance.id);
+    if (!level?.referenceMismatch) continue;
+
+    const commonLabel =
+      definition.terminals.find(
+        (terminal) => terminal.id === electrical.dimming?.commonTerminal,
+      )?.label ?? electrical.dimming.commonTerminal;
+
+    warnings.push({
+      code: "analog-reference-mismatch",
+      severity: "warning",
+      message: `${describeComponent(instance, definition)} の調光信号は基準（0V コモン）が調光出力側と共通になっていません。0–10V は基準に対する電圧なので、この配線では信号が成立せず ${level.volts}V（${percentText(level.percent)}）として扱われます。端子 ${commonLabel} を調光出力のコモンへ繋いでください。`,
+      componentId: instance.id,
+      terminalId: electrical.dimming.commonTerminal,
+    });
   }
   return warnings;
 };

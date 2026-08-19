@@ -16,6 +16,7 @@ import { create } from "zustand";
 
 import { componentRegistry } from "@/circuit/definitions";
 import { simulate } from "@/circuit/engine";
+import { operationKey } from "@/circuit/types";
 import type { SimulationResult } from "@/circuit/types";
 
 import { useCircuitStore } from "./circuitStore";
@@ -46,6 +47,14 @@ export type SimulationStore = {
    * ときにどちらが効いているのか読めなくなる。モードの切り替えで必ず空へ戻す。
    */
   pressedSwitches: ReadonlySet<string>;
+  /**
+   * 人が倒している機器の操作（`operationKey()` の文字列・design.md §4.16）。
+   *
+   * **`pressedSwitches` と分けて持つ。** キーの形が違う（あちらは
+   * componentId、こちらは `componentId:operationId`）ので、同じ集合に
+   * 混ぜると「倒したのに動かない」が静かに起きる。
+   */
+  operatedDevices: ReadonlySet<string>;
   /** 最新の結果。停止中は null */
   result: SimulationResult | null;
   /**
@@ -91,6 +100,12 @@ export type SimulationStore = {
   toggleSwitch: (componentId: string) => void;
 
   /**
+   * 機器の操作を倒す（操作卓のボタン・design.md §4.16）。
+   * 停止中は無視する（`toggleSwitch` と同じ理由）。
+   */
+  toggleOperation: (componentId: string, operationId: string) => void;
+
+  /**
    * 現在の回路と入力で解き直す。
    * 入力（回路 / 押下状態 / 実行状態）が変わるたびに `useSimulationSync` が呼ぶ。
    */
@@ -118,7 +133,8 @@ const stopTicking = (): void => {
 export const useSimulationStore = create<SimulationStore>()((set, get) => ({
   running: false,
   pressedSwitches: EMPTY_PRESSED,
-  result: null,
+      operatedDevices: EMPTY_PRESSED,
+    result: null,
   nowMs: 0,
   pathPreview: false,
 
@@ -131,7 +147,8 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
     set({
       running: true,
       pressedSwitches: EMPTY_PRESSED,
-      result: null,
+      operatedDevices: EMPTY_PRESSED,
+        result: null,
       nowMs: 0,
       // 実行が始まったら予測の色は下ろす。排他はここ 1 箇所で守る
       pathPreview: false,
@@ -143,7 +160,8 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
     set({
       running: false,
       pressedSwitches: EMPTY_PRESSED,
-      result: null,
+      operatedDevices: EMPTY_PRESSED,
+        result: null,
       nowMs: 0,
     });
   },
@@ -157,7 +175,11 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
     if (get().pathPreview) {
       // 出るときも倒した状態を捨てる。残すと停止中の役割配色に戻ったあとも
       // 見えない操作が効いたままになり、次に ⚡ を押すと勝手に倒れて見える
-      set({ pathPreview: false, pressedSwitches: EMPTY_PRESSED });
+      set({
+        pathPreview: false,
+        pressedSwitches: EMPTY_PRESSED,
+        operatedDevices: EMPTY_PRESSED,
+      });
       return;
     }
     stopTicking();
@@ -165,7 +187,8 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       pathPreview: true,
       running: false,
       pressedSwitches: EMPTY_PRESSED,
-      result: null,
+      operatedDevices: EMPTY_PRESSED,
+        result: null,
       nowMs: 0,
     });
   },
@@ -197,8 +220,17 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       return { pressedSwitches: next };
     }),
 
+  toggleOperation: (componentId, operationId) =>
+    set((state) => {
+      if (!state.running && !state.pathPreview) return {};
+      const key = operationKey(componentId, operationId);
+      const next = new Set(state.operatedDevices);
+      if (!next.delete(key)) next.add(key);
+      return { operatedDevices: next };
+    }),
+
   evaluate: () => {
-    const { running, pressedSwitches, result } = get();
+    const { running, pressedSwitches, operatedDevices, result } = get();
 
     if (!running) {
       stopTicking();
@@ -216,6 +248,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
       componentRegistry,
       {
         pressedSwitches,
+        operatedDevices,
         previousEnergizedRelays: result?.energizedRelays,
         previousTimers: result?.timers,
         nowMs,

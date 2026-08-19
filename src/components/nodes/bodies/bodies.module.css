@@ -121,7 +121,19 @@
   stroke: var(--lens-edge);
   /* 点灯の合図を**塗り以外にも乗せる。** 淡い色のレンズでも縁の太さで分かる */
   stroke-width: 2;
-  filter: drop-shadow(0 0 5px var(--lens-glow, var(--lens)));
+  /*
+   * 明るさ（design.md §5.17）。調光ランプ以外は `--brightness: 1` が入るので
+   * 従来とまったく同じ見た目になる。
+   *
+   * **ここで濃さを使うのは配線とは事情が逆。** 配線の薄さは「電流が
+   * 流れていない」を意味するので調光レベルを載せてはいけないが、
+   * ランプの塗りの濃さは**明るさそのもの**であり、写して嘘にならない。
+   * それでも塗りだけには頼らず、数字（`.dimmerLevel`）を必ず併記する。
+   */
+  fill-opacity: var(--brightness, 1);
+  filter: drop-shadow(
+    0 0 calc(5px * var(--brightness, 1)) var(--lens-glow, var(--lens))
+  );
 }
 
 /*
@@ -328,4 +340,68 @@
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-tint);
+}
+
+/*
+ * 調光の量（design.md §5.17）。調光出力は V、調光ランプは % を出す。
+ *
+ * 出す単位が違うのは、V → % の対応が**受け側の機器の性質**だから
+ * （`AnalogCurve`）。同じ 5V でも順特性の機器を繋げば別の明るさになる。
+ *
+ * **停止中も出す。** つまみの位置はシミュレーションの結果ではない
+ * （タイマーの設定時間と同じ・design.md §5.13）。
+ */
+.dimmerLevel {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 点灯している調光ランプの % は、消灯中と同じ濃さにしない */
+.dimmerLevel[data-lit="true"] {
+  color: var(--wire-energized-text);
+}
+
+/* 調光出力の図記号。連続して変わる量を表す斜線 */
+.dimmerRamp {
+  stroke: var(--wire-analog);
+  stroke-width: 2;
+}
+
+/*
+ * 多回路の調光出力の読み（design.md §5.17）。
+ *
+ * 16 回路を 1 行に並べると本体が横に伸びすぎるので折り返す。
+ * 回路番号を小さく前置きするのは、**値だけ並ぶと何番の回路か読めない**ため。
+ */
+.dimmerChannels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  justify-content: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--device-body-text, #334155);
+}
+
+.dimmerChannel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.dimmerChannelId {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+/* 機器の操作ボタン（操作卓・design.md §4.16）。複数あるので折り返す */
+.operations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
 }
