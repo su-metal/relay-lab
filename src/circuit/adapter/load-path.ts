@@ -370,13 +370,16 @@ const gateCandidatesOf = (
         : `${label} の入力が切れて ${seconds}後に閉じます`;
 
     return electrical.relay.contacts.flatMap<GateCandidate>((contact) => {
-      const pairs: GateCandidate[] = [
-        {
+      const pairs: GateCandidate[] = [];
+      // NO 端子が実機に無い b 接点（電磁接触器の 21–22 など）に
+      // a 接点の候補を作らない（design.md §4.12）
+      if (contact.noTerminal !== undefined) {
+        pairs.push({
           a: contact.commonTerminal,
           b: contact.noTerminal,
           condition: onCondition,
-        },
-      ];
+        });
+      }
       // NC 端子が実機に無い a 接点（G7L など）に b 接点を作らない（design.md §4.8）
       if (contact.ncTerminal !== undefined) {
         pairs.push({

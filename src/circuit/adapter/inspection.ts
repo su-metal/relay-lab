@@ -281,10 +281,16 @@ export const inspectContacts = (
   const sideOf = (contact: RelayContact): ClosedSide | undefined => {
     if (!closedOf) return undefined;
     const other = closedOf.get(contact.commonTerminal);
+    // **`undefined` を最初に弾く。** NO 端子を持たない b 接点（電磁接触器の
+    // 21–22）は励磁すると相手がいなくなり、`noTerminal` も `undefined` なので、
+    // 先に `other === contact.noTerminal` を見ると
+    // `undefined === undefined` が成立して**実機に無い a 接点が閉じている**
+    // ことになる。閉じている相手がいないなら、形が何であれ "open"
+    if (other === undefined) return "open";
     if (other === contact.noTerminal) return "no";
-    // NC 端子を持たない a 接点は、非励磁で相手がいない。
+    // NC 端子を持たない a 接点は、非励磁で相手がいない（上で "open" に落ちる）。
     // ここを "nc" に丸めると存在しない b 接点が導通していることになる
-    return other === undefined ? "open" : "nc";
+    return "nc";
   };
 
   return relay.contacts.map((contact, index) => ({

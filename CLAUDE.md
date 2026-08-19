@@ -20,11 +20,13 @@
 4. **表示用の React Flow Edge と電気的接続を同一視しない。** 内部表現は端子グラフ (`CircuitConnection`)、間に adapter を置く。
 5. **端子番号には必ず `source`（出典）と `verified` を持たせる。** 未検証の型番を検証済みとして扱わない。MY2N / MY4N / MY4N-D2 は OMRON 公式データシート（J199）と照合済み、G7L-1A-B / G7L-2A-B は公式カタログ（CDPA-041C）と照合済みで `verified: true`（`design.md` §4.4・§4.9）。**新しい型番を足すときは `verified: false` から始め、公式資料の該当ページの図を自分で確認できたときだけ `true` にする。** 出典にはページと図の名前まで残す（後から再検証できなくなるため）。特に MY2N1 / MY4N1 など末尾に「1」が付く型番はコイルの極性が逆（Type 2）、G7L も端子形状違い（-T / -P）は別の図なので、**既存の端子表を流用しない。**
 
-6. **接点の形をリレーの型で決め打ちしない。** すべてのリレーが c 接点を持つわけではない。G7L は a 接点のみで b 接点の端子が実機に無く、コイルにも極性が無い。無い端子を空文字で埋めたり、`coil_positive` を当てて実機に無い極性を主張したりしない（`design.md` §4.8）。
+6. **接点の形をリレーの型で決め打ちしない。** すべてのリレーが c 接点を持つわけではない。G7L は a 接点のみで b 接点の端子が実機に無く、コイルにも極性が無い。逆に電磁接触器の補助 b 接点（21–22）は **a 接点の端子が無い**（`design.md` §4.8・§4.12）。無い端子を空文字で埋めたり、`coil_positive` を当てて実機に無い極性を主張したりしない。**`noTerminal` と `ncTerminal` は対称に扱うこと** —— 一方だけを `undefined` 前提で書くと、もう片方の形が静かにすり抜ける（`design.md` §3.2）。
 
 7. **タイマーリレーはリレーとして表す。** `ElectricalDefinition` に `kind: "timer"` を作らず、`kind: "relay"` の `delay?: TimerDelay` の有無で分ける（`design.md` §5.13）。実機がリレーである以上、接点・コイル・端子まわりの判定を 2 本に分ける理由が無く、分けると片方だけ直す事故が起きる。`category: "timer"` はパレットと図記号の出し分けという表示都合だけ。
 
 8. **`energizedRelays` は「接点が切り替わっている」であって「コイルが励磁している」ではない。** 遅延なしのリレーでは一致するが、タイマーは設定時間のあいだ「コイルは入っているが接点はまだ」の状態にいる。コイルの側を見たいときは `coilEnergized()` を使う —— 取り違えると、計測中のタイマーのコイル配線が非通電（灰色）に見える（`design.md` §5.13）。
+
+9. **ラダー図は配線から導く派生物で、保存対象ではない。** `CircuitDocument` にも履歴にも持たない（`design.md` §5.16）。持った瞬間に「図と実配線のどちらが正か」という問いが生まれ、片方だけ直った状態が残る。同じ理由で、変換は実体配線 → ラダー図の 1 方向だけ。**接点は開閉に関わらず枝として残す** —— ラダー図は回路の論理であって今の状態のスナップショットではないので、`conductingPairs()`（今どちらへ倒れているか）を使わない。
 
 ## ドキュメント更新トリガー
 
@@ -62,3 +64,13 @@ Stop フックは 2 本ある（`.claude/settings.json`）。
 | `check-docs-fresh.mjs` | 上記のドキュメント更新漏れを検出する。初回コミット以降のみ動作 |
 
 タスク分解と進捗は `TodoWrite` で管理する（`tasklist.md` は作らない）。記述はすべて日本語。
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

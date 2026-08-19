@@ -15,6 +15,20 @@
 export type TerminalRole =
   | "power_positive"
   | "power_zero"
+  /**
+   * 交流電源の非接地側（L / ライブ）と接地側（N / ニュートラル）。
+   *
+   * **`power_positive` / `power_zero` を流用しない。** 交流に + と 0V は無く、
+   * 画面が「電源 +」と書いた時点で、直流と同じものだと読ませてしまう。
+   * `ElectricalDefinition` 側は `positiveTerminal` / `zeroTerminal` という
+   * フィールド名のままだが（型の形を電源の種類で分けない）、**画面に出る
+   * 呼称はこの役割で分ける**（design.md §4.13）。
+   *
+   * L と N は電位差の両端であって、どちらが「高い」わけでもない。
+   * エンジンは今までどおり「同じ 1 台の電源の両端に届くか」だけを見る。
+   */
+  | "power_line"
+  | "power_neutral"
   | "coil_positive"
   | "coil_negative"
   /**

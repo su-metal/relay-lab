@@ -30,8 +30,13 @@ import {
  *
  * ランク統合はしていない。回路 1 枚の端子数は高々数百で、
  * 経路圧縮だけで実用上ほぼ定数時間になるため。
+ *
+ * **公開しているのはラダー図の変換（§5.16）のため。** あちらは
+ * 「電線と端子台だけを束ね、接点は開閉に関わらず枝のまま残す」という
+ * こことは別の束ね方をするので `buildNets()` は使えないが、
+ * 束ねる道具まで書き直す理由は無い。
  */
-class UnionFind {
+export class UnionFind {
   private readonly parent = new Map<string, string>();
 
   add(key: string): void {
