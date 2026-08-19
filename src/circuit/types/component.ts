@@ -21,7 +21,16 @@ export type ComponentCategory =
    * `delay` の有無だけが違う（design.md §5.13）。カテゴリを分けているのは
    * パレットの見出しと図記号の出し分けという表示都合だけ。
    */
-  | "timer";
+  | "timer"
+  /**
+   * 0–10V の調光出力（design.md §5.17）。
+   *
+   * **こちらはカテゴリだけでなく `ElectricalDefinition` も別**（`analog-source`）。
+   * タイマーと違い、既存のどの `kind` の「省略可能なフィールドの有無」でも
+   * 表せない —— 電位を配るのでも負荷になるのでもなく、**基準に対する
+   * 電圧値を出す**という別の振る舞いだから。
+   */
+  | "dimmer";
 
 /**
  * コイルの極性の扱い（design.md §5.3）。
@@ -114,13 +123,78 @@ export type TimerDelay = {
 };
 
 /**
+ * 電圧（V）と明るさ（%）の対応（design.md §5.17）。
+ *
+ * **エンジンに型番分岐を書かないための宣言**（CLAUDE.md 設計原則 2）。
+ * ユーザーの会社の調光仕様は `0V = 100% / 10V = 0%` という逆特性で、
+ * 一般的な 0–10V 機器（0V = 消灯）と真逆になる。この違いを
+ * `if (model === "FMD-701D") invert` で書いた瞬間に設計が壊れるので、
+ * **端子が持つのは電圧だけ**にして、% への変換は定義側のこの宣言に閉じる。
+ *
+ * 順特性の機器を後から足しても `percentAtMin` / `percentAtMax` を
+ * 入れ替えるだけで済み、エンジンは 1 行も変わらない。
+ */
+export type AnalogCurve = {
+  /** 変換の下端の電圧（V） */
+  minVolts: number;
+  /** 変換の上端の電圧（V） */
+  maxVolts: number;
+  /** `minVolts` のときの明るさ（0–100）。逆特性ではここが 100 */
+  percentAtMin: number;
+  /** `maxVolts` のときの明るさ（0–100）。逆特性ではここが 0 */
+  percentAtMax: number;
+};
+
+/**
+ * 調光入力を持つ負荷の設定（design.md §5.17）。
+ *
+ * **`kind: "lamp"` に省略可能で足す。** タイマーを `kind: "timer"` に
+ * せず `relay` の `delay` で表したのと同じ形（CLAUDE.md 設計原則 7）。
+ * 調光ランプは「明るさが変わるランプ」であって別種の負荷ではなく、
+ * 点灯条件（両端が同じ 1 台の電源の + と 0V に届くか）も普通のランプと同じ。
+ * `kind` を分けると点灯判定・経路説明・図記号・ラダー図の分岐が
+ * すべて 2 本になり、片方だけ直す事故が起きる。
+ */
+export type DimmingInput = {
+  /** 調光信号（0–10V）を受ける端子 */
+  signalTerminal: string;
+  /**
+   * 信号の基準（0V コモン）となる端子。
+   *
+   * **0–10V は基準に対する電圧なので、これが調光出力側のコモンと
+   * 同じネットに無いと信号が成立しない**（design.md §5.3 の
+   * 「同じ 1 台の電源か」とまったく同じ話）。
+   */
+  commonTerminal: string;
+  /** V → % の対応 */
+  curve: AnalogCurve;
+  /**
+   * 信号線が未接続のときに入力段が示すレベル（V）。
+   *
+   * **エンジンが決め打ちしない。** プルアップかプルダウンかは実機の
+   * 入力回路次第で、0V = 100% の仕様と組み合わさると
+   * **「挿し忘れると全灯する」**という気付きにくい失敗になる
+   * （requirements.md US-AL）。だから定義に持たせ、
+   * `unconnected-terminal` の警告文にそのまま出す。
+   */
+  unconnectedVolts: number;
+};
+
+/**
  * カテゴリごとの電気的なふるまい。`kind` による判別可能ユニオン。
  *
- * エンジンが持ってよい分岐はこの `kind` の 6 通りだけ。
+ * エンジンが持ってよい分岐はこの `kind` の 7 通りだけ。
  * 端子は必ず ID 参照で指定し、端子番号そのものをエンジンに埋め込まない。
  *
- * **タイマーで 7 通目を作らない。** タイマーリレーはリレーであり、
+ * **タイマーで 1 通り増やさない。** タイマーリレーはリレーであり、
  * `relay` の `delay` の有無で表す（`TimerDelay` 参照）。
+ * **調光ランプでも増やさない** —— 調光ランプはランプであり、
+ * `lamp` の `dimming` の有無で表す（`DimmingInput` 参照）。
+ *
+ * 7 通目の `analog-source` だけは既存のどれにも寄せられない。
+ * 電位を配る `power` でも、電位差を受ける `lamp` でもなく、
+ * **基準に対する電圧値を出す**という別の振る舞いだから
+ * （design.md §5.17）。
  */
 export type ElectricalDefinition =
   | {
@@ -144,16 +218,44 @@ export type ElectricalDefinition =
       terminalA: string;
       terminalB: string;
     }
+  /**
+   * ランプ。`dimming` を持つものが調光ランプ（design.md §5.17）。
+   *
+   * **`kind` を分けない。** 点灯条件は調光の有無に関わらず
+   * 「両端が同じ 1 台の電源の + と 0V に届くか」のままで、
+   * `dimming` はその上に載る明るさの話にすぎない。
+   */
   | {
       kind: "lamp";
       voltage: number;
       currentType: "DC" | "AC";
       terminalA: string;
       terminalB: string;
+      dimming?: DimmingInput;
     }
   | { kind: "diode"; anodeTerminal: string; cathodeTerminal: string }
   /** 端子台。列挙した全端子が常時導通する */
-  | { kind: "terminal"; terminals: string[] };
+  | { kind: "terminal"; terminals: string[] }
+  /**
+   * アナログ量（0–10V の調光信号）を出す部品（design.md §5.17）。
+   *
+   * **電源（`kind: "power"`）ではない。** 電源として扱うと
+   * `plusFrom` / `zeroFrom` に乗って導通判定と配線色に混ざり、
+   * 0V を出しているだけの信号線が「電源短絡」や「非通電」に化ける。
+   * アナログ量は導通レイヤに重ねる第 2 パスとして解く。
+   */
+  | {
+      kind: "analog-source";
+      /** 電圧を出す端子 */
+      signalTerminal: string;
+      /** 出力の基準（0V コモン）となる端子 */
+      commonTerminal: string;
+      /** 出力できる下限・上限（実機のつまみの目盛りに相当） */
+      minVolts: number;
+      maxVolts: number;
+      /** 既定の出力電圧。インスタンスの `outputVolts` で上書きできる */
+      defaultVolts: number;
+    };
 
 export type ComponentDefinition = {
   /** 定義 ID（"omron-my4n-dc24"）。`CircuitDocument` からはこの ID で参照する */

@@ -338,6 +338,8 @@ export const buildLadder = (
 
   let powerCount = 0;
   let diodeCount = 0;
+  /** 調光出力の台数。図に出さないことを断るためだけに数える（§5.17） */
+  let dimmerCount = 0;
 
   for (const instance of document.components) {
     const definition = definitions.get(instance.definitionId);
@@ -360,6 +362,7 @@ export const buildLadder = (
       dsu.union(terminalKey(instance.id, electrical.zeroTerminal), ZERO_NODE);
     }
     if (electrical.kind === "diode") diodeCount += 1;
+    if (electrical.kind === "analog-source") dimmerCount += 1;
   }
 
   // 2. 接点と出力を拾う
@@ -460,7 +463,15 @@ export const buildLadder = (
       case "power":
       case "terminal":
       case "diode":
-        // ダイオードは枝にしない（下の `notes` で断る）
+      case "analog-source":
+        /*
+         * ダイオードは枝にしない（下の `notes` で断る）。
+         *
+         * **調光出力も同じ。** ラダー図は接点の論理を表す図で、
+         * 0–10V のアナログ量を描く場所が無い（design.md §5.17）。
+         * 調光ランプ自体は普通のランプとして出力に出るので、
+         * 「どの条件でこのランプに電源が入るか」までは図に残る。
+         */
         break;
     }
   }
@@ -565,6 +576,11 @@ export const buildLadder = (
   if (diodeCount > 0) {
     notes.push(
       "ダイオードは図に出していません。逆起電力を吸収する実装上の部品で、ラダー図の論理には現れないためです（直列に入れた場合もその経路は数えていません）。",
+    );
+  }
+  if (dimmerCount > 0) {
+    notes.push(
+      "調光（0–10V）は図に出していません。ラダー図は接点の論理を表す図で、アナログ量を描く場所が無いためです。調光信号を接点で 0V に落とす配線も段にはなりません（明るさはキャンバスで確認してください）。",
     );
   }
   if (rungs.some((rung) => rung.movedFromZeroSide)) {

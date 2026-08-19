@@ -74,7 +74,73 @@ export type NetState = {
   zeroFrom: ReadonlySet<string>;
 };
 
-/** 警告の種別（design.md §5.7 の 6 種に対応） */
+/**
+ * アナログ信号が乗っているネット 1 本（design.md §5.17）。
+ *
+ * **導通レイヤ（`NetState`）とは別に重ねる。** 電圧値を `NetState` に
+ * 混ぜると、0V を出しているだけの調光信号線が電源の 0V と見分けが
+ * つかなくなり、電源短絡の判定にも配線色にも紛れ込む。
+ */
+export type AnalogSignal = {
+  /** 信号ネットの電圧（V） */
+  volts: number;
+  /** この電圧の基準となるネット ID（調光出力のコモン側） */
+  referenceNet: number;
+  /** この電圧を出している調光出力のインスタンス ID */
+  sourceIds: readonly string[];
+  /**
+   * 外部から基準まで引き下げられている（実機盤の "DIRECT" 相当）。
+   *
+   * 接点で信号線を 0V コモンに落とすと信号ネットと基準ネットが
+   * 同じネットになる。**別のグラフは要らない** —— 既存の Union-Find が
+   * そのまま表している（requirements.md ⑥）。
+   */
+  pulledToReference: boolean;
+};
+
+/**
+ * 調光入力を持つ負荷 1 個の解（design.md §5.17）。
+ *
+ * `volts` と `percent` の両方を持つのは、**端子には V を、部品には % を**
+ * 出すため（requirements.md US-AK）。変換規則は定義側の
+ * `AnalogCurve` にあり、ここには結果だけが入る。
+ */
+export type DimmingLevel = {
+  /** 入力段が見ている電圧（V） */
+  volts: number;
+  /** 明るさ（0–100）。逆特性の機器では 0V が 100 になる */
+  percent: number;
+  /**
+   * 信号が届いていないため、定義の `unconnectedVolts` を使った。
+   *
+   * **0V = 100% の仕様では、これが「挿し忘れて全灯」そのもの。**
+   */
+  floating: boolean;
+  /**
+   * 調光出力は繋がっているが、**基準（0V コモン）が共通でない。**
+   *
+   * 0–10V は基準に対する電圧なので、この状態では信号が成立しない
+   * （design.md §5.3 の `supplyMismatch` とまったく同じ話）。
+   * 成立しない以上、レベルは `floating` と同じ扱いになる。
+   */
+  referenceMismatch: boolean;
+};
+
+/** アナログ層の解（`SimulationResult.analog`・design.md §5.17） */
+export type AnalogResult = {
+  /** ネット ID → そのネットに乗っているアナログ信号 */
+  signalOf: ReadonlyMap<number, AnalogSignal>;
+  /** 調光入力を持つ負荷の componentId → 明るさ */
+  levelOf: ReadonlyMap<string, DimmingLevel>;
+};
+
+/** アナログ信号が 1 本も無い回路の解。毎回空の Map を作らないための共有値 */
+export const EMPTY_ANALOG_RESULT: AnalogResult = {
+  signalOf: new Map(),
+  levelOf: new Map(),
+};
+
+/** 警告の種別（design.md §5.7 の 7 種に対応） */
 export type WarningCode =
   /** +24V 端子と 0V 端子が導通している */
   | "power-short-circuit"
@@ -96,7 +162,12 @@ export type WarningCode =
   /** 励磁状態が振動して収束しない（B 接点による自励発振） */
   | "oscillating"
   /** 反復上限に達しても安定しなかった */
-  | "not-converged";
+  | "not-converged"
+  /**
+   * 調光信号は繋がっているのに、基準（0V コモン）が共通でない。
+   * 0–10V は基準に対する電圧なので信号が成立しない（design.md §5.17）
+   */
+  | "analog-reference-mismatch";
 
 /**
  * 深刻度。
@@ -129,8 +200,19 @@ export type SimulationResult = {
    * タイマーのコイルの状態は `timers` を見ること（design.md §5.13）。
    */
   energizedRelays: ReadonlySet<string>;
-  /** 点灯中のランプの componentId */
+  /**
+   * 点灯中のランプの componentId。
+   *
+   * **調光ランプは明るさ 0% を「消灯」として扱う**（design.md §5.17）。
+   * 電源が来ていても 10V（この仕様では 0%）なら光っていないので、
+   * ここには入らない。
+   */
   litLamps: ReadonlySet<string>;
+  /**
+   * アナログ層の解（design.md §5.17）。
+   * 調光を使っていない回路では空（`EMPTY_ANALOG_RESULT`）。
+   */
+  analog: AnalogResult;
   /** `terminalKey(componentId, terminalId)` → ネット ID */
   netOf: ReadonlyMap<string, number>;
   /** ネット ID → 電位状態 */

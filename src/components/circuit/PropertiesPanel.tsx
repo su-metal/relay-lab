@@ -31,7 +31,7 @@ import type {
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
-import { presetMsOf } from "@/circuit/engine";
+import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
   ComponentDefinition,
   ElectricalDefinition,
@@ -61,6 +61,9 @@ export function PropertiesPanel() {
   );
   const setComponentPreset = useCircuitStore(
     (state) => state.setComponentPreset,
+  );
+  const setComponentOutputVolts = useCircuitStore(
+    (state) => state.setComponentOutputVolts,
   );
   const setComponentLampColor = useCircuitStore(
     (state) => state.setComponentLampColor,
@@ -165,6 +168,9 @@ export function PropertiesPanel() {
           onPresetChange={(presetMs) =>
             setComponentPreset(inspection.instance.id, presetMs)
           }
+          onOutputVoltsChange={(volts) =>
+            setComponentOutputVolts(inspection.instance.id, volts)
+          }
           onLampColorChange={(color) =>
             setComponentLampColor(inspection.instance.id, color)
           }
@@ -198,6 +204,8 @@ type DetailsProps = {
   /** タイマーの設定時間（ms）。タイマー以外では呼ばれない */
   onPresetChange: (presetMs: number) => void;
   /** 表示ランプのレンズの色。ランプ以外では呼ばれない */
+  /** 調光出力の電圧（V）。調光出力以外では呼ばれない */
+  onOutputVoltsChange: (volts: number) => void;
   onLampColorChange: (color: LampColor) => void;
 };
 
@@ -208,6 +216,7 @@ function ComponentDetails({
   onFlip,
   onReplace,
   onPresetChange,
+  onOutputVoltsChange,
   onLampColorChange,
 }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
@@ -219,6 +228,11 @@ function ComponentDetails({
       : undefined;
   // レンズの色（design.md §4.11）。ランプ以外では欄ごと出さない
   const lamp = definition.electrical.kind === "lamp";
+  // 調光出力の電圧（design.md §5.17）。持たない部品では欄ごと出さない
+  const source =
+    definition.electrical.kind === "analog-source"
+      ? definition.electrical
+      : undefined;
   // 交換候補は同じカテゴリ内だけ（design.md §8.3）。カテゴリを跨ぐと
   // ElectricalDefinition.kind ごと変わり、部品交換ではなく作り直しになる
   const replaceCandidates = componentDefinitions.filter(
@@ -276,6 +290,41 @@ function ComponentDetails({
                 }}
               />
               <span className={styles.presetUnit}>秒</span>
+            </span>
+          </label>
+        )}
+
+        {/*
+          調光出力の電圧（design.md §5.17）。**V で入力させる。**
+
+          % ではないのは、V → % の対応が受け側の機器の性質だから
+          （`AnalogCurve`）。ここを % にすると、逆特性という受け側の性質を
+          出力側の性質だと読ませてしまう。
+
+          タイマーの設定時間と同じく Undo の対象にしてある —— 繋いだ負荷の
+          明るさそのものが変わるので、間違えたときに戻せないと困る。
+        */}
+        {source && (
+          <label className={styles.labelField}>
+            <span className={styles.fieldName}>出力</span>
+            <span className={styles.presetField}>
+              <input
+                className={styles.presetInput}
+                type="number"
+                inputMode="decimal"
+                step={0.1}
+                min={source.minVolts}
+                max={source.maxVolts}
+                value={outputVoltsOf(source, instance.outputVolts)}
+                onChange={(event) => {
+                  const volts = Number(event.target.value);
+                  // 入力途中の空欄・記号だけの状態では書き込まない。
+                  // 範囲外は circuitStore が上下限へ丸める
+                  if (!Number.isFinite(volts)) return;
+                  onOutputVoltsChange(volts);
+                }}
+              />
+              <span className={styles.presetUnit}>V</span>
             </span>
           </label>
         )}
@@ -758,7 +807,7 @@ function ContactPair({
 /**
  * カテゴリごとの電気仕様と実行時の状態。
  *
- * 分岐は `ElectricalDefinition.kind` の 6 通りだけで、
+ * 分岐は `ElectricalDefinition.kind` の 7 通りだけで、
  * **型番では分岐しない**（CLAUDE.md 設計原則 2）。新型番を足しても
  * このコンポーネントは変わらない。
  */
@@ -769,7 +818,7 @@ function ElectricalSection({
   electrical: ElectricalDefinition;
   inspection: ComponentInspection;
 }) {
-  const { device, conducting } = inspection;
+  const { device, conducting, instance } = inspection;
 
   switch (electrical.kind) {
     case "power":
@@ -870,10 +919,13 @@ function ElectricalSection({
         </section>
       );
 
-    case "lamp":
+    case "lamp": {
+      // 調光入力（design.md §5.17）。持たないランプでは行ごと出さない
+      const { dimming } = electrical;
+      const level = device?.dimming;
       return (
         <section className={styles.section}>
-          <h3 className={styles.heading}>ランプ</h3>
+          <h3 className={styles.heading}>{dimming ? "調光ランプ" : "ランプ"}</h3>
           <dl className={styles.rows}>
             <Row name="定格">
               {electrical.currentType}
@@ -885,9 +937,42 @@ function ElectricalSection({
             <Row name="状態">
               <StateBadge on={device?.lit} onLabel="点灯" offLabel="消灯" />
             </Row>
+            {dimming && (
+              <>
+                <Row name="調光入力">
+                  {dimming.signalTerminal}–{dimming.commonTerminal}
+                </Row>
+                {/*
+                  **明るさは % で、入力電圧は V で出す。** V → % の対応は
+                  この機器の性質（`AnalogCurve`）で、同じ 5V でも順特性の
+                  機器なら別の明るさになる。両方出さないと「なぜこの
+                  明るさなのか」が読めない
+                */}
+                <Row name="明るさ">
+                  {level ? (
+                    <span
+                      className={styles.stateBadge}
+                      data-on={String(level.percent > 0)}
+                    >
+                      {Math.round(level.percent)}%（{level.volts.toFixed(1)}V）
+                    </span>
+                  ) : (
+                    <span className={styles.idle}>—（停止中）</span>
+                  )}
+                </Row>
+              </>
+            )}
           </dl>
+          {dimming && (
+            <p className={styles.hint}>
+              {level?.referenceMismatch
+                ? `調光の基準（${dimming.commonTerminal}）が調光出力のコモンと繋がっていません。0–10V は基準に対する電圧なので信号が成立せず、未接続と同じ ${dimming.unconnectedVolts}V として扱われます。`
+                : `${dimming.curve.minVolts}V で ${dimming.curve.percentAtMin}%、${dimming.curve.maxVolts}V で ${dimming.curve.percentAtMax}%。調光信号が未接続だと ${dimming.unconnectedVolts}V として扱われます。`}
+            </p>
+          )}
         </section>
       );
+    }
 
     case "diode": {
       const { diode } = inspection;
@@ -944,6 +1029,32 @@ function ElectricalSection({
             <Row name="端子">{electrical.terminals.join(" / ")}</Row>
           </dl>
           <p className={styles.hint}>列挙した全端子が常時導通します。</p>
+        </section>
+      );
+
+    case "analog-source":
+      return (
+        <section className={styles.section}>
+          <h3 className={styles.heading}>調光出力</h3>
+          <dl className={styles.rows}>
+            <Row name="範囲">
+              {electrical.minVolts}–{electrical.maxVolts}V
+            </Row>
+            <Row name="端子">
+              {electrical.signalTerminal}（信号）／{electrical.commonTerminal}
+              （基準）
+            </Row>
+            {/* 出力は停止中も決まっている値なので `StateBadge` にしない */}
+            <Row name="出力">
+              {outputVoltsOf(electrical, instance.outputVolts).toFixed(1)}V
+            </Row>
+          </dl>
+          <p className={styles.hint}>
+            出すのは基準（{electrical.commonTerminal}
+            ）に対する電圧だけです。明るさへの対応は繋いだ機器側が持つので、
+            基準を共通にしないと信号が成立しません。接点で信号線を基準へ
+            落とすと 0V になります。
+          </p>
         </section>
       );
   }

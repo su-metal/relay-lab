@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("17 定義が登録されている", () => {
+  it("19 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
@@ -33,10 +33,12 @@ describe("部品定義レジストリ", () => {
       "timer-on-delay",
       "timer-off-delay",
       "lamp-dc24v",
+      "lamp-dimmable-ac100v",
+      "dimmer-0-10v",
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(17);
+    expect(componentRegistry.size).toBe(19);
   });
 
   it("型番から定義を取得できる", () => {
@@ -76,7 +78,21 @@ describe("部品定義レジストリ", () => {
       "timer-on-delay",
       "timer-off-delay",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(17);
+    /*
+     * 調光ランプは `category: "lamp"` のまま（design.md §5.17）。
+     * ランプであって別種の部品ではなく、`dimming` を持つかどうかだけが違う
+     * —— タイマーが `relay` のまま `category` だけ分かれているのとは逆で、
+     * こちらは見た目もランプなのでカテゴリを分ける理由が無い
+     */
+    expect(listComponentDefinitions("lamp").map((d) => d.id)).toEqual([
+      "lamp-dc24v",
+      "lamp-dimmable-ac100v",
+    ]);
+    // 調光出力だけが独立したカテゴリ。電気的にも `analog-source` で別
+    expect(listComponentDefinitions("dimmer").map((d) => d.id)).toEqual([
+      "dimmer-0-10v",
+    ]);
+    expect(listComponentDefinitions()).toHaveLength(19);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -117,23 +133,37 @@ describe("部品定義レジストリ", () => {
       const referenced: string[] =
         electrical.kind === "power"
           ? [electrical.positiveTerminal, electrical.zeroTerminal]
-          : electrical.kind === "switch" || electrical.kind === "lamp"
+          : electrical.kind === "switch"
             ? [electrical.terminalA, electrical.terminalB]
-            : electrical.kind === "diode"
-              ? [electrical.anodeTerminal, electrical.cathodeTerminal]
-              : electrical.kind === "terminal"
-                ? electrical.terminals
-                : [
-                    electrical.relay.coil.positiveTerminal,
-                    electrical.relay.coil.negativeTerminal,
-                    // NC 端子は a 接点のみのリレーには存在しない。
-                    // 未定義を混ぜると「実在しない端子を参照している」判定になる
-                    ...electrical.relay.contacts.flatMap((c) =>
-                      [c.commonTerminal, c.noTerminal, c.ncTerminal].filter(
-                        (id): id is string => id !== undefined,
-                      ),
-                    ),
-                  ];
+            : electrical.kind === "lamp"
+              ? [
+                  electrical.terminalA,
+                  electrical.terminalB,
+                  // 調光ランプだけが持つ 2 端子（design.md §5.17）
+                  ...(electrical.dimming
+                    ? [
+                        electrical.dimming.signalTerminal,
+                        electrical.dimming.commonTerminal,
+                      ]
+                    : []),
+                ]
+              : electrical.kind === "diode"
+                ? [electrical.anodeTerminal, electrical.cathodeTerminal]
+                : electrical.kind === "terminal"
+                  ? electrical.terminals
+                  : electrical.kind === "analog-source"
+                    ? [electrical.signalTerminal, electrical.commonTerminal]
+                    : [
+                        electrical.relay.coil.positiveTerminal,
+                        electrical.relay.coil.negativeTerminal,
+                        // NC 端子は a 接点のみのリレーには存在しない。
+                        // 未定義を混ぜると「実在しない端子を参照している」判定になる
+                        ...electrical.relay.contacts.flatMap((c) =>
+                          [c.commonTerminal, c.noTerminal, c.ncTerminal].filter(
+                            (id): id is string => id !== undefined,
+                          ),
+                        ),
+                      ];
 
       for (const terminalId of referenced) {
         expect(ids.has(terminalId), `${definition.id}:${terminalId}`).toBe(true);

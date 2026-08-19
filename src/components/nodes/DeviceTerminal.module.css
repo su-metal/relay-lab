@@ -147,6 +147,18 @@
   font-weight: 500;
 }
 
+/*
+ * 調光信号の電圧（design.md §5.17）。**説明本文より目立たせる。**
+ * この端子について今いちばん知りたいのは何 V が来ているかで、
+ * 端子の役割の説明はその次にくる。
+ */
+.tooltipVolts {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wire-analog);
+  font-variant-numeric: tabular-nums;
+}
+
 /* 接続先の一覧。「未接続」も含めて本文より控えめに出す */
 .tooltipConnectionLine {
   font-size: 12px;
@@ -223,6 +235,15 @@
 .terminal[data-state="short"] .handle {
   border-color: var(--wire-short);
   background: var(--wire-short);
+}
+
+/*
+ * 調光信号が乗っている端子（design.md §5.17）。配線と同じ橙にする ——
+ * 端子だけ無彩色に残すと、接点の先で色が途切れて配線が切れて見える。
+ */
+.terminal[data-state="analog"] .handle {
+  border-color: var(--wire-analog-text);
+  background: var(--wire-analog);
 }
 
 /*

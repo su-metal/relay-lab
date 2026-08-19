@@ -31,6 +31,7 @@ import {
 import {
   IDLE_SIMULATION_VIEW,
   terminalStatesOf,
+  terminalVoltsFor,
   type DeviceSimulationState,
   type SimulationView,
   type WireState,
@@ -95,12 +96,24 @@ export type DeviceNodeData = {
    */
   lampColor?: LampColor;
   /**
+   * 調光出力の電圧（V・design.md §5.17）。調光出力以外では `undefined`。
+   *
+   * `presetMs` と同じくインスタンスごとの値で、**停止中も出す**
+   * —— つまみの位置はシミュレーションの結果ではない。
+   */
+  outputVolts?: number;
+  /**
    * シミュレーション中の部品の状態。**停止中は `undefined`。**
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
    */
   simulation?: DeviceSimulationState;
   /** `TerminalDefinition.id` → 端子の電位状態。停止中は `undefined` */
   terminalStates?: ReadonlyMap<string, WireState>;
+  /**
+   * `TerminalDefinition.id` → その端子に乗っている調光信号の電圧（V）。
+   * アナログ信号が乗っていない端子はキー自体が無い（design.md §5.17）。
+   */
+  terminalVolts?: ReadonlyMap<string, number>;
   /**
    * `TerminalDefinition.id` → その端子につながる配線の相手側一覧。
    * 端子ツールチップの「接続先」に出す（design.md §8.3）。配線が無い端子は
@@ -220,8 +233,14 @@ export const toDeviceNode = (
     label: instance.label,
     presetMs: instance.presetMs,
     lampColor: instance.lampColor,
+    outputVolts: instance.outputVolts,
     simulation: view.deviceOf.get(instance.id),
     terminalStates: terminalStatesOf(
+      view,
+      instance.id,
+      definition.terminals.map((terminal) => terminal.id),
+    ),
+    terminalVolts: terminalVoltsFor(
       view,
       instance.id,
       definition.terminals.map((terminal) => terminal.id),
@@ -317,6 +336,15 @@ export type WireEdgeData = {
    * この線では向きを `animation-direction` で線に与え、オーバーレイは出さない。
    */
   flowOnStroke?: boolean;
+  /**
+   * この線に乗っている調光信号の電圧（V）。アナログ以外の線では `undefined`
+   * （design.md §5.17）。
+   *
+   * **レベルは色の濃淡ではなく値として線に添える。** 0V が 100%（全灯）という
+   * 仕様では、レベルを不透明度に写した瞬間に「最も明るい線が最も薄い」ことに
+   * なり、アナログ線を導通の配色から外した意味が消える。
+   */
+  analogVolts?: number;
 };
 
 export type WireEdge = Edge<WireEdgeData, typeof WIRE_EDGE_TYPE>;
@@ -327,6 +355,7 @@ export const toWireEdge = (
   selected = false,
   lane = 0,
   flow?: FlowDirection,
+  analogVolts?: number,
 ): WireEdge => ({
   id: connection.id,
   type: WIRE_EDGE_TYPE,
@@ -335,7 +364,7 @@ export const toWireEdge = (
   target: connection.to.componentId,
   targetHandle: handleIdOf(connection.to.terminalId),
   selected,
-  data: { lane, flow },
+  data: { lane, flow, analogVolts },
 });
 
 export const toWireEdges = (
@@ -343,6 +372,8 @@ export const toWireEdges = (
   selectedConnectionIds: readonly string[] = [],
   lanes: ReadonlyMap<string, number> = new Map(),
   flow: CurrentFlowView = EMPTY_CURRENT_FLOW,
+  /** 配線 ID → 調光信号の電圧（`SimulationView.wireVoltsOf`）。省略時は出さない */
+  analogVolts: ReadonlyMap<string, number> = new Map(),
 ): WireEdge[] => {
   const selected = new Set(selectedConnectionIds);
   return document.connections.map((connection) =>
@@ -351,6 +382,7 @@ export const toWireEdges = (
       selected.has(connection.id),
       lanes.get(connection.id) ?? 0,
       flow.directionOf.get(connection.id),
+      analogVolts.get(connection.id),
     ),
   );
 };

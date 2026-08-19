@@ -20,6 +20,7 @@ export const CATEGORY_LABELS: Record<ComponentCategory, string> = {
   diode: "ダイオード",
   terminal: "端子台",
   timer: "タイマー",
+  dimmer: "調光出力",
 };
 
 /** パレットに並べる順序。`componentDefinitions` の並びより優先する */
@@ -29,6 +30,8 @@ export const CATEGORY_ORDER: readonly ComponentCategory[] = [
   "relay",
   // リレーの直後。タイマーは「遅れて動くリレー」なので隣に並べる（design.md §5.13）
   "timer",
+  // 調光出力はランプの直前。0–10V の行き先はランプなので隣に並べる
+  "dimmer",
   "lamp",
   "diode",
   "terminal",
@@ -94,6 +97,8 @@ export const TERMINAL_ROLE_LABELS: Record<TerminalRole, string> = {
   normally_closed: "NC（b接点）",
   anode: "アノード",
   cathode: "カソード",
+  analog_signal: "調光信号（0–10V）",
+  analog_common: "調光の基準（0V コモン）",
   generic: "端子",
 };
 
@@ -143,6 +148,7 @@ export const WIRE_STATE_LABELS: Record<WireState, string> = {
   energized: "通電中",
   "self-hold": "自己保持",
   short: "短絡",
+  analog: "調光信号",
 };
 
 /**
@@ -226,10 +232,35 @@ export const deviceStatusOf = (
       return simulation.energized
         ? { label: "励磁中", active: true }
         : { label: "非励磁", active: false };
-    case "lamp":
-      return simulation.lit
-        ? { label: "点灯中", active: true }
-        : { label: "消灯", active: false };
+    case "lamp": {
+      /*
+       * 調光ランプ（design.md §5.17）。**明るさを添えないと「消灯」の理由が
+       * 読めない。** 電源が来ていないのか、来ていて 0%（この仕様では 10V）
+       * なのかは、実機を触るときにまったく違う話になる。
+       */
+      const percent = simulation.dimming
+        ? `${Math.round(simulation.dimming.percent)}%`
+        : undefined;
+      if (simulation.lit) {
+        return {
+          label: percent ? `点灯中 ${percent}` : "点灯中",
+          active: true,
+        };
+      }
+      return {
+        label: percent ? `消灯（${percent}）` : "消灯",
+        active: false,
+      };
+    }
+    case "analog-source":
+      // 出力は常に出ている。0V も「何も出していない」ではなく 0V という値
+      return {
+        label:
+          simulation.outputVolts === undefined
+            ? "出力中"
+            : `${simulation.outputVolts.toFixed(1)}V 出力中`,
+        active: true,
+      };
     case "switch": {
       // オルタネートは「押下」ではなく位置なので言い方を変える。
       // 同じ「押下中」と出すと、手を離しても状態が残ることが読めない

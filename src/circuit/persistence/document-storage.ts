@@ -16,7 +16,7 @@
  * **読めない要素は捨てて、捨てた理由を日本語で返す。**
  */
 
-import { presetMsOf } from "@/circuit/engine";
+import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitConnection,
@@ -92,6 +92,23 @@ const readPresetMs = (
   if (electrical.kind !== "relay" || !electrical.delay) return undefined;
   if (!isFiniteNumber(value)) return undefined;
   return presetMsOf(electrical.delay, value);
+};
+
+/**
+ * 調光出力の電圧を読む（design.md §5.17）。
+ *
+ * `readPresetMs` とまったく同じ扱い —— 調光出力以外では `undefined`
+ * （保存 JSON に無意味な値を残さない）、数値でなければ定義の既定値へ倒し、
+ * 範囲外は上下限へ丸める。
+ */
+const readOutputVolts = (
+  definition: ComponentDefinition,
+  value: unknown,
+): number | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "analog-source") return undefined;
+  if (!isFiniteNumber(value)) return undefined;
+  return outputVoltsOf(electrical, value);
 };
 
 /**
@@ -208,6 +225,11 @@ export const parseDocument = (
        * なので、壊れていても部品ごと捨てずに既定色へ倒す。ランプ以外では落とす。
        */
       lampColor: readLampColor(definition, entry.lampColor),
+      /*
+       * 調光出力の電圧（design.md §5.17）。設定時間と同じ扱いで、
+       * 壊れていても部品ごと捨てず定義の既定値へ倒す。
+       */
+      outputVolts: readOutputVolts(definition, entry.outputVolts),
     });
     terminalsOf.set(
       entry.id,

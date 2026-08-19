@@ -10,6 +10,7 @@ import type { ComponentType } from "react";
 
 import type { ComponentCategory } from "@/circuit/types";
 
+import { DimmerBody } from "./DimmerBody";
 import { DiodeBody } from "./DiodeBody";
 import { GenericBody } from "./GenericBody";
 import { LampBody } from "./LampBody";
@@ -28,6 +29,7 @@ const BODIES: Record<ComponentCategory, ComponentType<BodyProps>> = {
   diode: DiodeBody,
   terminal: TerminalBlockBody,
   timer: TimerBody,
+  dimmer: DimmerBody,
 };
 
 export const bodyForCategory = (

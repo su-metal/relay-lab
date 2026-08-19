@@ -44,6 +44,17 @@ export type TerminalRole =
   | "normally_closed"
   | "anode"
   | "cathode"
+  /**
+   * 0–10V の調光信号線と、その基準（0V コモン）（design.md §5.17）。
+   *
+   * **`power_zero` を基準側に流用しない。** 調光のコモンは電源の 0V へ
+   * 繋ぐのが普通だが、それは配線の話であって端子の役割ではない。
+   * ここを `power_zero` と書くと、**繋いでいなくても電源の 0V が
+   * そこにあるかのように**画面が主張してしまい、
+   * 「GND を共通にしていない」という最も捕まえたい誤配線が読めなくなる。
+   */
+  | "analog_signal"
+  | "analog_common"
   | "generic";
 
 /** 端子が部品のどの辺に出るか。React Flow の Handle の向きに対応する */

@@ -7,10 +7,12 @@ export type {
 } from "./terminal";
 
 export type {
+  AnalogCurve,
   CoilPolarity,
   ComponentCategory,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  DimmingInput,
   ElectricalDefinition,
   RelayContact,
   RelayDefinition,
@@ -27,7 +29,12 @@ export type {
 } from "./circuit";
 export { DEFAULT_LAMP_COLOR, LAMP_COLORS, isLampColor } from "./circuit";
 
+export { EMPTY_ANALOG_RESULT } from "./simulation";
+
 export type {
+  AnalogResult,
+  AnalogSignal,
+  DimmingLevel,
   NetState,
   SimulationInput,
   SimulationResult,

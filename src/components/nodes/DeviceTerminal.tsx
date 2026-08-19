@@ -37,13 +37,26 @@ type Props = {
    * スイッチ・端子台の導通で間接的につながる先までは含まない（design.md §8.3）。
    */
   connections?: readonly ConnectedTerminalInfo[];
+  /**
+   * この端子に乗っている調光信号の電圧（V・design.md §5.17）。
+   * アナログ信号が乗っていなければ `undefined`。
+   *
+   * **端子は V、部品は %。** V → % の対応は受け側の機器が持つもので
+   * （`AnalogCurve`）、端子の側には「何 V が来ているか」しか無い。
+   */
+  volts?: number;
 };
 
 /** 接続先 1 件ぶんの表示文言。「RY1 の端子 14」のように部品定義の警告文と揃える */
 const connectionLabel = (info: ConnectedTerminalInfo): string =>
   `${info.componentName} の端子 ${info.terminalLabel}`;
 
-export function DeviceTerminal({ terminal, state, connections }: Props) {
+export function DeviceTerminal({
+  terminal,
+  state,
+  connections,
+  volts,
+}: Props) {
   // description は「端子 14 / コイル + / DC24V」の形で定義側が持っている。
   // 持たない端子でも最低限「端子 <ラベル>」は読めるようにする
   const tooltip = terminal.description ?? `端子 ${terminal.label}`;
@@ -51,6 +64,8 @@ export function DeviceTerminal({ terminal, state, connections }: Props) {
     connections && connections.length > 0
       ? connections.map(connectionLabel)
       : ["未接続"];
+  // 実行中に乗っている調光信号の電圧（design.md §5.17）
+  const voltsLine = volts === undefined ? null : `${volts.toFixed(1)}V`;
 
   return (
     <div
@@ -73,7 +88,9 @@ export function DeviceTerminal({ terminal, state, connections }: Props) {
         // title（ネイティブのツールチップ）は使わない。下の .tooltip と二重に出るうえ、
         // 表示まで 1 秒近く待たされて「端子の意味をすぐ読める」体験にならない。
         // 読み上げ用には接続先も同じ本文に含める（design.md §8.3）
-        aria-label={`${tooltip} / ${connectionLines.join("、")}`}
+        aria-label={[tooltip, voltsLine, connectionLines.join("、")]
+          .filter((line): line is string => line !== null)
+          .join(" / ")}
       />
       <span className={styles.label} aria-hidden>
         {terminal.label}
@@ -85,6 +102,9 @@ export function DeviceTerminal({ terminal, state, connections }: Props) {
       */}
       <span className={styles.tooltip} role="tooltip" aria-hidden>
         <span className={styles.tooltipLine}>{tooltip}</span>
+        {voltsLine && (
+          <span className={styles.tooltipVolts}>{voltsLine}</span>
+        )}
         {connectionLines.map((line, index) => (
           <span key={index} className={styles.tooltipConnectionLine}>
             {line}

@@ -9,6 +9,7 @@
  */
 
 import type {
+  AnalogResult,
   CircuitDocument,
   ComponentDefinitionRegistry,
   NetState,
@@ -20,6 +21,7 @@ import type {
 } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
+import { resolveAnalog } from "./analog";
 import { detectSelfInterruptingCoils } from "./chatter";
 import {
   buildNets,
@@ -38,6 +40,7 @@ import {
 } from "./timer";
 import {
   describeComponent,
+  detectAnalogReferenceMismatch,
   detectDiodeOrientation,
   detectPowerShortCircuits,
   detectUnconnectedTerminals,
@@ -134,11 +137,16 @@ const evaluateRelays = (
  *
  * ランプは負荷なのでグラフ上で union されていない（design.md §5.2）。
  * 「両端が異なる電源ネットに属するか」だけが点灯条件で、極性は問わない。
+ *
+ * **調光ランプでも点灯条件は同じ。** 違うのは、電源が来ていても
+ * 明るさが 0% なら光っていないという 1 点だけ（design.md §5.17）。
+ * 調光を持たないランプはこの追加条件を通らない（`level` が無い）。
  */
 const collectLitLamps = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   lookup: NetLookup,
+  analog: AnalogResult,
 ): Set<string> => {
   const lit = new Set<string>();
 
@@ -152,7 +160,11 @@ const collectLitLamps = (
       stateAt(lookup, instance.id, electrical.terminalA),
       stateAt(lookup, instance.id, electrical.terminalB),
     );
-    if (across !== "none") lit.add(instance.id);
+    if (across === "none") continue;
+
+    const level = analog.levelOf.get(instance.id);
+    if (level && level.percent <= 0) continue;
+    lit.add(instance.id);
   }
 
   return lit;
@@ -278,6 +290,12 @@ export const simulate = (
 
   const lookup: NetLookup = { netOf: last.nets.netOf, netState: last.netState };
 
+  /*
+   * アナログ層は**収束したあとに 1 回だけ**重ねる（design.md §5.17）。
+   * 調光レベルは接点を動かさないので、反復の中で解き直す理由が無い。
+   */
+  const analog = resolveAnalog(document, definitions, last.nets.netOf);
+
   const warnings: Warning[] = [
     ...detectPowerShortCircuits(document, definitions, lookup),
     ...detectDiodeOrientation(document, definitions, lookup),
@@ -288,6 +306,7 @@ export const simulate = (
      * （design.md §5.14）
      */
     ...detectSelfInterruptingCoils(document, definitions, input, last.energized),
+    ...detectAnalogReferenceMismatch(document, definitions, analog),
     ...statusWarnings(status),
     ...detectUnconnectedTerminals(document, definitions),
   ];
@@ -296,7 +315,8 @@ export const simulate = (
     energizedRelays: last.energized,
     timers: last.timers,
     nextEventAtMs: nextEventOf(document, definitions, last.timers, nowMs),
-    litLamps: collectLitLamps(document, definitions, lookup),
+    litLamps: collectLitLamps(document, definitions, lookup, analog),
+    analog,
     netOf: last.nets.netOf,
     netState: last.netState,
     warnings,

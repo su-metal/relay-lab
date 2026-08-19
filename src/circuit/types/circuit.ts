@@ -66,6 +66,19 @@ export type CircuitComponentInstance = {
    * ランプ以外の部品では意味を持たない。
    */
   lampColor?: LampColor;
+  /**
+   * 調光出力の電圧（V）。省略時は定義の `defaultVolts`（design.md §5.17）。
+   *
+   * **定義ではなくインスタンスに持つ**理由はタイマーの `presetMs` と同じ ——
+   * 実機の調光出力はつまみや設定で決めるものであり、定義に固定すると
+   * 「10V の DIM1 と 4V の DIM2」を同じ型番で置けなくなる。
+   *
+   * `flipped` や `lampColor` と違い、**これは電気的な意味を持つ。**
+   * エンジンはこの値を読み、繋がったランプの明るさが変わる。
+   *
+   * `kind: "analog-source"` 以外の部品では意味を持たない。
+   */
+  outputVolts?: number;
 };
 
 export type CircuitDocument = {

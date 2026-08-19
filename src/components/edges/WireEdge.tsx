@@ -95,6 +95,7 @@ export function WireEdge({
 }: EdgeProps<WireEdgeType>) {
   const lane = data?.lane ?? 0;
   const flow = data?.flow;
+  const analogVolts = data?.analogVolts;
 
   /*
    * 両端が真っ直ぐ向かい合う配線は `getSmoothStepPath` が直線を返し、
@@ -110,7 +111,7 @@ export function WireEdge({
     offset: lane,
   });
 
-  const [smoothPath] = getSmoothStepPath({
+  const [smoothPath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -191,6 +192,26 @@ export function WireEdge({
         cy={targetGrip.y}
         r={GRIP_RADIUS}
       />
+      {/*
+        調光信号の電圧（design.md §5.17）。**レベルを線の濃淡に載せない**ので、
+        値そのものをここで読ませる。0V が 100%（全灯）という仕様では、
+        レベルを不透明度に写した瞬間に「最も明るい線が最も薄い」ことになり、
+        アナログ線を導通の配色から外した意味が消える。
+
+        位置は `getSmoothStepPath` が返す中点。レーンでずらした線では
+        経路が少しずれるが、線の近くに出ていれば読み違えようがない
+      */}
+      {analogVolts !== undefined && (
+        <text
+          className={styles.analogLabel}
+          x={labelX}
+          y={labelY}
+          textAnchor="middle"
+          dominantBaseline="middle"
+        >
+          {`${analogVolts.toFixed(1)}V`}
+        </text>
+      )}
     </>
   );
 }

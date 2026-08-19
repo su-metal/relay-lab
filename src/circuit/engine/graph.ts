@@ -133,9 +133,14 @@ export const conductingPairs = (
     case "power":
     case "lamp":
     case "diode":
+    case "analog-source":
       // 電源の +/0V、ランプの 2 端子、ダイオードの 2 端子はいずれも非導通。
       // ダイオードは一方通行なので無向グラフでは表せない。導通は union ではなく
-      // `computeNetStates()` の有向な電位伝搬で表現する（design.md §5.4）
+      // `computeNetStates()` の有向な電位伝搬で表現する（design.md §5.4）。
+      //
+      // **調光出力も同じ。** 信号端子とコモン端子を union すると、
+      // 接点で 0V へ落とす配線（"DIRECT"）と繋がない配線が区別できなくなる。
+      // 出している電圧は `analog.ts` が第 2 パスで重ねる（design.md §5.17）
       return [];
   }
 };
@@ -335,6 +340,7 @@ export const openPairs = (
     case "power":
     case "lamp":
     case "diode":
+    case "analog-source":
       return [];
   }
 };

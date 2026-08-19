@@ -20,7 +20,7 @@ import {
   isSameTerminalPair,
 } from "@/circuit/adapter/reactflow";
 import { getComponentDefinition } from "@/circuit/definitions";
-import { presetMsOf } from "@/circuit/engine";
+import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentCategory,
@@ -63,6 +63,8 @@ const LABEL_PREFIX: Record<ComponentCategory, string> = {
   terminal: "TB",
   // 実務の図面ではタイマーは T / TR。リレーの RY と読み違えないよう分ける
   timer: "T",
+  // 調光は DIM。L（ランプ）とも D（ダイオード）とも読み違えない綴りにする
+  dimmer: "DIM",
 };
 
 /** 同じ接頭辞の最大番号 + 1 を返す（RY1 が居れば RY2） */
@@ -143,6 +145,16 @@ export type CircuitStore = {
    * 範囲外の値は定義の上下限へ丸める（判定はエンジンの `presetMsOf`）。
    */
   setComponentPreset: (componentId: string, presetMs: number) => void;
+
+  /**
+   * 調光出力の電圧を変える（design.md §5.17）。
+   *
+   * `setComponentPreset` とまったく同じ扱い —— **Undo の対象**にし、
+   * 範囲外は定義の上下限へ丸め（判定はエンジンの `outputVoltsOf`）、
+   * 調光出力以外の部品には書き込まない。回路の動き（繋いだ負荷の明るさ）を
+   * 変える値なので、間違えたときに戻せないと困る。
+   */
+  setComponentOutputVolts: (componentId: string, volts: number) => void;
 
   /**
    * 表示ランプのレンズの色を変える（design.md §4.11）。
@@ -435,6 +447,29 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           return { ...component, presetMs: next };
         });
         // 同じ値への設定・タイマー以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentOutputVolts: (componentId, volts) => {
+      if (!Number.isFinite(volts)) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          // 調光出力以外には出力電圧が無い。書き込むと誰も読まない値が残る
+          if (electrical?.kind !== "analog-source") return component;
+
+          const next = outputVoltsOf(electrical, volts);
+          if (component.outputVolts === next) return component;
+          changed = true;
+          return { ...component, outputVolts: next };
+        });
+        // 同じ値への設定・調光出力以外への設定で履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });

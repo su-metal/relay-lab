@@ -10,8 +10,10 @@
  */
 
 import {
+  analogSignalNets,
   coilEnergized,
   isShorted,
+  outputVoltsOf,
   presetMsOf,
   reachesPlus,
   reachesZero,
@@ -22,6 +24,7 @@ import type {
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  DimmingLevel,
   NetState,
   SimulationResult,
 } from "@/circuit/types";
@@ -52,7 +55,22 @@ export type WireState =
    */
   | "self-hold"
   /** + と 0V が同一ネット＝電源短絡 */
-  | "short";
+  | "short"
+  /**
+   * 0–10V の調光信号が乗っている線（design.md §5.17）。
+   *
+   * **導通の配色から外すためにある。** この線の 0V は「電位が届いて
+   * いない」ではなく **「0V という値を出している」** であり、
+   * ユーザーの会社の仕様ではそれが 100%（全灯）を意味する。
+   * `inactive`（灰・半透明）に落とすと、**最も明るく点いている線が
+   * 非通電に見える** —— タイマー計測中のコイル配線が灰色に見えるのと
+   * 同じ種類の事故（CLAUDE.md 設計原則 8）。
+   *
+   * 判定順は `plus` / `zero` の**あと。** 接点で 0V コモンへ落とした
+   * 信号線（"DIRECT"）は本当に電源の 0V 線になっているので、
+   * そこは青のままが正しい。
+   */
+  | "analog";
 
 /**
  * 部品 1 個のシミュレーション状態。
@@ -111,6 +129,17 @@ export type DeviceSimulationState = {
   cutOff: boolean;
   /** タイマーのときだけ入る（design.md §5.13） */
   timer?: TimerDisplayState;
+  /**
+   * 調光入力を持つ負荷の明るさ（design.md §5.17）。調光ランプ以外は持たない。
+   *
+   * **`lit` と別に持つ。** `lit` は「電源が来ていて光っているか」で、
+   * こちらは「どれだけ明るいか」。電源を切れば 100% の指示のまま消灯するし、
+   * 電源が来ていても 0% なら光らない —— 2 つは独立した軸で、
+   * 潰すと「消えている理由」が読めなくなる。
+   */
+  dimming?: DimmingLevel;
+  /** 調光出力が出している電圧（V）。`kind: "analog-source"` 以外は持たない */
+  outputVolts?: number;
 };
 
 export type SimulationView = {
@@ -120,6 +149,17 @@ export type SimulationView = {
   terminalOf: ReadonlyMap<string, WireState>;
   /** 部品インスタンス ID → 部品の状態 */
   deviceOf: ReadonlyMap<string, DeviceSimulationState>;
+  /**
+   * `CircuitConnection.id` → その線に乗っている調光信号の電圧（V）。
+   * アナログ以外の線はキー自体が無い（design.md §5.17）。
+   *
+   * **色に濃淡で載せない。** 0V が最も明るいという仕様では、
+   * レベルを不透明度に写した時点で「全灯の線が最も薄い」ことになる。
+   * 値そのものを線に添えて読ませる。
+   */
+  wireVoltsOf: ReadonlyMap<string, number>;
+  /** `terminalKey()` → 調光信号の電圧（V）。端子ツールチップに出す */
+  terminalVoltsOf: ReadonlyMap<string, number>;
 };
 
 /** シミュレーション停止中のビュー。すべて空＝非通電で描かれる */
@@ -127,6 +167,8 @@ export const IDLE_SIMULATION_VIEW: SimulationView = {
   wireOf: new Map(),
   terminalOf: new Map(),
   deviceOf: new Map(),
+  wireVoltsOf: new Map(),
+  terminalVoltsOf: new Map(),
 };
 
 /**
@@ -224,15 +266,23 @@ const timerDisplayOf = (
 };
 
 /**
- * ネット 1 本の表示状態を決める（design.md §5.6）。
+ * ネット 1 本の表示状態を決める（design.md §5.6・§5.17）。
  *
  * 短絡の判定を最初に置くのは、短絡したネットを緑（正常な通電）として
  * 描いてしまうと、最も危険な配線ミスが最も安全に見えるため。
+ *
+ * **アナログは最後、`inactive` の直前に置く。** 接点で 0V コモンへ落とした
+ * 信号線（"DIRECT"）はコモンを電源の 0V に繋いでいれば本当に 0V 線なので、
+ * 青のままが正しい。ここが拾うのは「導通の配色では灰にしかならないが、
+ * 実際には効いている線」だけになる。
+ *
+ * @param analogNets 調光信号が乗っているネット ID（`analogSignalNets()`）
  */
 export const wireStateOfNet = (
   netId: number | undefined,
   netState: ReadonlyMap<number, NetState>,
   energizedNets: ReadonlySet<number>,
+  analogNets: ReadonlySet<number> = new Set(),
 ): WireState => {
   if (netId === undefined) return "inactive";
   const state = netState.get(netId);
@@ -241,6 +291,7 @@ export const wireStateOfNet = (
   if (energizedNets.has(netId)) return "energized";
   if (reachesPlus(state)) return "plus";
   if (reachesZero(state)) return "zero";
+  if (analogNets.has(netId)) return "analog";
   return "inactive";
 };
 
@@ -267,8 +318,10 @@ export const buildSimulationView = (
   if (!result) return IDLE_SIMULATION_VIEW;
 
   const energizedNets = energizedNetIds(document, definitions, result);
+  const analogNets = analogSignalNets(result.analog);
 
   const terminalOf = new Map<string, WireState>();
+  const terminalVoltsOf = new Map<string, number>();
   const deviceOf = new Map<string, DeviceSimulationState>();
 
   for (const instance of document.components) {
@@ -277,11 +330,20 @@ export const buildSimulationView = (
 
     for (const terminal of definition.terminals) {
       const key = terminalKey(instance.id, terminal.id);
+      const netId = result.netOf.get(key);
       const state = wireStateOfNet(
-        result.netOf.get(key),
+        netId,
         result.netState,
         energizedNets,
+        analogNets,
       );
+      /*
+       * 電圧は**色とは独立に**持つ（design.md §5.17）。0V コモンへ
+       * 落とした信号線は色こそ青（本当に 0V 線なので）だが、
+       * そこに 0V という値が乗っていることは端子から読めるべき。
+       */
+      const signal = netId === undefined ? undefined : result.analog.signalOf.get(netId);
+      if (signal) terminalVoltsOf.set(key, signal.volts);
       /*
        * 自己保持の紫は緑（通電中）の中からだけ切り出す。`short` を上書きしない
        * ためで、判定順の理由は §5.6 と同じ —— 最も危険な配線ミスを、
@@ -321,6 +383,11 @@ export const buildSimulationView = (
       pressed: operated,
       cutOff,
       timer: timerDisplayOf(instance, definition, result, nowMs),
+      dimming: result.analog.levelOf.get(instance.id),
+      outputVolts:
+        definition.electrical.kind === "analog-source"
+          ? outputVoltsOf(definition.electrical, instance.outputVolts)
+          : undefined,
     });
   }
 
@@ -332,6 +399,7 @@ export const buildSimulationView = (
    * 一方だけが「切れば落ちる線」になるため。配線は配線として判定する。
    */
   const wireOf = new Map<string, WireState>();
+  const wireVoltsOf = new Map<string, number>();
   for (const connection of document.connections) {
     const key = terminalKey(
       connection.from.componentId,
@@ -344,9 +412,11 @@ export const buildSimulationView = (
         ? "energized"
         : state,
     );
+    const volts = terminalVoltsOf.get(key);
+    if (volts !== undefined) wireVoltsOf.set(connection.id, volts);
   }
 
-  return { wireOf, terminalOf, deviceOf };
+  return { wireOf, terminalOf, deviceOf, wireVoltsOf, terminalVoltsOf };
 };
 
 /**
@@ -366,4 +436,25 @@ export const terminalStatesOf = (
     if (state) states.set(terminalId, state);
   }
   return states;
+};
+
+/**
+ * 1 部品ぶんの調光信号の電圧を切り出す（design.md §5.17）。
+ *
+ * `terminalStatesOf` と同じ形で、アナログ信号が乗っていない端子は
+ * キー自体を作らない。**端子には V を出す**（部品には %）という
+ * 切り分けの、V 側の入口。
+ */
+export const terminalVoltsFor = (
+  view: SimulationView,
+  componentId: string,
+  terminalIds: readonly string[],
+): ReadonlyMap<string, number> | undefined => {
+  if (view.terminalVoltsOf.size === 0) return undefined;
+  const volts = new Map<string, number>();
+  for (const terminalId of terminalIds) {
+    const value = view.terminalVoltsOf.get(terminalKey(componentId, terminalId));
+    if (value !== undefined) volts.set(terminalId, value);
+  }
+  return volts.size === 0 ? undefined : volts;
 };

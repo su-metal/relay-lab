@@ -124,6 +124,22 @@ const PREVIEW_LEGEND: readonly LegendItem[] = [
   },
 ];
 
+/**
+ * 調光信号線（design.md §5.17）。**3 通りすべてに同じものを足す。**
+ *
+ * この色だけは停止中も実行中も経路確認中も同じ意味（0–10V の信号線）で、
+ * 導通の色の軸とは独立している —— だから色の意味が切り替わっても
+ * この 1 行は切り替わらない。
+ *
+ * **回路に調光が 1 本も無ければ出さない。** 凡例は「読み取れない色を
+ * 説明する」ためのもので、画面に出ていない色を並べるとその役目が薄まる。
+ */
+const ANALOG_LEGEND_ITEM: LegendItem = {
+  swatch: styles.analog,
+  label: "調光信号",
+  hint: "0–10V の調光信号線。線に添えた数字が電圧です（この設定では 0V＝100%・10V＝0%）。電源の導通とは別の量なので、届いていない線とは別の色で描いています",
+};
+
 export type WireLegendProps = {
   /** シミュレーション実行中か。色の意味が §5.8 から §5.6・§5.9 へ切り替わる */
   running: boolean;
@@ -138,20 +154,27 @@ export type WireLegendProps = {
    * 1 色（紫の自己保持・灰の破線）に説明が付いていること自体に気付けない。
    */
   collapsible?: boolean;
+  /**
+   * 調光信号線が 1 本でもあるか（design.md §5.17）。
+   * 無ければ調光の項目を出さない —— 画面に出ていない色は説明しない。
+   */
+  analog?: boolean;
 };
 
 export function WireLegend({
   running,
   pathPreview,
   collapsible,
+  analog,
 }: WireLegendProps) {
   // 3 通りのうち 1 つだけが載る。実行中が最優先だが、そもそも排他なので
   // ここで順位が問題になることは無い
-  const legend = running
+  const base = running
     ? STATE_LEGEND
     : pathPreview
       ? PREVIEW_LEGEND
       : ROLE_LEGEND;
+  const legend = analog ? [...base, ANALOG_LEGEND_ITEM] : base;
 
   const items = (
     <ul className={styles.legend} data-inline={collapsible || undefined}>
