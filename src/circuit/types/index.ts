@@ -19,6 +19,7 @@ export type {
   DimmerSettings,
   DimmingInput,
   ElectricalDefinition,
+  FadeSpec,
   RelayContact,
   RelayDefinition,
   TimerDelay,
@@ -28,7 +29,8 @@ export type { CircuitConnection, TerminalRef } from "./connection";
 export { terminalKey,
   operationKey,
   contactKey,
-  analogInputKey, terminalRefKey } from "./connection";
+  analogInputKey,
+  fadeKey, terminalRefKey } from "./connection";
 
 export type {
   CircuitComponentInstance,
@@ -43,6 +45,7 @@ export type {
   AnalogResult,
   AnalogSignal,
   DimmingLevel,
+  FadeState,
   NetState,
   SimulationInput,
   SimulationResult,

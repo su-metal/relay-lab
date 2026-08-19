@@ -49,6 +49,14 @@ export {
   timerOutputOn,
 } from "./timer";
 export {
+  advanceFade,
+  fadeElapsedMs,
+  fadeMsOf,
+  fadeNextEventAtMs,
+  fadeVoltsOf,
+  initialFadeState,
+} from "./fade";
+export {
   analogPercent,
   analogSignalNets,
   channelVoltsOf,

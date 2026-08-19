@@ -50,3 +50,12 @@ export const contactKey = (componentId: string, contactId: string): string =>
 /** 接点を動かすために受けている調光入力を指すキー */
 export const analogInputKey = (componentId: string, inputId: string): string =>
   `${componentId}:${inputId}`;
+
+/**
+ * 調光出力 1 チャンネルのフェード状態を指すキー（design.md §5.18）。
+ *
+ * **チャンネルごとに持つ。** フェード時間は機器で 1 つだが、回路ごとに
+ * 別の電圧を出している以上、どこまで動いたかは回路ごとに違う。
+ */
+export const fadeKey = (componentId: string, channelId: string): string =>
+  `${componentId}:${channelId}`;

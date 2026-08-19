@@ -86,6 +86,21 @@ export type CircuitComponentInstance = {
    */
   channelVolts?: Readonly<Record<string, number>>;
   /**
+   * 調光出力のフェード時間（ms）。省略時は定義の `defaultFadeMs`（design.md §5.18）。
+   *
+   * **チャンネルごとに分けない。** 実機のフェードはシーン全体にかかる設定で、
+   * 回路ごとの値ではない（`channelVolts` が回路ごとなのと対照的）。
+   *
+   * **定義ではなくインスタンスに持つ**理由は `presetMs` と同じ —— 実機の
+   * フェード時間は盤ごとに設定するもので、定義に固定すると
+   * 「3 秒の DIMC1 と 0 秒の DIMC2」を同じ機器で置けなくなる。
+   *
+   * `flipped` や `lampColor` と違い、**これは電気的な意味を持つ。**
+   *
+   * `fade` を持たない `analog-source` と、それ以外の部品では意味を持たない。
+   */
+  fadeMs?: number;
+  /**
    * 調光器の盤ごとの設定（極性・上下限・カーブ・DIRECT）。
    * 省略時は定義の `curve` をそのまま使う（design.md §4.15）。
    *

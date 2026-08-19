@@ -185,6 +185,16 @@ export const dimmingController16ch: ComponentDefinition = {
      * 画面から読めない。
      */
     defaultVolts: 10,
+    /**
+     * フェード（design.md §5.18）。
+     *
+     * **既定は 0（フェードしない）。** 実機のフェード時間は盤ごとに設定する
+     * もので、ここに 0 以外を焼き付けると**保存済みの回路を開いた瞬間に
+     * 挙動が変わる。** プロパティパネルで秒を入れて初めてフェードする。
+     *
+     * 上限 60 秒は実機のシーンフェードで使う範囲を覆う値。
+     */
+    fade: { minFadeMs: 0, maxFadeMs: 60_000, defaultFadeMs: 0 },
   },
   // 上辺 16・下辺 16 の端子番号が重ならない幅。実機どおり横長
   visual: { width: 760, height: 260 },

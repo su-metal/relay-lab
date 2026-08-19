@@ -251,16 +251,26 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
         operatedDevices,
         previousEnergizedRelays: result?.energizedRelays,
         previousTimers: result?.timers,
+        // `previousTimers` と同じ性質。渡し忘れると調光出力の電圧が動かず、
+        // 設定を変えた瞬間に飛ぶ（design.md §5.18）
+        previousFades: result?.fades,
         nowMs,
       },
     );
     set({ result: next, nowMs });
 
     /*
-     * カウント中のタイマーがあるあいだだけ解き直しを回す。
+     * 動いているもの（カウント中のタイマー・フェード中の調光出力）が
+     * あるあいだだけ解き直しを回す。
      *
      * **`nextEventAtMs` の有無だけで判断する。** ここで「タイマーが置いてあるか」
      * を見ると、入力の入っていないタイマーを置いただけで回り続ける。
+     *
+     * **フェードが入ってもこの判断は変わらない**（design.md §5.18）。
+     * タイマーが返すのは「その瞬間に接点が変わる時刻」で離散、フェードが
+     * 返すのは「変わり終わる時刻」で連続だが、ここが読んでいるのは
+     * 「まだ動いているか」の 1 ビットだけ。刻みは下の 50ms が決めており、
+     * フェードの途中の値はその解き直しのたびにエンジンが出す。
      */
     const counting = next.nextEventAtMs !== undefined;
     if (counting && tickHandle === null) {

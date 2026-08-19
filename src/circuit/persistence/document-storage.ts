@@ -16,7 +16,7 @@
  * **読めない要素は捨てて、捨てた理由を日本語で返す。**
  */
 
-import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
+import { fadeMsOf, outputVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitConnection,
@@ -92,6 +92,23 @@ const readPresetMs = (
   if (electrical.kind !== "relay" || !electrical.delay) return undefined;
   if (!isFiniteNumber(value)) return undefined;
   return presetMsOf(electrical.delay, value);
+};
+
+/**
+ * 調光出力のフェード時間を読む（design.md §5.18）。
+ *
+ * `readPresetMs` とまったく同じ扱い —— `fade` を持たない部品では `undefined`
+ * （保存 JSON に無意味な値を残さない）、数値でなければ定義の既定値へ倒し、
+ * 範囲外は上下限へ丸める。
+ */
+const readFadeMs = (
+  definition: ComponentDefinition,
+  value: unknown,
+): number | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "analog-source" || !electrical.fade) return undefined;
+  if (!isFiniteNumber(value)) return undefined;
+  return fadeMsOf(electrical.fade, value);
 };
 
 /**
@@ -295,6 +312,11 @@ export const parseDocument = (
         entry.channelVolts,
         entry.outputVolts,
       ),
+      /*
+       * 調光出力のフェード時間（design.md §5.18）。設定時間と同じ扱いで、
+       * 壊れていても部品ごと捨てず定義の既定値へ倒す。
+       */
+      fadeMs: readFadeMs(definition, entry.fadeMs),
       /* 調光器の盤ごとの設定（極性・上下限・カーブ・DIRECT）（§4.15） */
       dimmerSettings: readDimmerSettings(definition, entry.dimmerSettings),
     });

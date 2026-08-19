@@ -31,7 +31,7 @@ import type {
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
-import { channelVoltsOf, presetMsOf } from "@/circuit/engine";
+import { channelVoltsOf, fadeMsOf, presetMsOf } from "@/circuit/engine";
 import type {
   DimmerSettings,
   ComponentDefinition,
@@ -77,6 +77,9 @@ export function PropertiesPanel() {
   );
   const setComponentChannelVolts = useCircuitStore(
     (state) => state.setComponentChannelVolts,
+  );
+  const setComponentFadeMs = useCircuitStore(
+    (state) => state.setComponentFadeMs,
   );
   const setComponentLampColor = useCircuitStore(
     (state) => state.setComponentLampColor,
@@ -184,6 +187,9 @@ export function PropertiesPanel() {
           onChannelVoltsChange={(channelId, volts) =>
             setComponentChannelVolts(inspection.instance.id, channelId, volts)
           }
+          onFadeMsChange={(fadeMs) =>
+            setComponentFadeMs(inspection.instance.id, fadeMs)
+          }
           onLampColorChange={(color) =>
             setComponentLampColor(inspection.instance.id, color)
           }
@@ -219,6 +225,8 @@ type DetailsProps = {
   onReplace: (definition: ComponentDefinition) => void;
   /** タイマーの設定時間（ms）。タイマー以外では呼ばれない */
   onPresetChange: (presetMs: number) => void;
+  /** 調光出力のフェード時間（ms）。フェードを持たない部品では呼ばれない */
+  onFadeMsChange: (fadeMs: number) => void;
   /** 表示ランプのレンズの色。ランプ以外では呼ばれない */
   /** 調光出力の電圧（V）。調光出力以外では呼ばれない */
   onChannelVoltsChange: (channelId: string, volts: number) => void;
@@ -234,6 +242,7 @@ function ComponentDetails({
   onReplace,
   onPresetChange,
   onChannelVoltsChange,
+  onFadeMsChange,
   onLampColorChange,
   onDimmerSettingsChange,
 }: DetailsProps) {
@@ -364,6 +373,42 @@ function ComponentDetails({
             </span>
           </label>
         ))}
+
+        {/*
+          フェード時間（design.md §5.18）。**秒で入力させる。**
+          内部は ms だが、実機のフェード時間は秒なので、タイマーの設定時間と
+          同じ理由で「3000」と打たせない。
+
+          **チャンネルごとに出さない。** 実機のフェードはシーン全体にかかる
+          設定で、回路ごとの値ではない（電圧は回路ごと・フェードは機器ごと）。
+          16 回路の機器で 16 個並べると、実機に無い設定があるように読める。
+
+          既定は 0 秒（フェードしない）。設定時間と同じく Undo の対象にしてある。
+        */}
+        {source?.fade && (
+          <label className={styles.labelField}>
+            <span className={styles.fieldName}>フェード</span>
+            <span className={styles.presetField}>
+              <input
+                className={styles.presetInput}
+                type="number"
+                inputMode="decimal"
+                step={0.1}
+                min={source.fade.minFadeMs / 1000}
+                max={source.fade.maxFadeMs / 1000}
+                value={fadeMsOf(source.fade, instance.fadeMs) / 1000}
+                onChange={(event) => {
+                  const seconds = Number(event.target.value);
+                  // 入力途中の空欄・記号だけの状態では書き込まない。
+                  // 範囲外は circuitStore が上下限へ丸める
+                  if (!Number.isFinite(seconds)) return;
+                  onFadeMsChange(Math.round(seconds * 1000));
+                }}
+              />
+              <span className={styles.presetUnit}>秒</span>
+            </span>
+          </label>
+        )}
 
         {/*
           レンズの色（design.md §4.11）。**ランプのときだけ出す。**

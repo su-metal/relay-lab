@@ -40,6 +40,7 @@ import type {
 import {
   analogInputKey,
   EMPTY_ANALOG_RESULT,
+  fadeKey,
   terminalKey,
 } from "@/circuit/types";
 
@@ -172,6 +173,7 @@ const strongerOf = (a: AnalogSignal, b: AnalogSignal): AnalogSignal =>
 const collectSignals = (
   placed: readonly Placed[],
   netOf: ReadonlyMap<string, number>,
+  effectiveVolts: ReadonlyMap<string, number>,
 ): Map<number, AnalogSignal> => {
   const signals = new Map<number, AnalogSignal>();
 
@@ -198,10 +200,19 @@ const collectSignals = (
       if (signalNet === undefined) continue;
 
       const pulledToReference = signalNet === referenceNet;
+      /*
+       * **フェード中はここが目標値ではなく途中の電圧になる**（design.md §5.18）。
+       * 呼び出し側が渡してこなければ目標値のまま —— 停止中の配線チェックや
+       * 経路確認モードには時間が無く、そこで途中の値を出す意味が無い。
+       *
+       * **`pulledToReference`（DIRECT）はフェードより先に効く。** 接点で
+       * 0V コモンへ落とすのは機器の外の短絡で、出力段を通らないので瞬時。
+       */
+      const outputVolts =
+        effectiveVolts.get(fadeKey(instance.id, channel.id)) ??
+        channelVoltsOf(electrical, channel.id, instance.channelVolts);
       const signal: AnalogSignal = {
-        volts: pulledToReference
-          ? 0
-          : channelVoltsOf(electrical, channel.id, instance.channelVolts),
+        volts: pulledToReference ? 0 : outputVolts,
         referenceNet,
         sourceIds: [instance.id],
         pulledToReference,
@@ -329,9 +340,18 @@ export const resolveAnalog = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   netOf: ReadonlyMap<string, number>,
+  /**
+   * フェードで動いている途中の出力電圧（`fadeKey()` → V・design.md §5.18）。
+   *
+   * **省略できるのが要点。** 停止中の配線チェック（`inspectWiring`）・
+   * 役割配色（`wire-role.ts`）・経路確認モード（`path-preview.ts`）には
+   * 時間が流れていないので、渡さなければ今までどおり目標値で解ける。
+   * フェードのためにこの 3 つを書き換えずに済む。
+   */
+  effectiveVolts: ReadonlyMap<string, number> = new Map(),
 ): AnalogResult => {
   const placed = placedComponents(document, definitions);
-  const signals = collectSignals(placed, netOf);
+  const signals = collectSignals(placed, netOf, effectiveVolts);
 
   const levels = new Map<string, DimmingLevel>();
   const netLevels = new Map<number, DimmingLevel>();
