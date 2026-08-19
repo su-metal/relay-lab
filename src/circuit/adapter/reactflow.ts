@@ -17,6 +17,7 @@ import type {
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  LampColor,
   TerminalDefinition,
   TerminalSide,
 } from "@/circuit/types";
@@ -54,6 +55,20 @@ export const WIRE_EDGE_TYPE = "wire";
  * 定義そのものを載せているのは、ノード側で ID からレジストリを引き直さずに
  * 済ませるため。定義はアプリ起動中は不変なので参照を共有して問題ない。
  */
+/**
+ * 経路確認モードでの 1 部品の状態（design.md §8.14）。
+ *
+ * **「動いている」とは言わない。** リレーの励磁も接点の倒れも入れない ——
+ * このモードでは接点が動かず（§5.15）、入れられる値がそもそも無い。
+ * 入っているのは「人が倒したか」と「電位がここで止まったか」の 2 つだけ。
+ */
+export type PreviewDeviceState = {
+  /** この部品で電位が止まっている */
+  blocked: boolean;
+  /** スイッチが倒されている。スイッチ以外は常に false */
+  operated: boolean;
+};
+
 export type DeviceNodeData = {
   definition: ComponentDefinition;
   /**
@@ -72,6 +87,14 @@ export type DeviceNodeData = {
    */
   presetMs?: number;
   /**
+   * 表示ランプのレンズの色（design.md §4.11）。ランプ以外では `undefined`。
+   *
+   * `presetMs` と同じくインスタンスごとの値なので `definition` からは読めない。
+   * **停止中も出す**（レンズの色は点いていなくても分かるべきもの）ので
+   * `simulation` にも載せられない。
+   */
+  lampColor?: LampColor;
+  /**
    * シミュレーション中の部品の状態。**停止中は `undefined`。**
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
    */
@@ -85,13 +108,13 @@ export type DeviceNodeData = {
    */
   terminalConnections?: ReadonlyMap<string, readonly ConnectedTerminalInfo[]>;
   /**
-   * 経路確認モードで、**この部品で電位が止まっている**か（design.md §8.14）。
+   * 経路確認モードでのこの部品の状態（design.md §8.14）。
    *
-   * `simulation` と別に持つのは、経路確認が「動いていない」ままの表示だから
+   * `simulation` と別に持つのは、経路確認がリレーを動かさない表示だから
    * —— `simulation` を作ると部品がシミュレーション中に見える。
-   * モード外では常に `undefined`。
+   * **有無がモードの合図**で、モード外は `undefined`（`simulation` と同じ形）。
    */
-  previewBlocked?: true;
+  preview?: PreviewDeviceState;
 };
 
 export type DeviceNode = Node<DeviceNodeData, typeof DEVICE_NODE_TYPE>;
@@ -185,7 +208,7 @@ export const toDeviceNode = (
     string,
     readonly ConnectedTerminalInfo[]
   > = new Map(),
-  previewBlocked = false,
+  preview?: PreviewDeviceState,
 ): DeviceNode => ({
   id: instance.id,
   type: DEVICE_NODE_TYPE,
@@ -196,13 +219,14 @@ export const toDeviceNode = (
     flipped: instance.flipped === true,
     label: instance.label,
     presetMs: instance.presetMs,
+    lampColor: instance.lampColor,
     simulation: view.deviceOf.get(instance.id),
     terminalStates: terminalStatesOf(
       view,
       instance.id,
       definition.terminals.map((terminal) => terminal.id),
     ),
-    previewBlocked: previewBlocked || undefined,
+    preview,
     terminalConnections: connectionsForComponent(
       terminalConnections,
       instance.id,
@@ -235,8 +259,14 @@ export const toDeviceNodes = (
     string,
     readonly ConnectedTerminalInfo[]
   > = new Map(),
-  /** 経路確認モードで電位が止まっている部品（design.md §8.14）。既定は空 */
-  previewBlocked: ReadonlySet<string> = new Set(),
+  /**
+   * 経路確認モードの状態（design.md §8.14）。**渡さなければモード外。**
+   * ID の集合で受け取り、部品ごとの真偽はここで引き当てる。
+   */
+  preview?: {
+    blocked: ReadonlySet<string>;
+    operated: ReadonlySet<string>;
+  },
 ): DeviceNode[] => {
   const selected = new Set(selectedComponentIds);
   const nodes: DeviceNode[] = [];
@@ -250,7 +280,10 @@ export const toDeviceNodes = (
         selected.has(instance.id),
         view,
         terminalConnections,
-        previewBlocked.has(instance.id),
+        preview && {
+          blocked: preview.blocked.has(instance.id),
+          operated: preview.operated.has(instance.id),
+        },
       ),
     );
   }

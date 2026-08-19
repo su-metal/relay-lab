@@ -1,5 +1,6 @@
+import type { PreviewDeviceState } from "@/circuit/adapter/reactflow";
 import type { DeviceSimulationState } from "@/circuit/adapter/simulation-view";
-import type { ComponentDefinition } from "@/circuit/types";
+import type { ComponentDefinition, LampColor } from "@/circuit/types";
 
 /**
  * カテゴリ別ボディの共通 props。
@@ -17,9 +18,22 @@ export type BodyProps = {
    */
   simulation?: DeviceSimulationState;
   /**
+   * 経路確認モードでの状態（design.md §8.14）。**モード外は `undefined`。**
+   *
+   * `simulation` と排他で、両方が入ることは無い（`simulationStore` が
+   * `running` と `pathPreview` を排他にしている）。スイッチだけがこれを読み、
+   * 倒す操作子を出す —— **リレーは動かないので、他のボディには使い道が無い。**
+   */
+  preview?: PreviewDeviceState;
+  /**
    * タイマーの設定時間（ms）。インスタンスごとの値なので `definition` からは
    * 読めず、**停止中も出したい**ので `simulation` にも載せられない
    * （design.md §5.13）。タイマー以外では `undefined`。
    */
   presetMs?: number;
+  /**
+   * 表示ランプのレンズの色（design.md §4.11）。ランプ以外では `undefined`。
+   * `presetMs` と同じ理由でインスタンス側から来る（**停止中も出す**）。
+   */
+  lampColor?: LampColor;
 };

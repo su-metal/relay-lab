@@ -1,7 +1,7 @@
 /**
  * 経路確認モードの表示状態（design.md §5.15・§8.14）。
  *
- * `previewAtRest()`（静止状態の到達範囲）を画面の色と文言へ落とす層。
+ * `previewPaths()`（電位の到達範囲）を画面の色と文言へ落とす層。
  * `simulation-view.ts` と同じ役割分担で、**エンジンに表示都合を持ち込まない。**
  *
  * **色の語彙は増やさない。** 実行中と同じ `WireState` をそのまま使い、
@@ -15,10 +15,14 @@
  * 予測を混ぜると部品が動いているように見える。経路確認で塗るのは
  * 端子と配線だけ —— 励磁するコイルは、その両端の線が通電色になることで読める。
  *
+ * **スイッチの操作だけは例外で、`DeviceNodeData.preview` が別に運ぶ**
+ * （§8.14）。倒した／倒していないは人が決めたことで、回路を解いた結果では
+ * ないので、`simulation` に混ぜずに済む。
+ *
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { previewAtRest } from "@/circuit/engine";
+import { previewPaths } from "@/circuit/engine";
 import type { PreviewBlocker } from "@/circuit/engine";
 import type {
   CircuitDocument,
@@ -66,7 +70,7 @@ export type PathPreviewView = {
   blockers: readonly PathPreviewBlocker[];
   /** 電位が止まっている部品のインスタンス ID（キャンバスの目印用） */
   blockedComponentIds: ReadonlySet<string>;
-  /** 静止状態で成立している負荷（励磁するコイル・点灯するランプ）の数 */
+  /** この状態で成立している負荷（励磁するコイル・点灯するランプ）の数 */
   activeLoadCount: number;
 };
 
@@ -87,12 +91,17 @@ export const EMPTY_PATH_PREVIEW: PathPreviewView = {
 const actionFor = (
   definitions: ComponentDefinitionRegistry,
   definitionId: string,
+  operated: boolean,
 ): string => {
   const electrical = definitions.get(definitionId)?.electrical;
   if (electrical?.kind === "switch") {
-    return electrical.contactType === "NO"
-      ? "操作すると閉じます"
-      : "操作すると開きます";
+    /*
+      **開いている理由は接点の種別ではなく、いま操作されているかで決まる。**
+      a 接点は倒していないから開いており、b 接点は倒したから開いている。
+      種別だけを見て「操作すると閉じます」と出すと、既に倒している b 接点に
+      向かって「もっと倒せ」と言うことになる。
+    */
+    return operated ? "操作をやめると閉じます" : "操作すると閉じます";
   }
   if (electrical?.kind === "relay") {
     return electrical.delay
@@ -117,6 +126,7 @@ const describeBlockers = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   blockers: readonly PreviewBlocker[],
+  pressedSwitches: ReadonlySet<string>,
 ): PathPreviewBlocker[] => {
   const instances = new Map(
     document.components.map((instance) => [instance.id, instance]),
@@ -139,7 +149,11 @@ const describeBlockers = (
         blocker.blockedTerminalId,
       ),
       side: blocker.side,
-      action: actionFor(definitions, instance.definitionId),
+      action: actionFor(
+        definitions,
+        instance.definitionId,
+        pressedSwitches.has(blocker.componentId),
+      ),
     });
   }
   return described;
@@ -148,16 +162,21 @@ const describeBlockers = (
 /**
  * 経路確認モードの表示状態を組み立てる。
  *
- * 静止状態を 1 回解くだけで、収束ループは回らない。計算量は端子数に線形の
- * Union-Find で、`buildWireRoles()`（3 回のネット構築）より軽い。
+ * 1 回解くだけで収束ループは回らない。計算量は端子数に線形の Union-Find で、
+ * `buildWireRoles()`（3 回のネット構築）より軽い —— スイッチを倒すたびに
+ * 解き直しても重くならない。
+ *
+ * `pressedSwitches` は経路確認モードで**倒しているスイッチ**（§8.14）。
+ * リレーは渡さない —— 接点は動かないのがこのモードの約束（§5.15）。
  */
 export const buildPathPreview = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
+  pressedSwitches: ReadonlySet<string> = new Set(),
 ): PathPreviewView => {
   if (document.components.length === 0) return EMPTY_PATH_PREVIEW;
 
-  const preview = previewAtRest(document, definitions);
+  const preview = previewPaths(document, definitions, { pressedSwitches });
   const energizedNets = loadNetIds(
     document,
     definitions,
@@ -187,8 +206,8 @@ export const buildPathPreview = (
    * 配線の色は端子と同じネットの色。両端は同一ネットなので from 側だけ見ればよい。
    *
    * 自己保持の紫（§5.9）はここには出ない。**保持は「励磁したリレーが自分の
-   * 接点で給電を保つ」状態**であり、どのリレーも励磁していない静止状態には
-   * そもそも存在しない。
+   * 接点で給電を保つ」状態**であり、リレーが一切動かないこのモードには
+   * そもそも存在しない（スイッチを倒しても同じ）。
    */
   const wireOf = new Map<string, WireState>();
   for (const connection of document.connections) {
@@ -199,7 +218,12 @@ export const buildPathPreview = (
     wireOf.set(connection.id, terminalOf.get(key) ?? "inactive");
   }
 
-  const blockers = describeBlockers(document, definitions, preview.blockers);
+  const blockers = describeBlockers(
+    document,
+    definitions,
+    preview.blockers,
+    pressedSwitches,
+  );
 
   return {
     view: { wireOf, terminalOf, deviceOf: new Map() },

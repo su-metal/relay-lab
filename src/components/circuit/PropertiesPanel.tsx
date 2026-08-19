@@ -32,7 +32,12 @@ import type {
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
 import { presetMsOf } from "@/circuit/engine";
-import type { ComponentDefinition, ElectricalDefinition } from "@/circuit/types";
+import type {
+  ComponentDefinition,
+  ElectricalDefinition,
+  LampColor,
+} from "@/circuit/types";
+import { DEFAULT_LAMP_COLOR, LAMP_COLORS } from "@/circuit/types";
 import {
   CATEGORY_LABELS,
   COIL_POLARITY_LABELS,
@@ -56,6 +61,9 @@ export function PropertiesPanel() {
   );
   const setComponentPreset = useCircuitStore(
     (state) => state.setComponentPreset,
+  );
+  const setComponentLampColor = useCircuitStore(
+    (state) => state.setComponentLampColor,
   );
   const setComponentLabel = useCircuitStore(
     (state) => state.setComponentLabel,
@@ -157,11 +165,28 @@ export function PropertiesPanel() {
           onPresetChange={(presetMs) =>
             setComponentPreset(inspection.instance.id, presetMs)
           }
+          onLampColorChange={(color) =>
+            setComponentLampColor(inspection.instance.id, color)
+          }
         />
       )}
     </aside>
   );
 }
+
+/**
+ * レンズの色の表示名（design.md §4.11）。
+ *
+ * **色見本だけにしない。** 色名を併記しないと、色覚に配慮した表示にならず、
+ * 「いま何色が選ばれているか」を目視の色だけに頼ることになる（要件書 §8）。
+ */
+const LAMP_COLOR_LABEL: Record<LampColor, string> = {
+  yellow: "黄",
+  red: "赤",
+  green: "緑",
+  blue: "青",
+  white: "白",
+};
 
 type DetailsProps = {
   inspection: ComponentInspection;
@@ -172,6 +197,8 @@ type DetailsProps = {
   onReplace: (definition: ComponentDefinition) => void;
   /** タイマーの設定時間（ms）。タイマー以外では呼ばれない */
   onPresetChange: (presetMs: number) => void;
+  /** 表示ランプのレンズの色。ランプ以外では呼ばれない */
+  onLampColorChange: (color: LampColor) => void;
 };
 
 function ComponentDetails({
@@ -181,6 +208,7 @@ function ComponentDetails({
   onFlip,
   onReplace,
   onPresetChange,
+  onLampColorChange,
 }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
@@ -189,6 +217,8 @@ function ComponentDetails({
     definition.electrical.kind === "relay"
       ? definition.electrical.delay
       : undefined;
+  // レンズの色（design.md §4.11）。ランプ以外では欄ごと出さない
+  const lamp = definition.electrical.kind === "lamp";
   // 交換候補は同じカテゴリ内だけ（design.md §8.3）。カテゴリを跨ぐと
   // ElectricalDefinition.kind ごと変わり、部品交換ではなく作り直しになる
   const replaceCandidates = componentDefinitions.filter(
@@ -248,6 +278,49 @@ function ComponentDetails({
               <span className={styles.presetUnit}>秒</span>
             </span>
           </label>
+        )}
+
+        {/*
+          レンズの色（design.md §4.11）。**ランプのときだけ出す。**
+
+          盤面では色そのものが意味を持つ（赤＝異常・緑＝運転）ので、
+          見た目の設定ではなく図面の情報として扱う —— タイマーの設定時間と
+          同じく Undo の対象にしてある（`circuitStore`）。
+
+          排他選択なので、独立したボタンではなく連結したセグメントで
+          「どれか 1 つ」であることを見せる（操作バーの範囲選択と同じ・§8.6）。
+        */}
+        {lamp && (
+          <div className={styles.labelField}>
+            <span className={styles.fieldName}>レンズの色</span>
+            <div
+              className={styles.lampColors}
+              role="group"
+              aria-label="レンズの色"
+            >
+              {LAMP_COLORS.map((color) => {
+                const active =
+                  (instance.lampColor ?? DEFAULT_LAMP_COLOR) === color;
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    className={styles.lampColor}
+                    data-color={color}
+                    data-active={active || undefined}
+                    aria-pressed={active}
+                    title={LAMP_COLOR_LABEL[color]}
+                    onClick={() => onLampColorChange(color)}
+                  >
+                    <span className={styles.lampColorDot} aria-hidden />
+                    <span className={styles.lampColorName}>
+                      {LAMP_COLOR_LABEL[color]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {/*

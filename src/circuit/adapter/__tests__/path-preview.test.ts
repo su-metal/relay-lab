@@ -1,11 +1,12 @@
 /**
  * 経路確認モードの表示状態の検証（design.md §5.15・§8.14）。
  *
- * ここで守りたいのは 4 点。
+ * ここで守りたいのは 5 点。
  * ①実行中と同じ `WireState` の語彙で色が付くこと（予測専用の色を作らない）
  * ②`deviceOf` が空のままであること —— 部品を「動いている」と言わない
  * ③止まっている箇所が**実端子番号**で読めること（このプロダクトの価値そのもの）
  * ④自己保持の紫が静止状態には出ないこと
+ * ⑤スイッチを倒すと色と文言が追随し、**リレーの接点は動かない**こと（§8.14）
  */
 
 import { describe, expect, it } from "vitest";
@@ -199,5 +200,81 @@ describe("buildPathPreview — 止まっている箇所", () => {
       (entry) => entry.componentId === "t1",
     );
     expect(blocker?.action).toBe("この限時接点が動作すると閉じます");
+  });
+});
+
+/**
+ * スイッチを倒したときの表示（design.md §8.14）。
+ *
+ * エンジン側（`preview.test.ts`）で到達範囲は押さえてあるので、ここでは
+ * **画面に出る言葉と色**が倒した状態に追随するかだけを見る。
+ */
+describe("buildPathPreview — スイッチを倒す", () => {
+  const pressed = new Set(["s1"]);
+
+  it("倒した先の配線が通電色になる", () => {
+    const rest = buildPathPreview(document, componentRegistry);
+    expect(rest.view.wireOf.get("w-s1-coil")).toBe("inactive");
+
+    const preview = buildPathPreview(document, componentRegistry, pressed);
+    expect(preview.view.wireOf.get("w-s1-coil")).toBe("energized");
+  });
+
+  it("**リレーの接点は動かない** —— ランプへの線は非通電のまま", () => {
+    const preview = buildPathPreview(document, componentRegistry, pressed);
+    expect(preview.view.wireOf.get("w-no-lamp")).toBe("inactive");
+  });
+
+  it("倒したスイッチは一覧から消える", () => {
+    const rest = buildPathPreview(document, componentRegistry);
+    expect(rest.blockedComponentIds.has("s1")).toBe(true);
+
+    const preview = buildPathPreview(document, componentRegistry, pressed);
+    expect(preview.blockedComponentIds.has("s1")).toBe(false);
+  });
+
+  it("倒しても `deviceOf` は空のまま（部品を「動いている」と言わない）", () => {
+    const preview = buildPathPreview(document, componentRegistry, pressed);
+    expect(preview.view.deviceOf.size).toBe(0);
+  });
+
+  it("倒して開いた b 接点には「操作をやめると閉じます」と出る", () => {
+    const ncDocument: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: at(0, 0) },
+        {
+          id: "sb",
+          definitionId: "switch-pushbutton-nc",
+          label: "S2",
+          position: at(200, 0),
+        },
+        { id: "l1", definitionId: "lamp-dc24v", position: at(420, 0) },
+      ],
+      connections: [
+        wire("w1", ["ps", "plus"], ["sb", "1"]),
+        wire("w2", ["sb", "2"], ["l1", "1"]),
+        wire("w3", ["l1", "2"], ["ps", "zero"]),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const preview = buildPathPreview(
+      ncDocument,
+      componentRegistry,
+      new Set(["sb"]),
+    );
+    const blocker = preview.blockers.find(
+      (item) => item.componentId === "sb",
+    );
+    expect(blocker?.action).toBe("操作をやめると閉じます");
+  });
+
+  it("倒していない a 接点には「操作すると閉じます」と出る", () => {
+    const preview = buildPathPreview(document, componentRegistry);
+    const blocker = preview.blockers.find((item) => item.componentId === "s1");
+    expect(blocker?.action).toBe("操作すると閉じます");
+    // 端子は実端子番号のまま
+    expect(blocker?.name).toBe("S1");
   });
 });

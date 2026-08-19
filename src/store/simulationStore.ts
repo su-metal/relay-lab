@@ -40,6 +40,10 @@ export type SimulationStore = {
    * モーメンタリは押下中、オルタネートは ON 位置の間ずっと入る。
    * どちらも「操作された状態か」の 1 ビットなので集合を分けない
    * （エンジンは `action` を見て開閉を決める・design.md §4.7）。
+   *
+   * **実行中と経路確認中で同じ 1 つを使う**（design.md §8.14）。2 つ持つと
+   * 「▶ で押した状態」と「経路確認で倒した状態」がずれ、モードを行き来した
+   * ときにどちらが効いているのか読めなくなる。モードの切り替えで必ず空へ戻す。
    */
   pressedSwitches: ReadonlySet<string>;
   /** 最新の結果。停止中は null */
@@ -55,9 +59,13 @@ export type SimulationStore = {
   /**
    * 経路確認モード（design.md §8.14）。**▶ とは排他。**
    *
-   * 静止状態の到達範囲を塗るだけのモードで、時間は進まない。実行と同時に
-   * 立てられるようにすると、同じ線に「今流れている」と「電源を入れれば
-   * 流れる」の 2 つの意味が同時に載る。
+   * 電位の到達範囲を塗るモードで、時間は進まない。実行と同時に立てられる
+   * ようにすると、同じ線に「今流れている」と「電源を入れれば流れる」の
+   * 2 つの意味が同時に載る。
+   *
+   * **スイッチは倒せるが、リレーは動かない**（design.md §5.15）。倒した先が
+   * どこまで届くかを読むためのモードで、リレーまで動かすと収束ループが要り、
+   * 実質「時間の進まない ▶」になる。
    *
    * `running` と同じく**保存対象ではない。**
    */
@@ -65,12 +73,13 @@ export type SimulationStore = {
 
   start: () => void;
   stop: () => void;
-  /** 経路確認モードを切り替える。入るときは実行を止める */
+  /** 経路確認モードを切り替える。入るときは実行を止め、出入りで押下状態を捨てる */
   togglePathPreview: () => void;
 
   /**
    * モーメンタリ操作。マウスダウンで押下、マウスアップで復帰する。
-   * 停止中の操作は無視する（結果が無いのに入力だけ溜まるのを防ぐ）。
+   * **実行中と経路確認中だけ効く** —— 停止中の操作は無視する
+   * （結果が無いのに入力だけ溜まるのを防ぐ）。
    */
   pressSwitch: (componentId: string) => void;
   releaseSwitch: (componentId: string) => void;
@@ -146,7 +155,9 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
    */
   togglePathPreview: () => {
     if (get().pathPreview) {
-      set({ pathPreview: false });
+      // 出るときも倒した状態を捨てる。残すと停止中の役割配色に戻ったあとも
+      // 見えない操作が効いたままになり、次に ⚡ を押すと勝手に倒れて見える
+      set({ pathPreview: false, pressedSwitches: EMPTY_PRESSED });
       return;
     }
     stopTicking();
@@ -161,7 +172,9 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
 
   pressSwitch: (componentId) =>
     set((state) => {
-      if (!state.running || state.pressedSwitches.has(componentId)) return {};
+      // 実行中と経路確認中だけ受け付ける。停止中は結果が無いのに入力だけ溜まる
+      if (!state.running && !state.pathPreview) return {};
+      if (state.pressedSwitches.has(componentId)) return {};
       const next = new Set(state.pressedSwitches);
       next.add(componentId);
       return { pressedSwitches: next };
@@ -177,7 +190,7 @@ export const useSimulationStore = create<SimulationStore>()((set, get) => ({
 
   toggleSwitch: (componentId) =>
     set((state) => {
-      if (!state.running) return {};
+      if (!state.running && !state.pathPreview) return {};
       const next = new Set(state.pressedSwitches);
       // delete は「消せたか」を返す。ON なら OFF へ、OFF なら ON へ
       if (!next.delete(componentId)) next.add(componentId);

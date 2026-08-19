@@ -280,18 +280,25 @@ export const AT_REST: SimulationInput = { pressedSwitches: new Set() };
 export const NONE_ENERGIZED: ReadonlySet<string> = new Set();
 
 /**
- * 静止状態のネットを 1 回だけ解く。**収束ループは回らない。**
+ * ネットを 1 回だけ解く。**収束ループは回らず、リレーは必ず非励磁のまま。**
  *
- * 静止状態を見る用途が 2 つ（配線チェックと到達範囲の可視化）あり、
+ * この 1 パスを見る用途が 2 つ（配線チェックと到達範囲の可視化）あり、
  * どちらも同じ 1 パスで足りる。**同じ 2 行を両方に書かない** —— 片方だけ
  * `openContacts` を渡すような食い違いが入ると、警告に出る回路と画面に出る色が
  * 別の状態を指すことになる。
+ *
+ * **スイッチの操作だけは入力として受け取る**（既定は `AT_REST` ＝ 無操作）。
+ * スイッチは人が倒すもので、倒した結果は回路を解かなくても決まっている ——
+ * だから 1 パスのままで扱える。**リレーの励磁は渡せない**（`NONE_ENERGIZED`
+ * 固定）。リレーが動くと「動いた接点でまた別のリレーが動く」の連鎖になり、
+ * それは収束ループ＝`simulate()` の領分になる（design.md §5.15）。
  */
-export const solveAtRest = (
+export const solveWithoutRelays = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
+  input: SimulationInput = AT_REST,
 ): NetLookup => {
-  const nets = buildNets(document, definitions, AT_REST, NONE_ENERGIZED);
+  const nets = buildNets(document, definitions, input, NONE_ENERGIZED);
   return { netOf: nets.netOf, netState: computeNetStates(document, definitions, nets) };
 };
 

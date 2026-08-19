@@ -105,4 +105,46 @@ describe("simulationStore の経路確認モード", () => {
     expect(state.pathPreview).toBe(false);
     expect(state.running).toBe(true);
   });
+
+  /*
+   * スイッチの操作（design.md §8.14）。実行中と同じ 1 つの `pressedSwitches`
+   * を使い、モードの出入りで必ず空へ戻す。
+   */
+  it("モード中はスイッチを倒せる", () => {
+    const store = useSimulationStore.getState();
+    store.togglePathPreview();
+    store.toggleSwitch("S1");
+
+    expect([...useSimulationStore.getState().pressedSwitches]).toEqual(["S1"]);
+  });
+
+  it("モード中のモーメンタリ操作も効く", () => {
+    const store = useSimulationStore.getState();
+    store.togglePathPreview();
+    store.pressSwitch("S1");
+    expect([...useSimulationStore.getState().pressedSwitches]).toEqual(["S1"]);
+
+    store.releaseSwitch("S1");
+    expect([...useSimulationStore.getState().pressedSwitches]).toEqual([]);
+  });
+
+  it("モードから出ると倒した状態は捨てられる", () => {
+    const store = useSimulationStore.getState();
+    store.togglePathPreview();
+    store.toggleSwitch("S1");
+
+    store.togglePathPreview();
+
+    const state = useSimulationStore.getState();
+    expect(state.pathPreview).toBe(false);
+    expect([...state.pressedSwitches]).toEqual([]);
+  });
+
+  it("停止中（どちらのモードでもない）は倒せないまま", () => {
+    const store = useSimulationStore.getState();
+    store.toggleSwitch("S1");
+    store.pressSwitch("S2");
+
+    expect([...useSimulationStore.getState().pressedSwitches]).toEqual([]);
+  });
 });
