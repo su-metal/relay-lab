@@ -3233,3 +3233,17 @@ npm run deploy      # = npm run build && wrangler deploy
 **配布前にテストとビルドを回す。** `ci.yml` と重複するが、`workflow_dispatch` や main への直 push で「検証されていない配布経路」ができるのを防ぐため、このワークフロー単体で完結させる。
 
 **`concurrency` で追い越しを止める。** `ci.yml` と違って `cancel-in-progress` は付けない —— `wrangler deploy` の途中で打ち切ると、どの版が本番に載っているのか分からなくなる。
+
+#### 配布経路はこの 1 本だけ（Step 22 の後で確定）
+
+**Cloudflare 側の Workers Builds（ダッシュボードで GitHub と直結する仕組み）は使わない。** 一度これが有効になっていて、同じ push で 2 つの経路が同じ Worker を書きに行く状態になっていた。
+
+2 本あると次の 3 つが同時に壊れる。
+
+1. **競合する。** 同じ push で 2 つが同時に配布し、あとから入ったほうが勝つ
+2. **どの版がどのコミットか追えない。** バージョン ID とコミットの対応がリポジトリから読めなくなる
+3. **検証を通らない配布経路ができる。** 上に書いた「配布前にテストとビルドを回す」という担保は `deploy.yml` の中にしかない。Workers Builds はこのワークフローを通らないので、**壊れたものが本番に載りうる**
+
+**リポジトリに記録が残るのはこちらの経路だけ**（`wrangler.jsonc` にビルド設定は無く、Workers Builds はダッシュボードにしか存在しない）。設定がコードレビューにも履歴にも出てこない配布経路は、後から誰も理由を辿れない。
+
+**トークンを Roll するときは配布経路への影響を確認する。** Workers Builds は Actions Secrets とは別に自分のビルドトークンを握っており、Cloudflare 側でトークンを再生成すると `The build token selected for this build has been deleted or rolled` で落ちる。
