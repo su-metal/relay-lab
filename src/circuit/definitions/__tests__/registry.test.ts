@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("19 定義が登録されている", () => {
+  it("22 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
@@ -33,12 +33,15 @@ describe("部品定義レジストリ", () => {
       "timer-on-delay",
       "timer-off-delay",
       "lamp-dc24v",
+      "lamp-ac100v",
       "lamp-dimmable-ac100v",
       "dimmer-0-10v",
+      "dimming-controller-16ch",
+      "dimmer-phase-control-ac100v",
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(19);
+    expect(componentRegistry.size).toBe(22);
   });
 
   it("型番から定義を取得できる", () => {
@@ -86,13 +89,16 @@ describe("部品定義レジストリ", () => {
      */
     expect(listComponentDefinitions("lamp").map((d) => d.id)).toEqual([
       "lamp-dc24v",
+      "lamp-ac100v",
       "lamp-dimmable-ac100v",
     ]);
     // 調光出力だけが独立したカテゴリ。電気的にも `analog-source` で別
     expect(listComponentDefinitions("dimmer").map((d) => d.id)).toEqual([
       "dimmer-0-10v",
+      "dimming-controller-16ch",
+      "dimmer-phase-control-ac100v",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(19);
+    expect(listComponentDefinitions()).toHaveLength(22);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -152,8 +158,20 @@ describe("部品定義レジストリ", () => {
                 : electrical.kind === "terminal"
                   ? electrical.terminals
                   : electrical.kind === "analog-source"
-                    ? [electrical.signalTerminal, electrical.commonTerminal]
-                    : [
+                    ? [
+                        ...electrical.channels.map((c) => c.signalTerminal),
+                        ...electrical.commonTerminals,
+                      ]
+                    : electrical.kind === "dimmer"
+                      ? [
+                          electrical.inTerminal,
+                          electrical.outTerminal,
+                          electrical.acCommonTerminal,
+                          electrical.signalTerminal,
+                          electrical.signalCommonTerminal,
+                          electrical.cutoffTerminal,
+                        ]
+                      : [
                         electrical.relay.coil.positiveTerminal,
                         electrical.relay.coil.negativeTerminal,
                         // NC 端子は a 接点のみのリレーには存在しない。

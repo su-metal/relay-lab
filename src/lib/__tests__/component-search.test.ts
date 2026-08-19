@@ -48,7 +48,11 @@ describe("部品検索", () => {
 
   it("カテゴリの日本語表示で引ける", () => {
     expect(ids("端子台")).toEqual(["terminal-block-6p"]);
-    expect(ids("ランプ")).toEqual(["lamp-dc24v", "lamp-dimmable-ac100v"]);
+    expect(ids("ランプ")).toEqual([
+      "lamp-dc24v",
+      "lamp-ac100v",
+      "lamp-dimmable-ac100v",
+    ]);
     expect(ids("リレー")).toHaveLength(6);
   });
 

@@ -33,6 +33,7 @@ import type {
   ComponentDefinition,
   ComponentDefinitionRegistry,
   DimmingLevel,
+  DimmerSettings,
   ElectricalDefinition,
   AnalogCurve,
 } from "@/circuit/types";
@@ -53,6 +54,58 @@ export const outputVoltsOf = (
       ? source.defaultVolts
       : outputVolts;
   return Math.min(Math.max(value, source.minVolts), source.maxVolts);
+};
+
+/** チャンネル 1 本が出す電圧。インスタンスの設定を先に見る */
+export const channelVoltsOf = (
+  source: Extract<ElectricalDefinition, { kind: "analog-source" }>,
+  channelId: string,
+  channelVolts: Readonly<Record<string, number>> | undefined,
+): number => outputVoltsOf(source, channelVolts?.[channelId]);
+
+/**
+ * インスタンスの設定を当てたあとの変換規則（design.md §4.15）。
+ *
+ * **極性の反転は両端の入れ替えだけ。** エンジンは「どちらが全灯か」を
+ * 知らないまま、実機の DIP と同じことをする（CLAUDE.md 設計原則 9）。
+ */
+export const effectiveCurve = (
+  curve: AnalogCurve,
+  settings: DimmerSettings | undefined,
+): AnalogCurve =>
+  settings?.inverted
+    ? {
+        ...curve,
+        percentAtMin: curve.percentAtMax,
+        percentAtMax: curve.percentAtMin,
+      }
+    : curve;
+
+/**
+ * カーブの形と上下限を当てる（design.md §4.15）。
+ *
+ * 順は **形 → 上下限 → DIRECT**。DIRECT を最後に置くのは、実機の直点が
+ * 上限設定すら飛び越えて全点灯するため —— 先に丸めると
+ * 「DIRECT にしたのに 70% までしか上がらない」という嘘になる。
+ *
+ * 遮断（`cutoff`）はここでは扱わない。呼び出し側が 0% を返す。
+ */
+export const shapePercent = (
+  percent: number,
+  settings: DimmerSettings | undefined,
+): number => {
+  if (settings?.direct) return 100;
+
+  // 2 乗特性。低いほうが緩やかに効く（実機の「２乗特性」）
+  const shaped =
+    settings?.curveShape === "square" ? (percent * percent) / 100 : percent;
+
+  const min = settings?.minPercent ?? 0;
+  const max = settings?.maxPercent ?? 100;
+  // 下限が上限を超える設定でも壊さない。狭いほうへ倒す
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  return Math.min(Math.max(shaped, low), high);
 };
 
 /**
@@ -104,6 +157,10 @@ const strongerOf = (a: AnalogSignal, b: AnalogSignal): AnalogSignal =>
 /**
  * 回路中の調光出力を、信号ネットごとの電圧に畳む。
  *
+ * **チャンネルごとに別の信号として畳む。** 実機の調光コントローラは
+ * 0–10V を 16 回路持ち、回路ごとに違う電圧を出す。基準（コモン）は
+ * 機器で 1 つなので、どのチャンネルも同じ基準ネットを指す。
+ *
  * 信号ネットと基準ネットが**同じネット**なら（接点で 0V コモンへ落とした
  * "DIRECT"）、出力が何 V を出していようと 0V。基準に対する電圧が 0 なのだから
  * 特別扱いではなく、ネットの形からそのまま出る答えになっている。
@@ -118,44 +175,70 @@ const collectSignals = (
     const { electrical } = definition;
     if (electrical.kind !== "analog-source") continue;
 
-    const signalNet = netOf.get(
-      terminalKey(instance.id, electrical.signalTerminal),
-    );
-    const referenceNet = netOf.get(
-      terminalKey(instance.id, electrical.commonTerminal),
-    );
-    if (signalNet === undefined || referenceNet === undefined) continue;
-
-    const pulledToReference = signalNet === referenceNet;
-    const signal: AnalogSignal = {
-      volts: pulledToReference
-        ? 0
-        : outputVoltsOf(electrical, instance.outputVolts),
-      referenceNet,
-      sourceIds: [instance.id],
-      pulledToReference,
-    };
-
-    const existing = signals.get(signalNet);
-    if (!existing) {
-      signals.set(signalNet, signal);
-      continue;
+    // コモンは機器内部で繋がっているので、どの端子から引いても同じネット。
+    // 1 本でも見つかればよい（未配線の予備 GND があっても止まらない）
+    let referenceNet: number | undefined;
+    for (const common of electrical.commonTerminals) {
+      const net = netOf.get(terminalKey(instance.id, common));
+      if (net !== undefined) {
+        referenceNet = net;
+        break;
+      }
     }
-    const winner = strongerOf(existing, signal);
-    signals.set(signalNet, {
-      ...winner,
-      // 「誰が出しているか」は警告文に要るので、負けた側の ID も残す
-      sourceIds: [...existing.sourceIds, ...signal.sourceIds],
-      pulledToReference:
-        existing.pulledToReference || signal.pulledToReference,
-    });
+    if (referenceNet === undefined) continue;
+
+    for (const channel of electrical.channels) {
+      const signalNet = netOf.get(
+        terminalKey(instance.id, channel.signalTerminal),
+      );
+      if (signalNet === undefined) continue;
+
+      const pulledToReference = signalNet === referenceNet;
+      const signal: AnalogSignal = {
+        volts: pulledToReference
+          ? 0
+          : channelVoltsOf(electrical, channel.id, instance.channelVolts),
+        referenceNet,
+        sourceIds: [instance.id],
+        pulledToReference,
+      };
+
+      const existing = signals.get(signalNet);
+      if (!existing) {
+        signals.set(signalNet, signal);
+        continue;
+      }
+      const winner = strongerOf(existing, signal);
+      signals.set(signalNet, {
+        ...winner,
+        // 「誰が出しているか」は警告文に要るので、負けた側の ID も残す
+        sourceIds: [...existing.sourceIds, ...signal.sourceIds],
+        pulledToReference:
+          existing.pulledToReference || signal.pulledToReference,
+      });
+    }
   }
 
   return signals;
 };
 
 /**
- * 調光入力を持つ負荷 1 個の解。
+ * 調光信号を受ける入力段の共通の形。
+ *
+ * **調光ランプ（`dimming`）と位相制御調光器（`kind: "dimmer"`）で
+ * 同じ 1 本を使う。** 受け側の事情は「どの端子で受けるか・どう %へ
+ * 直すか・未接続なら何 V か」しかなく、自分が点るか他人を暗くするかは
+ * 入力段の話ではない。分けると基準の突き合わせを 2 箇所に書くことになる。
+ */
+type AnalogInput = {
+  signalTerminal: string;
+  commonTerminal: string;
+  curve: AnalogCurve;
+  unconnectedVolts: number;
+};
+
+/**
+ * 入力段 1 個の解。
  *
  * 判定の順は「信号が来ているか」→「基準が共通か」→「レベル」。
  *
@@ -165,45 +248,69 @@ const collectSignals = (
  * 入力段は未接続と同じ状態にある —— だから `unconnectedVolts` へ落とす。
  * **0V = 100% の仕様では、これも全灯になる。**
  */
-const levelOf = (
-  electrical: Extract<ElectricalDefinition, { kind: "lamp" }>,
+const inputLevel = (
+  input: AnalogInput,
+  settings: DimmerSettings | undefined,
   componentId: string,
   netOf: ReadonlyMap<string, number>,
   signals: ReadonlyMap<number, AnalogSignal>,
-): DimmingLevel | undefined => {
-  const dimming = electrical.dimming;
-  if (!dimming) return undefined;
+): DimmingLevel => {
+  const curve = effectiveCurve(input.curve, settings);
+  const at = (volts: number, floating: boolean, referenceMismatch: boolean) => ({
+    volts,
+    percent: shapePercent(analogPercent(curve, volts), settings),
+    floating,
+    referenceMismatch,
+    cutOff: false,
+  });
 
-  const signalNet = netOf.get(terminalKey(componentId, dimming.signalTerminal));
-  const commonNet = netOf.get(terminalKey(componentId, dimming.commonTerminal));
-
+  const signalNet = netOf.get(terminalKey(componentId, input.signalTerminal));
+  const commonNet = netOf.get(terminalKey(componentId, input.commonTerminal));
   const signal = signalNet === undefined ? undefined : signals.get(signalNet);
 
   // 信号が届いていない。未接続時のレベルは定義が持つ（エンジンは決め打ちしない）
-  if (!signal) {
-    return {
-      volts: dimming.unconnectedVolts,
-      percent: analogPercent(dimming.curve, dimming.unconnectedVolts),
-      floating: true,
-      referenceMismatch: false,
-    };
-  }
+  if (!signal) return at(input.unconnectedVolts, true, false);
 
   if (commonNet === undefined || commonNet !== signal.referenceNet) {
-    return {
-      volts: dimming.unconnectedVolts,
-      percent: analogPercent(dimming.curve, dimming.unconnectedVolts),
-      floating: true,
-      referenceMismatch: true,
-    };
+    return at(input.unconnectedVolts, true, true);
   }
 
-  return {
-    volts: signal.volts,
-    percent: analogPercent(dimming.curve, signal.volts),
-    floating: false,
-    referenceMismatch: false,
-  };
+  return at(signal.volts, false, false);
+};
+
+/**
+ * 位相制御調光器 1 台の解（design.md §4.15）。
+ *
+ * **遮断が最優先。** 遮断端子が信号の基準と同じネットにあれば、信号が
+ * 何 V でも・DIRECT でも 0%。実機の「強制出力遮断」は調光段より後ろで
+ * 切っているので、前段の設定では戻らない。
+ */
+const dimmerLevel = (
+  electrical: Extract<ElectricalDefinition, { kind: "dimmer" }>,
+  instance: CircuitComponentInstance,
+  netOf: ReadonlyMap<string, number>,
+  signals: ReadonlyMap<number, AnalogSignal>,
+): DimmingLevel => {
+  const cutoffNet = netOf.get(terminalKey(instance.id, electrical.cutoffTerminal));
+  const commonNet = netOf.get(
+    terminalKey(instance.id, electrical.signalCommonTerminal),
+  );
+  const level = inputLevel(
+    {
+      signalTerminal: electrical.signalTerminal,
+      commonTerminal: electrical.signalCommonTerminal,
+      curve: electrical.curve,
+      unconnectedVolts: electrical.unconnectedVolts,
+    },
+    instance.dimmerSettings,
+    instance.id,
+    netOf,
+    signals,
+  );
+
+  const cutOff =
+    cutoffNet !== undefined && commonNet !== undefined && cutoffNet === commonNet;
+  return cutOff ? { ...level, percent: 0, cutOff: true } : level;
 };
 
 /**
@@ -223,15 +330,57 @@ export const resolveAnalog = (
   const signals = collectSignals(placed, netOf);
 
   const levels = new Map<string, DimmingLevel>();
+  const netLevels = new Map<number, DimmingLevel>();
+
+  // ① 調光器。出力回路のネットに明るさを乗せる
+  for (const { instance, definition } of placed) {
+    const { electrical } = definition;
+    if (electrical.kind !== "dimmer") continue;
+    const level = dimmerLevel(electrical, instance, netOf, signals);
+    levels.set(instance.id, level);
+
+    const outNet = netOf.get(terminalKey(instance.id, electrical.outTerminal));
+    if (outNet === undefined) continue;
+    // 同じ回路に 2 台ぶら下がっていたら暗いほうが勝つ。信号どうしの
+    // 突き合わせ（`strongerOf`）と同じ「引き下げが勝つ」規則で揃える
+    const existing = netLevels.get(outNet);
+    if (!existing || level.percent < existing.percent) {
+      netLevels.set(outNet, level);
+    }
+  }
+
+  // ② ランプ。自分の調光入力が最優先で、無ければ乗っている回路の明るさ
   for (const { instance, definition } of placed) {
     const { electrical } = definition;
     if (electrical.kind !== "lamp") continue;
-    const level = levelOf(electrical, instance.id, netOf, signals);
-    if (level) levels.set(instance.id, level);
+
+    if (electrical.dimming) {
+      levels.set(
+        instance.id,
+        inputLevel(
+          electrical.dimming,
+          instance.dimmerSettings,
+          instance.id,
+          netOf,
+          signals,
+        ),
+      );
+      continue;
+    }
+
+    if (netLevels.size === 0) continue;
+    for (const terminal of [electrical.terminalA, electrical.terminalB]) {
+      const net = netOf.get(terminalKey(instance.id, terminal));
+      const level = net === undefined ? undefined : netLevels.get(net);
+      if (level) {
+        levels.set(instance.id, level);
+        break;
+      }
+    }
   }
 
   if (signals.size === 0 && levels.size === 0) return EMPTY_ANALOG_RESULT;
-  return { signalOf: signals, levelOf: levels };
+  return { signalOf: signals, levelOf: levels, netLevelOf: netLevels };
 };
 
 /**

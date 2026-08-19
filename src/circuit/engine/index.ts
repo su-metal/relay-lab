@@ -51,6 +51,9 @@ export {
 export {
   analogPercent,
   analogSignalNets,
+  channelVoltsOf,
+  effectiveCurve,
+  shapePercent,
   outputVoltsOf,
   resolveAnalog,
 } from "./analog";

@@ -71,7 +71,7 @@ const dimmer = (id: string, volts: number): CircuitComponentInstance => ({
   definitionId: DIMMER,
   label: id,
   position: { x: 0, y: 0 },
-  outputVolts: volts,
+  channelVolts: { "1": volts },
 });
 
 /**
@@ -135,8 +135,8 @@ describe("V → % の変換（逆特性）", () => {
   it("出力電圧は定義の上下限へ丸める", () => {
     const source = {
       kind: "analog-source",
-      signalTerminal: "V+",
-      commonTerminal: "COM",
+      channels: [{ id: "1", signalTerminal: "V+" }],
+      commonTerminals: ["COM"],
       minVolts: 0,
       maxVolts: 10,
       defaultVolts: 5,
@@ -188,7 +188,9 @@ describe("US-AK 調光器とランプを繋ぐと明るさが出る", () => {
     );
     expect(view.terminalVoltsOf.get(terminalKey("L1", "DIM+"))).toBe(4);
     expect(view.deviceOf.get("L1")?.dimming?.percent).toBe(60);
-    expect(view.deviceOf.get("DIM")?.outputVolts).toBe(4);
+    expect(view.deviceOf.get("DIM")?.channelVolts).toEqual([
+      { id: "1", label: undefined, volts: 4 },
+    ]);
   });
 
   it("調光を持たないランプには明るさが出ない", () => {

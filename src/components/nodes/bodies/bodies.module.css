@@ -370,3 +370,30 @@
   stroke: var(--wire-analog);
   stroke-width: 2;
 }
+
+/*
+ * 多回路の調光出力の読み（design.md §5.17）。
+ *
+ * 16 回路を 1 行に並べると本体が横に伸びすぎるので折り返す。
+ * 回路番号を小さく前置きするのは、**値だけ並ぶと何番の回路か読めない**ため。
+ */
+.dimmerChannels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  justify-content: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--device-body-text, #334155);
+}
+
+.dimmerChannel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.dimmerChannelId {
+  font-size: 9px;
+  opacity: 0.6;
+}

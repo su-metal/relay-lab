@@ -96,12 +96,13 @@ export type DeviceNodeData = {
    */
   lampColor?: LampColor;
   /**
-   * 調光出力の電圧（V・design.md §5.17）。調光出力以外では `undefined`。
+   * 調光出力の電圧（V）をチャンネル ID ごとに（design.md §5.17）。
+   * 調光出力以外では `undefined`。
    *
    * `presetMs` と同じくインスタンスごとの値で、**停止中も出す**
    * —— つまみの位置はシミュレーションの結果ではない。
    */
-  outputVolts?: number;
+  channelVolts?: Readonly<Record<string, number>>;
   /**
    * シミュレーション中の部品の状態。**停止中は `undefined`。**
    * 「消磁している」と「そもそも動いていない」を描き分けるための区別。
@@ -233,7 +234,7 @@ export const toDeviceNode = (
     label: instance.label,
     presetMs: instance.presetMs,
     lampColor: instance.lampColor,
-    outputVolts: instance.outputVolts,
+    channelVolts: instance.channelVolts,
     simulation: view.deviceOf.get(instance.id),
     terminalStates: terminalStatesOf(
       view,

@@ -75,8 +75,9 @@ export const dimmerOutput0to10v: ComponentDefinition = {
   ],
   electrical: {
     kind: "analog-source",
-    signalTerminal: "V+",
-    commonTerminal: "COM",
+    // 1 回路だけの機器も配列で持つ。単数と複数で形を分けない（§3.1）
+    channels: [{ id: "1", signalTerminal: "V+" }],
+    commonTerminals: ["COM"],
     minVolts: 0,
     maxVolts: 10,
     defaultVolts: 5,

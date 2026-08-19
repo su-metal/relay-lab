@@ -198,6 +198,15 @@ export const detectUnconnectedTerminals = (
     if (!definition) continue;
     for (const terminal of definition.terminals) {
       if (wired.has(terminalKey(instance.id, terminal.id))) continue;
+      /*
+       * 「使わないことが正常」な端子は指摘しない（design.md §3.1）。
+       *
+       * **端子が多い機器のための逃げ道。** 46 端子の調光コントローラで
+       * 未接続をすべて挙げると、本当に挿し忘れている 1 本が 40 本の雑音に
+       * 埋もれる。立てる側（定義）が「繋がないと働かない端子には立てない」
+       * ことで、捕まえたい挿し忘れは残る。
+       */
+      if (terminal.optional) continue;
       const note = unconnectedAnalogNote(definition, terminal.id);
       warnings.push({
         code: "unconnected-terminal",

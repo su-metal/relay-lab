@@ -252,15 +252,30 @@ export const deviceStatusOf = (
         active: false,
       };
     }
-    case "analog-source":
+    case "analog-source": {
       // 出力は常に出ている。0V も「何も出していない」ではなく 0V という値
+      const readings = simulation.channelVolts ?? [];
+      if (readings.length === 0) return { label: "出力中", active: true };
+      // 多回路の機器を 1 個の数字で代表させない。全回路が同じときだけまとめる
+      const first = readings[0].volts;
+      const uniform = readings.every((reading) => reading.volts === first);
       return {
-        label:
-          simulation.outputVolts === undefined
-            ? "出力中"
-            : `${simulation.outputVolts.toFixed(1)}V 出力中`,
+        label: uniform
+          ? `${first.toFixed(1)}V 出力中`
+          : `${readings.length} 回路 出力中`,
         active: true,
       };
+    }
+    case "dimmer": {
+      const level = simulation.dimming;
+      if (!level) return { label: "調光中", active: true };
+      // 消えている理由を言い分ける（遮断か、暗くしているだけか）
+      if (level.cutOff) return { label: "出力遮断", active: false };
+      return {
+        label: `${Math.round(level.percent)}%`,
+        active: level.percent > 0,
+      };
+    }
     case "switch": {
       // オルタネートは「押下」ではなく位置なので言い方を変える。
       // 同じ「押下中」と出すと、手を離しても状態が残ることが読めない

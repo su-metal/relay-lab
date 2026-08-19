@@ -37,8 +37,9 @@ export type BodyProps = {
    */
   lampColor?: LampColor;
   /**
-   * 調光出力の電圧（V・design.md §5.17）。調光出力以外では `undefined`。
+   * 調光出力の電圧（V）をチャンネル ID ごとに（design.md §5.17）。
+   * 調光出力以外では `undefined`。
    * `presetMs` と同じ理由でインスタンス側から来る（**停止中も出す**）。
    */
-  outputVolts?: number;
+  channelVolts?: Readonly<Record<string, number>>;
 };

@@ -13,7 +13,7 @@ import {
   analogSignalNets,
   coilEnergized,
   isShorted,
-  outputVoltsOf,
+  channelVoltsOf,
   presetMsOf,
   reachesPlus,
   reachesZero,
@@ -138,8 +138,14 @@ export type DeviceSimulationState = {
    * 潰すと「消えている理由」が読めなくなる。
    */
   dimming?: DimmingLevel;
-  /** 調光出力が出している電圧（V）。`kind: "analog-source"` 以外は持たない */
-  outputVolts?: number;
+  /**
+   * 調光出力が出している電圧（V）を**チャンネルごとに**（design.md §5.17）。
+   * `kind: "analog-source"` 以外は持たない。
+   *
+   * **1 回路の機器も配列で返す。** 16 回路の機器を 1 個の数値に潰すと、
+   * どの回路がどの明るさなのかが本体から読めなくなる。
+   */
+  channelVolts?: readonly { id: string; label?: string; volts: number }[];
 };
 
 export type SimulationView = {
@@ -384,9 +390,20 @@ export const buildSimulationView = (
       cutOff,
       timer: timerDisplayOf(instance, definition, result, nowMs),
       dimming: result.analog.levelOf.get(instance.id),
-      outputVolts:
+      channelVolts:
         definition.electrical.kind === "analog-source"
-          ? outputVoltsOf(definition.electrical, instance.outputVolts)
+          ? definition.electrical.channels.map((channel) => ({
+              id: channel.id,
+              label: channel.label,
+              volts: channelVoltsOf(
+                definition.electrical as Extract<
+                  typeof definition.electrical,
+                  { kind: "analog-source" }
+                >,
+                channel.id,
+                instance.channelVolts,
+              ),
+            }))
           : undefined,
     });
   }

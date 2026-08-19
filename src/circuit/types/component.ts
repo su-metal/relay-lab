@@ -155,6 +155,65 @@ export type AnalogCurve = {
  * `kind` を分けると点灯判定・経路説明・図記号・ラダー図の分岐が
  * すべて 2 本になり、片方だけ直す事故が起きる。
  */
+/**
+ * 調光出力の 1 チャンネル（design.md §3.1・§4.15）。
+ *
+ * **1 回路だけの機器も 1 要素の配列で表す。** 実機の調光コントローラは
+ * 0–10V を 16 回路持ち、回路ごとに別の電圧を出す。単数と複数で形を
+ * 分けると、`analog.ts` の畳み込みも定義もインスタンスの設定も
+ * 2 本になり、片方だけ直す事故が起きる（`RelayContact` を 1 接点でも
+ * 配列で持っているのと同じ考え方）。
+ */
+export type AnalogOutputChannel = {
+  /** 定義内で一意なチャンネル ID。原則として端子番号と同じ文字列 */
+  id: string;
+  /** 電圧を出す端子 */
+  signalTerminal: string;
+  /** 系統の呼び名（"フェーダー 1"）。表示だけに使い、エンジンは読まない */
+  label?: string;
+};
+
+/**
+ * 実機の調光器で盤ごとに設定する量（design.md §4.15・§5.17）。
+ *
+ * **定義ではなくインスタンスに持つ。** これらは実機の DIP スイッチと
+ * 可変抵抗にあたるもので、同じ型番の調光器を盤の中で別々に設定して使う。
+ * 定義に固定すると「上限 100% の 1 台と 70% の 2 台」を同じ機器で
+ * 置けなくなる（タイマーの `presetMs`・ランプの `lampColor` と同じ）。
+ *
+ * **とくに極性は定義に固定してはいけない。** 実機は 3 機種とも極性が
+ * 切替式で、0V = 100% は「この盤の設定」であって機器の仕様ではない。
+ * ここを定義側の `AnalogCurve` に焼き付けると、順特性で使っている
+ * 同じ機器を置けなくなる。
+ */
+export type DimmerSettings = {
+  /**
+   * 極性を反転する（実機の DIP）。
+   *
+   * 立てると `AnalogCurve` の両端が入れ替わり、0V = 100% ⇄ 10V = 100% が
+   * 切り替わる。**エンジンは向きを知らない** —— 入れ替えるだけ。
+   */
+  inverted?: boolean;
+  /** 調光上限（%）。実機の DIP で 100 / 90 / 80 / 70 */
+  maxPercent?: number;
+  /** 調光下限（%）。実機の可変抵抗で 0〜50 */
+  minPercent?: number;
+  /**
+   * 調光カーブの形。
+   *
+   * - `linear` … 入力に比例
+   * - `square` … 2 乗特性。低いほうが緩やかに効く（実機の「２乗特性」）
+   */
+  curveShape?: "linear" | "square";
+  /**
+   * DIRECT（直点）。**信号によらず全点灯。**
+   *
+   * 実機ではスイッチで切り替える。信号線を 0V へ落とす配線とは別物で、
+   * こちらは機器の中で信号を無視する。
+   */
+  direct?: boolean;
+};
+
 export type DimmingInput = {
   /** 調光信号（0–10V）を受ける端子 */
   signalTerminal: string;
@@ -246,15 +305,63 @@ export type ElectricalDefinition =
    */
   | {
       kind: "analog-source";
-      /** 電圧を出す端子 */
-      signalTerminal: string;
-      /** 出力の基準（0V コモン）となる端子 */
-      commonTerminal: string;
+      /** 出力チャンネル。1 回路だけの機器も 1 要素の配列で表す */
+      channels: readonly AnalogOutputChannel[];
+      /**
+       * 出力の基準（0V コモン）となる端子。
+       *
+       * **複数あるのは機器内部で繋がっているから。** 実機の調光
+       * コントローラは GND を 4 本（21・44・45・46）出しており、
+       * どれに繋いでも同じ基準になる。**この端子どうしだけは union する**
+       * —— 信号端子とコモンを union しない原則（CLAUDE.md 設計原則 3）は
+       * 保ったまま、実機どおり GND 間を導通させる（design.md §5.1）。
+       */
+      commonTerminals: readonly string[];
       /** 出力できる下限・上限（実機のつまみの目盛りに相当） */
       minVolts: number;
       maxVolts: number;
-      /** 既定の出力電圧。インスタンスの `outputVolts` で上書きできる */
+      /** 既定の出力電圧。インスタンスの `channelVolts` で回路ごとに上書きできる */
       defaultVolts: number;
+    }
+  /**
+   * 位相制御調光器（design.md §4.15・§5.17）。
+   *
+   * **AC を通しながら、通した先の明るさを決める機器。** 入力の AC を
+   * そのまま出力へ渡し（`inTerminal` ⇄ `outTerminal` は常時導通）、
+   * その出力回路に載っている負荷の明るさを調光信号で決める。
+   *
+   * **`lamp` の `dimming` と同じ形にはできない。** あちらは自分が点る
+   * 負荷で、こちらは**他人を暗くする通り道**。負荷ではないので
+   * `litLamps` にも入らず、両端の電位差も見ない。
+   *
+   * 遮断（`cutoffTerminal` を基準へ落とす）と DIRECT は、
+   * **導通ではなくレベルで表す。** 出力段を開くモデルにすると
+   * 収束ループ（§5.5）にアナログが入り込み、「アナログ量は接点を
+   * 動かさない」という第 2 パスの前提が崩れる（§5.17）。
+   */
+  | {
+      kind: "dimmer";
+      /** AC 入力 */
+      inTerminal: string;
+      /** AC 出力（調光された側） */
+      outTerminal: string;
+      /** AC のコモン */
+      acCommonTerminal: string;
+      /** 調光信号（0–10V）を受ける端子 */
+      signalTerminal: string;
+      /** 調光信号の基準（0V コモン）となる端子 */
+      signalCommonTerminal: string;
+      /**
+       * 基準へ落とすと出力が遮断される端子（実機の「強制出力遮断」）。
+       *
+       * 接点で GND へ落とす配線がそのまま効く —— 既存の Union-Find が
+       * 「同じネットか」で答えを出すので、専用の仕組みは要らない。
+       */
+      cutoffTerminal: string;
+      /** V → % の対応。極性の反転はインスタンスの `dimmerSettings` が行う */
+      curve: AnalogCurve;
+      /** 調光信号が未接続のときに入力段が示すレベル（V） */
+      unconnectedVolts: number;
     };
 
 export type ComponentDefinition = {

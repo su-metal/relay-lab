@@ -124,20 +124,47 @@ export type DimmingLevel = {
    * 成立しない以上、レベルは `floating` と同じ扱いになる。
    */
   referenceMismatch: boolean;
+  /**
+   * 強制的に出力を遮断されている（実機の「強制出力遮断」）。
+   *
+   * 位相制御調光器の遮断端子を基準へ落とすとこれが立ち、**信号が
+   * 何 V だろうと 0%。** 消えている理由が「暗くしたから」なのか
+   * 「遮断されているから」なのかは、盤を追うときにまったく別の話に
+   * なるので、`percent: 0` に丸めずここに残す。
+   */
+  cutOff: boolean;
 };
 
 /** アナログ層の解（`SimulationResult.analog`・design.md §5.17） */
 export type AnalogResult = {
   /** ネット ID → そのネットに乗っているアナログ信号 */
   signalOf: ReadonlyMap<number, AnalogSignal>;
-  /** 調光入力を持つ負荷の componentId → 明るさ */
+  /**
+   * 調光入力を持つ部品の componentId → 明るさ。
+   *
+   * 自分で調光信号を受ける負荷（`dimming` を持つランプ）と、
+   * 通り道である位相制御調光器（`kind: "dimmer"`）の両方が入る。
+   */
   levelOf: ReadonlyMap<string, DimmingLevel>;
+  /**
+   * 位相制御調光器の**出力回路**に載ったネット ID → 明るさ（design.md §5.17）。
+   *
+   * 調光器は自分が点る負荷ではなく、**通した先を暗くする通り道**。
+   * だから明るさは部品ではなくネットに乗る —— その回路に繋いだランプが
+   * 何個あっても、同じ 1 つの明るさで点る（実機どおり）。
+   *
+   * **自分の調光入力を持つランプはこれを見ない。** 直に受けている信号の
+   * ほうが具体的で、両方あるときに調光器側を優先すると
+   * 「繋いだ信号線が効かない」という読めない挙動になる。
+   */
+  netLevelOf: ReadonlyMap<number, DimmingLevel>;
 };
 
 /** アナログ信号が 1 本も無い回路の解。毎回空の Map を作らないための共有値 */
 export const EMPTY_ANALOG_RESULT: AnalogResult = {
   signalOf: new Map(),
   levelOf: new Map(),
+  netLevelOf: new Map(),
 };
 
 /** 警告の種別（design.md §5.7 の 7 種に対応） */

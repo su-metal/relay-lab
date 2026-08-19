@@ -8,10 +8,12 @@ export type {
 
 export type {
   AnalogCurve,
+  AnalogOutputChannel,
   CoilPolarity,
   ComponentCategory,
   ComponentDefinition,
   ComponentDefinitionRegistry,
+  DimmerSettings,
   DimmingInput,
   ElectricalDefinition,
   RelayContact,

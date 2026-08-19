@@ -6,6 +6,7 @@
  * 実行時状態が混入し、Undo 履歴も汚れる（design.md §7）。
  */
 
+import type { DimmerSettings } from "./component";
 import type { CircuitConnection } from "./connection";
 
 /**
@@ -67,18 +68,36 @@ export type CircuitComponentInstance = {
    */
   lampColor?: LampColor;
   /**
-   * 調光出力の電圧（V）。省略時は定義の `defaultVolts`（design.md §5.17）。
+   * 調光出力の電圧（V）を**チャンネル ID ごとに**持つ（design.md §5.17）。
+   * 省略したチャンネルは定義の `defaultVolts`。
    *
    * **定義ではなくインスタンスに持つ**理由はタイマーの `presetMs` と同じ ——
    * 実機の調光出力はつまみや設定で決めるものであり、定義に固定すると
    * 「10V の DIM1 と 4V の DIM2」を同じ型番で置けなくなる。
+   *
+   * **1 回路の機器も Map で持つ。** 実機の調光コントローラは 16 回路を
+   * 別々の電圧で出すので、単数と複数で持ち方を分けると読む側が 2 本になる
+   * （`ElectricalDefinition` の `channels` が 1 要素でも配列なのと同じ）。
    *
    * `flipped` や `lampColor` と違い、**これは電気的な意味を持つ。**
    * エンジンはこの値を読み、繋がったランプの明るさが変わる。
    *
    * `kind: "analog-source"` 以外の部品では意味を持たない。
    */
-  outputVolts?: number;
+  channelVolts?: Readonly<Record<string, number>>;
+  /**
+   * 調光器の盤ごとの設定（極性・上下限・カーブ・DIRECT）。
+   * 省略時は定義の `curve` をそのまま使う（design.md §4.15）。
+   *
+   * **実機の DIP スイッチと可変抵抗にあたる。** 同じ機器を盤の中で
+   * 別々に設定して使うものなので、定義ではなくインスタンスが持つ。
+   * とくに極性は 3 機種とも切替式で、0V = 100% は「この盤の設定」で
+   * あって機器の仕様ではない。
+   *
+   * **これも電気的な意味を持つ。** 調光入力を持つ部品
+   * （`kind: "dimmer"` と `dimming` を持つランプ）で効く。
+   */
+  dimmerSettings?: DimmerSettings;
 };
 
 export type CircuitDocument = {

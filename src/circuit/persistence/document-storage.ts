@@ -101,14 +101,74 @@ const readPresetMs = (
  * （保存 JSON に無意味な値を残さない）、数値でなければ定義の既定値へ倒し、
  * 範囲外は上下限へ丸める。
  */
-const readOutputVolts = (
+const readChannelVolts = (
   definition: ComponentDefinition,
   value: unknown,
-): number | undefined => {
+  legacy: unknown,
+): CircuitComponentInstance["channelVolts"] => {
   const { electrical } = definition;
   if (electrical.kind !== "analog-source") return undefined;
-  if (!isFiniteNumber(value)) return undefined;
-  return outputVoltsOf(electrical, value);
+
+  const volts: Record<string, number> = {};
+
+  /*
+   * 1 回路だけだった頃の保存 JSON は `outputVolts` という 1 個の数値で
+   * 持っていた（Step 20）。**捨てずに第 1 チャンネルへ移す** ——
+   * 保存済みの回路を開いたときに、設定した明るさだけが黙って既定値へ
+   * 戻るのが一番たちが悪い。
+   */
+  const first = electrical.channels[0];
+  if (first && isFiniteNumber(legacy)) {
+    volts[first.id] = outputVoltsOf(electrical, legacy);
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const channel of electrical.channels) {
+      const raw = (value as Record<string, unknown>)[channel.id];
+      // 定義に無いチャンネルの値は捨てる（端子を減らした定義への対応）
+      if (isFiniteNumber(raw)) volts[channel.id] = outputVoltsOf(electrical, raw);
+    }
+  }
+
+  return Object.keys(volts).length === 0 ? undefined : volts;
+};
+
+/** 0〜100 に収まる数値だけを通す。実機のつまみの目盛りに相当する */
+const readPercent = (value: unknown): number | undefined =>
+  isFiniteNumber(value) ? Math.min(Math.max(value, 0), 100) : undefined;
+
+/**
+ * 調光器の盤ごとの設定を読む（design.md §4.15）。
+ *
+ * 調光入力を持たない部品では `undefined`。壊れた値は**その項目だけ**
+ * 落とす —— 極性が読めなかったからといって上限まで捨てる理由が無い。
+ */
+const readDimmerSettings = (
+  definition: ComponentDefinition,
+  value: unknown,
+): CircuitComponentInstance["dimmerSettings"] => {
+  const { electrical } = definition;
+  const applies =
+    electrical.kind === "dimmer" ||
+    (electrical.kind === "lamp" && electrical.dimming !== undefined);
+  if (!applies) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const entry = value as Record<string, unknown>;
+  const shape = entry.curveShape;
+  const settings: CircuitComponentInstance["dimmerSettings"] = {
+    ...(typeof entry.inverted === "boolean" ? { inverted: entry.inverted } : {}),
+    ...(typeof entry.direct === "boolean" ? { direct: entry.direct } : {}),
+    ...(readPercent(entry.maxPercent) !== undefined
+      ? { maxPercent: readPercent(entry.maxPercent) }
+      : {}),
+    ...(readPercent(entry.minPercent) !== undefined
+      ? { minPercent: readPercent(entry.minPercent) }
+      : {}),
+    ...(shape === "linear" || shape === "square" ? { curveShape: shape } : {}),
+  };
+
+  return Object.keys(settings).length === 0 ? undefined : settings;
 };
 
 /**
@@ -228,8 +288,15 @@ export const parseDocument = (
       /*
        * 調光出力の電圧（design.md §5.17）。設定時間と同じ扱いで、
        * 壊れていても部品ごと捨てず定義の既定値へ倒す。
+       * 旧書式（1 回路ぶんの `outputVolts`）は第 1 チャンネルへ移す。
        */
-      outputVolts: readOutputVolts(definition, entry.outputVolts),
+      channelVolts: readChannelVolts(
+        definition,
+        entry.channelVolts,
+        entry.outputVolts,
+      ),
+      /* 調光器の盤ごとの設定（極性・上下限・カーブ・DIRECT）（§4.15） */
+      dimmerSettings: readDimmerSettings(definition, entry.dimmerSettings),
     });
     terminalsOf.set(
       entry.id,

@@ -22,6 +22,7 @@ import {
 import { getComponentDefinition } from "@/circuit/definitions";
 import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
 import type {
+  DimmerSettings,
   CircuitDocument,
   ComponentCategory,
   ComponentDefinition,
@@ -154,7 +155,23 @@ export type CircuitStore = {
    * 調光出力以外の部品には書き込まない。回路の動き（繋いだ負荷の明るさ）を
    * 変える値なので、間違えたときに戻せないと困る。
    */
-  setComponentOutputVolts: (componentId: string, volts: number) => void;
+  setComponentChannelVolts: (
+    componentId: string,
+    channelId: string,
+    volts: number,
+  ) => void;
+
+  /**
+   * 調光器の盤ごとの設定を変える（design.md §4.15）。
+   *
+   * 渡した項目だけを差し替える —— 極性を切り替えるたびに上限や下限が
+   * 既定へ戻ると、実機の DIP を 1 つ倒す操作とかけ離れる。
+   * 調光入力を持たない部品には書き込まない。
+   */
+  setComponentDimmerSettings: (
+    componentId: string,
+    patch: Partial<DimmerSettings>,
+  ) => void;
 
   /**
    * 表示ランプのレンズの色を変える（design.md §4.11）。
@@ -452,7 +469,7 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
       });
     },
 
-    setComponentOutputVolts: (componentId, volts) => {
+    setComponentChannelVolts: (componentId, channelId, volts) => {
       if (!Number.isFinite(volts)) return;
       set((state) => {
         let changed = false;
@@ -463,13 +480,47 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           )?.electrical;
           // 調光出力以外には出力電圧が無い。書き込むと誰も読まない値が残る
           if (electrical?.kind !== "analog-source") return component;
+          // 定義に無いチャンネルへは書かない（保存 JSON に幽霊の回路を残さない）
+          if (!electrical.channels.some((c) => c.id === channelId)) return component;
 
           const next = outputVoltsOf(electrical, volts);
-          if (component.outputVolts === next) return component;
+          if (component.channelVolts?.[channelId] === next) return component;
           changed = true;
-          return { ...component, outputVolts: next };
+          return {
+            ...component,
+            channelVolts: { ...component.channelVolts, [channelId]: next },
+          };
         });
         // 同じ値への設定・調光出力以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentDimmerSettings: (componentId, patch) => {
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          const applies =
+            electrical?.kind === "dimmer" ||
+            (electrical?.kind === "lamp" && electrical.dimming !== undefined);
+          // 調光入力を持たない部品には書き込まない
+          if (!applies) return component;
+
+          const next: DimmerSettings = { ...component.dimmerSettings, ...patch };
+          const before: DimmerSettings = component.dimmerSettings ?? {};
+          const keys = Object.keys(next) as (keyof DimmerSettings)[];
+          const same =
+            keys.length === Object.keys(before).length &&
+            keys.every((key) => before[key] === next[key]);
+          if (same) return component;
+          changed = true;
+          return { ...component, dimmerSettings: next };
+        });
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });

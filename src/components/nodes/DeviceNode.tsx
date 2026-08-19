@@ -36,7 +36,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
     terminalConnections,
     presetMs,
     lampColor,
-    outputVolts,
+    channelVolts,
     preview,
   } = data;
   const Body = bodyForCategory(definition.category);
@@ -133,7 +133,7 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
             preview={preview}
             presetMs={presetMs}
             lampColor={lampColor}
-            outputVolts={outputVolts}
+            channelVolts={channelVolts}
           />
           {/*
             図記号へのホバーで出す主要ステータスの吹き出し。

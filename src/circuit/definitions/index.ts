@@ -29,7 +29,11 @@ import type {
 import { genericContactor } from "./contactors";
 import { dimmableLampAc100v, dimmerOutput0to10v } from "./dimming";
 import { genericDiode } from "./diodes";
-import { dc24vLamp } from "./lamps";
+import {
+  dimmingController16ch,
+  phaseControlDimmer,
+} from "./lighting-system";
+import { ac100vLamp, dc24vLamp } from "./lamps";
 import { omronG7l1aBDc24 } from "./omron/g7l-1a-b-dc24";
 import { omronG7l2aBDc24 } from "./omron/g7l-2a-b-dc24";
 import { omronMy2nDc24 } from "./omron/my2n-dc24";
@@ -62,8 +66,11 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   onDelayTimer,
   offDelayTimer,
   dc24vLamp,
+  ac100vLamp,
   dimmableLampAc100v,
   dimmerOutput0to10v,
+  dimmingController16ch,
+  phaseControlDimmer,
   genericDiode,
   genericTerminalBlock,
 ];
@@ -112,7 +119,10 @@ export const listComponentDefinitions = (
     : [...componentDefinitions];
 
 export {
+  ac100vLamp,
   ac100vPowerSupply,
+  dimmingController16ch,
+  phaseControlDimmer,
   dc24vLamp,
   dc24vPowerSupply,
   dimmableLampAc100v,
