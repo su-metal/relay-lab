@@ -11,13 +11,8 @@ import type {
 /**
  * requirements.md US-F「部品が増えてもエンジンが変わらない」の実証。
  *
- * Step 7 で足した 4 部品が、**エンジンを 1 行も変えずに**期待どおり動くことを
- * 回路を組んで確かめる。判定はすべて `ComponentDefinition` の中身から出ており、
- * `simulate()` は型番を一切見ていない。
- *
- * **このファイルを `engine/__tests__/` に置かないのは意図的。** 検証しているのは
- * 定義データであってエンジンではなく、`src/circuit/engine/` の差分を 0 行に
- * 保つこと自体が Step 7 の完了判定だから（design.md §9）。
+ * Step 7 で足した部品が期待どおり動くことを回路を組んで確かめる。
+ * `simulate()` は型番を一切見ず、部品定義の電気的な振る舞いだけを読む。
  */
 
 /** "RY1:14" のような "インスタンスID:端子ID" 記法で配線する */
@@ -67,6 +62,7 @@ const MY4N_D2 = "omron-my4n-d2-dc24";
 const LAMP = "lamp-dc24v";
 const DIODE = "diode-generic";
 const BLOCK = "terminal-block-6p";
+const BLOCK20 = "terminal-block-20p";
 
 describe("MY2N の飛び番端子で回路が組める（design.md §4.2）", () => {
   // 第2接点は 4（NC）/ 8（NO）/ 12（COM）。1〜8 に詰め直していたらこの配線は通らない
@@ -166,41 +162,58 @@ describe("MY4N-D2 の極性厳守（design.md §4.3・§5.3）", () => {
   });
 });
 
-describe("端子台は全端子が常時導通する（design.md §5.1）", () => {
-  const document = circuit(
-    { PS1: POWER, TB1: BLOCK, L1: LAMP, L2: LAMP },
-    [
-      // +24V を端子 1 に入れ、端子 2 / 4 から 2 系統へ分岐する
-      wire("PS1:plus", "TB1:1"),
-      wire("TB1:2", "L1:1"),
-      wire("TB1:4", "L2:1"),
-      wire("L1:2", "PS1:zero"),
-      wire("L2:2", "PS1:zero"),
-    ],
-  );
+describe("端子台は対向端子ごとに独立して導通する", () => {
+  it("6P は 1–4 / 2–5 / 3–6 の 3 組だけが導通する", () => {
+    const result = step(circuit({ TB1: BLOCK }, []));
+    for (const [a, b] of [["1", "4"], ["2", "5"], ["3", "6"]]) {
+      expect(result.netOf.get(`TB1:${a}`), `${a}-${b}`).toBe(
+        result.netOf.get(`TB1:${b}`),
+      );
+    }
+    expect(result.netOf.get("TB1:1")).not.toBe(result.netOf.get("TB1:2"));
+    expect(result.netOf.get("TB1:2")).not.toBe(result.netOf.get("TB1:3"));
+  });
 
-  it("1 端子に入れた電位が 6 端子すべてに回る", () => {
+  it("20P は 1–11 から 10–20 まで 10 組が 1 対 1 で導通する", () => {
+    const result = step(circuit({ TB2: BLOCK20 }, []));
+    for (let top = 1; top <= 10; top += 1) {
+      expect(result.netOf.get(`TB2:${top}`), `${top}-${top + 10}`).toBe(
+        result.netOf.get(`TB2:${top + 10}`),
+      );
+    }
+    expect(result.netOf.get("TB2:1")).not.toBe(result.netOf.get("TB2:2"));
+    expect(result.netOf.get("TB2:11")).not.toBe(result.netOf.get("TB2:12"));
+  });
+
+  it("L と N を別の組で中継してランプへ渡せる", () => {
+    const document = circuit(
+      { PS1: POWER, TB1: BLOCK, L1: LAMP },
+      [
+        wire("PS1:plus", "TB1:1"),
+        wire("TB1:4", "L1:1"),
+        wire("PS1:zero", "TB1:2"),
+        wire("TB1:5", "L1:2"),
+      ],
+    );
     const result = step(document);
     expect(result.status).toBe("stable");
-    const net = result.netOf.get("TB1:1");
-    for (const id of ["2", "3", "4", "5", "6"]) {
-      expect(result.netOf.get(`TB1:${id}`), id).toBe(net);
-    }
+    expect([...result.litLamps]).toEqual(["L1"]);
+    expect(result.warnings.filter((w) => w.code === "power-short-circuit")).toEqual([]);
   });
 
-  it("分岐した 2 系統のランプが両方点灯する", () => {
-    const result = step(document);
-    expect([...result.litLamps].sort()).toEqual(["L1", "L2"]);
-  });
-
-  it("端子台は導線なので、+24V と 0V を渡すと短絡になる", () => {
-    const shorted = circuit({ PS1: POWER, TB1: BLOCK }, [
+  it("同じ組の両側へ +24V と 0V を入れたときだけ短絡になる", () => {
+    const separated = step(circuit({ PS1: POWER, TB1: BLOCK }, [
       wire("PS1:plus", "TB1:1"),
-      wire("PS1:zero", "TB1:6"),
-    ]);
-    const result = step(shorted);
+      wire("PS1:zero", "TB1:5"),
+    ]));
+    expect(separated.warnings.filter((w) => w.code === "power-short-circuit")).toEqual([]);
+
+    const shorted = step(circuit({ PS1: POWER, TB1: BLOCK }, [
+      wire("PS1:plus", "TB1:1"),
+      wire("PS1:zero", "TB1:4"),
+    ]));
     expect(
-      result.warnings.find((w) => w.code === "power-short-circuit")?.severity,
+      shorted.warnings.find((w) => w.code === "power-short-circuit")?.severity,
     ).toBe("error");
   });
 });
