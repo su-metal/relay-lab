@@ -1,0 +1,74 @@
+name: Apply S8VM repair
+
+on:
+  pull_request:
+    branches: [dev_v0.1]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.ref == 'feature/omron-s8vm-05024' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/omron-s8vm-05024
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply prepared repair script
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          text = Path('.github/workflows/fix-s8vm-integration.yml').read_text()
+          marker = '      - name: Apply S8VM integration fixes\n'
+          if marker not in text:
+              raise SystemExit('repair step not found')
+          block = text.split(marker, 1)[1]
+          end_marker = '      - name: Run typecheck tests and build\n'
+          if end_marker not in block:
+              raise SystemExit('repair step end not found')
+          block = block.split(end_marker, 1)[0]
+          run_marker = '        run: |\n'
+          if run_marker not in block:
+              raise SystemExit('repair run block not found')
+          body = block.split(run_marker, 1)[1]
+          lines = []
+          for line in body.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              elif not line.strip():
+                  lines.append('')
+              else:
+                  break
+          script = '\n'.join(lines) + '\n'
+          Path('/tmp/fix-s8vm.py').write_text(script)
+          subprocess.run(['python', '/tmp/fix-s8vm.py'], check=True)
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-s8vm-integration.yml .github/workflows/fix-s8vm-pr.yml
+          git add -A
+          git commit -m "S8VM-05024 の仕様整合と統合を修正"
+          git push
