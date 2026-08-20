@@ -1,0 +1,9 @@
+file:///home/runner/work/relay-lab/relay-lab/scripts/capture-ladder-preview.mjs:100
+  if (!value?.svg) throw new Error(`${value?.error ?? "extract-failed"}\n${value?.text ?? ""}`);
+                         ^
+
+Error: shared-svg-not-found
+
+    at file:///home/runner/work/relay-lab/relay-lab/scripts/capture-ladder-preview.mjs:100:26
+
+Node.js v22.23.2
