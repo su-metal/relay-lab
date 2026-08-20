@@ -140,6 +140,7 @@ src/
         g7l-series.ts            # G7L シリーズ共通の端子生成（§4.8）
         g7l-1a-b-dc24.ts
         g7l-2a-b-dc24.ts
+        s8vm-05024.ts           # AC-DC スイッチング電源（§4.18）
       power.ts
       switches.ts                # 押しボタン／切替スイッチ 4 種（§4.5・§4.7）
       timers.ts                  # 汎用タイマー 2 種（オンディレイ／オフディレイ・§4.10）
@@ -319,6 +320,12 @@ type ComponentDefinitionRegistry = ReadonlyMap<string, ComponentDefinition>
 type ElectricalDefinition =
   | { kind: "power";  voltage: number; currentType: "DC" | "AC";
       positiveTerminal: string; zeroTerminal: string }
+  | { kind: "ac-dc-power-supply";             // 入力成立時だけ絶縁 DC 出力を生成（§4.18・§5.20）
+      ratedInputVoltageMin: number; ratedInputVoltageMax: number;
+      allowableInputVoltageMin: number; allowableInputVoltageMax: number;
+      lineTerminal: string; neutralTerminal: string;
+      outputVoltage: number; positiveTerminal: string; zeroTerminal: string;
+      ratedOutputCurrent?: number; ratedPower?: number }
   | { kind: "relay";  relay: RelayDefinition }
   | { kind: "switch"; contactType: "NO" | "NC"; action: "momentary" | "maintained";
       terminalA: string; terminalB: string }
@@ -333,7 +340,7 @@ type ElectricalDefinition =
       fade?: FadeSpec }                         // 持つものがフェードする（§5.18）
 ```
 
-**`kind` を増やすのは最後の手段。** タイマーは `relay` の `delay`、調光ランプは `lamp` の `dimming`、フェードする調光出力は `analog-source` の `fade` で表しており、どれも `kind` を増やしていない（CLAUDE.md 設計原則 7）。`analog-source` だけが増えたのは、既存のどれにも寄せられなかったから —— 電位を配る `power` でも、電位差を受ける `lamp` でもなく、**基準に対する電圧値を出す**という別の振る舞いだった。
+**`kind` を増やすのは最後の手段。** タイマーは `relay` の `delay`、調光ランプは `lamp` の `dimming`、フェードする調光出力は `analog-source` の `fade` で表しており、既存の振る舞いの設定差では `kind` を増やさない（CLAUDE.md 設計原則 2・7）。一方、`analog-source` は**基準に対する電圧値を出す**、`ac-dc-power-supply` は**入力側と絶縁した別の電源電位を条件付きで生成する**という既存 kind では表せない物理的な振る舞いなので、型番非依存の kind として追加する。
 
 ```ts
 // フェードの設定範囲（§5.18）。形は TimerDelay の設定時間 3 点とそろえてある
@@ -1162,6 +1169,13 @@ Step 22 までの操作卓は、**倒しても自分の接点しか動かなか�
 電源ボタンは送らない。こちらは自分の無電圧接点（4-5-6）とオープンコレクタ出力（2・3）を動かすもので、コントローラ側の割り当て（端子 32・38・39）は別の話。コントローラの ON/OFF 出力（24–39）を繋ぐのは引き続きスコープ外（§4.16）。
 
 ---
+
+
+### 4.18 OMRON S8VM-05024（AC-DC スイッチング電源）
+
+OMRON 公式 S8VM 資料で照合した実型番。50W / DC24V 2.2A、定格入力 AC100〜240V、使用可能範囲 AC85〜265V。端子は実機表示どおり `L` / `N` / `FG` / `-V` / `+V` を持ち、これらの刻印を `TerminalDefinition.number` にそのまま保持する。
+
+`ElectricalDefinition.kind = "ac-dc-power-supply"` は型番固有の分岐ではなく、同種 AC-DC 電源が共有する振る舞い。一次側 L/N と二次側 -V/+V は union せず、同じ AC 電源の両極が L/N に届いたときだけ二次側へその電源自身の DC 電位を生成する。入力電圧範囲は仕様情報として保持するが、§4.13 の既存方針どおり定格電圧不一致の判定には使わない。FG は実端子として表示するが、保護接地系そのものは現行シミュレータの電位計算対象外。
 
 ## 5. シミュレーションエンジン
 
@@ -2159,6 +2173,13 @@ simulate()
 `inspectWiring()`（§5.7）からも `resolveCommunication()` を呼び、▶ を押す前に通信線の不備が出る。**繋ぎ間違いは繋いだ瞬間に言うのが最も安い。** 配線チェックには時間が流れていないので、渡す `SimulationInput` は `AT_REST`（何も倒していない状態）でよい —— 不備の判定は倒した値を見ないため。
 
 ---
+
+
+### 5.20 AC-DC 電源の電位生成
+
+`computeNetStates()` は従来の `kind: "power"` と有向伝搬を解いたあと、`kind: "ac-dc-power-supply"` の L/N を確認する。同じ AC 電源 ID の両極が届いていれば、その AC-DC 電源自身の component ID を +V 側の `plusFrom` と -V 側の `zeroFrom` に追加する。一次側と二次側は union しないため絶縁は保つ。
+
+経路グラフはエンジンが解いた `NetState` を読み、実際に二次出力が成立しているときだけ +V/-V を仮想電源ノードへ接続する。ラダー図は瞬時状態ではなく配線トポロジーを表すため、S8VM の +V/-V を DC 側の母線として扱う。
 
 ## 6. 既知の制約（MVP で許容する）
 

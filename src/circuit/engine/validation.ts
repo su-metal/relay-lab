@@ -71,7 +71,7 @@ export const detectPowerShortCircuits = (
     const definition = definitions.get(instance.definitionId);
     if (!definition) continue;
     const { electrical } = definition;
-    if (electrical.kind !== "power") continue;
+    if (electrical.kind !== "power" && electrical.kind !== "ac-dc-power-supply") continue;
 
     const plusNet = lookup.netOf.get(
       terminalKey(instance.id, electrical.positiveTerminal),
@@ -85,7 +85,10 @@ export const detectPowerShortCircuits = (
     warnings.push({
       code: "power-short-circuit",
       severity: "error",
-      message: `${describeComponent(instance, definition)} の + 側と 0V 側が導通しています（電源短絡）。`,
+      message:
+        electrical.kind === "ac-dc-power-supply"
+          ? `${describeComponent(instance, definition)} の DC 出力 +V と -V が導通しています（電源短絡）。`
+          : `${describeComponent(instance, definition)} の + 側と 0V 側が導通しています（電源短絡）。`,
       componentId: instance.id,
     });
   }

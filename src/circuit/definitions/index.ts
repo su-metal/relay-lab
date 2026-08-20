@@ -41,6 +41,7 @@ import { omronG7l2aBDc24 } from "./omron/g7l-2a-b-dc24";
 import { omronMy2nDc24 } from "./omron/my2n-dc24";
 import { omronMy4nD2Dc24 } from "./omron/my4n-d2-dc24";
 import { omronMy4nDc24 } from "./omron/my4n-dc24";
+import { omronS8vm05024 } from "./omron/s8vm-05024";
 import { ac100vPowerSupply, dc24vPowerSupply } from "./power";
 import {
   pushbuttonNc,
@@ -55,6 +56,7 @@ import { offDelayTimer, onDelayTimer } from "./timers";
 export const componentDefinitions: readonly ComponentDefinition[] = [
   dc24vPowerSupply,
   ac100vPowerSupply,
+  omronS8vm05024,
   pushbuttonNo,
   pushbuttonNc,
   selectorSwitchNo,
@@ -142,6 +144,7 @@ export {
   omronMy2nDc24,
   omronMy4nD2Dc24,
   omronMy4nDc24,
+  omronS8vm05024,
   onDelayTimer,
   pushbuttonNc,
   pushbuttonNo,

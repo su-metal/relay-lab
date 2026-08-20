@@ -414,18 +414,17 @@ export type DimmingInput = {
 /**
  * カテゴリごとの電気的なふるまい。`kind` による判別可能ユニオン。
  *
- * エンジンが持ってよい分岐はこの `kind` の 7 通りだけ。
- * 端子は必ず ID 参照で指定し、端子番号そのものをエンジンに埋め込まない。
+ * エンジンが持ってよい分岐は、この `kind` が表す汎用の電気的な振る舞いだけ。
+ * 端子は必ず ID 参照で指定し、端子番号や型番そのものをエンジンに埋め込まない。
  *
  * **タイマーで 1 通り増やさない。** タイマーリレーはリレーであり、
  * `relay` の `delay` の有無で表す（`TimerDelay` 参照）。
  * **調光ランプでも増やさない** —— 調光ランプはランプであり、
  * `lamp` の `dimming` の有無で表す（`DimmingInput` 参照）。
  *
- * 7 通目の `analog-source` だけは既存のどれにも寄せられない。
- * 電位を配る `power` でも、電位差を受ける `lamp` でもなく、
- * **基準に対する電圧値を出す**という別の振る舞いだから
- * （design.md §5.17）。
+ * `analog-source` は基準に対する電圧値を出す振る舞い、
+ * `ac-dc-power-supply` は入力側の成立を条件に絶縁された出力電位を生成する振る舞いで、
+ * いずれも既存 kind へ無理に寄せず、型番非依存の振る舞いとして定義する。
  */
 export type ElectricalDefinition =
   | {
@@ -434,6 +433,27 @@ export type ElectricalDefinition =
       currentType: "DC" | "AC";
       positiveTerminal: string;
       zeroTerminal: string;
+    }
+  /**
+   * AC 入力を受けて DC を出すスイッチング電源。
+   *
+   * `power` はそれ自体が理想電源だが、こちらは入力側に適合する AC 電源が
+   * 来ているときだけ出力を持つ。入力と出力は絶縁され、内部で union しない。
+   * 型番分岐はせず、入出力範囲と端子 ID を定義データで持つ。
+   */
+  | {
+      kind: "ac-dc-power-supply";
+      ratedInputVoltageMin: number;
+      ratedInputVoltageMax: number;
+      allowableInputVoltageMin: number;
+      allowableInputVoltageMax: number;
+      lineTerminal: string;
+      neutralTerminal: string;
+      outputVoltage: number;
+      positiveTerminal: string;
+      zeroTerminal: string;
+      ratedOutputCurrent?: number;
+      ratedPower?: number;
     }
   /**
    * リレー。`delay` を持つものがタイマーリレー（design.md §5.13）。
