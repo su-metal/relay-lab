@@ -183,7 +183,7 @@ export const buildPathPreview = (
    * 実行中に見えていた「効いている線」が経路確認に切り替えた途端に
    * 消えるのは、同じ色の語彙を共有している意味が無い。
    */
-  const analog = resolveAnalog(document, definitions, preview.netOf);
+  const analog = resolveAnalog(document, definitions, preview.netOf, preview.netState);
   const analogNets = analogSignalNets(analog);
   const energizedNets = loadNetIds(
     document,

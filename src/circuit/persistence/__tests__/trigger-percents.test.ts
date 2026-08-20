@@ -25,6 +25,12 @@ const circuit = (volts: number, percents?: Record<string, number>): CircuitDocum
   version: 1,
   components: [
     {
+      id: "PSD",
+      definitionId: "power-dc24v",
+      label: "PSD",
+      position: { x: -200, y: 0 },
+    },
+    {
       id: "C1",
       definitionId: CONTROLLER,
       label: "C1",
@@ -49,6 +55,17 @@ const circuit = (volts: number, percents?: Record<string, number>): CircuitDocum
       id: "w2",
       from: { componentId: "C1", terminalId: "21" },
       to: { componentId: "LC", terminalId: "ING" },
+    },
+    // ライトコントローラの内部回路自体は DC24V/GND で動く（design.md §5.17）
+    {
+      id: "w3",
+      from: { componentId: "PSD", terminalId: "plus" },
+      to: { componentId: "LC", terminalId: "24V" },
+    },
+    {
+      id: "w4",
+      from: { componentId: "PSD", terminalId: "zero" },
+      to: { componentId: "LC", terminalId: "GND" },
     },
   ],
   viewport: { x: 0, y: 0, zoom: 1 },
