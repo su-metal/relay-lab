@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "components": [
+    {"id":"cmp-1oc3o","definitionId":"power-dc24v","label":"PS1","position":{"x":-67.15211239251472,"y":177.0809214052527}},
+    {"id":"cmp-213r9","definitionId":"switch-selector-no","label":"運転許可　スイッチ","position":{"x":472.1979530889274,"y":-303.63757893726836}},
+    {"id":"cmp-3nmkp","definitionId":"switch-pushbutton-nc","label":"STOP","position":{"x":495.3923794551576,"y":622.8055117470074}},
+    {"id":"cmp-4ic2l","definitionId":"switch-pushbutton-no","label":"START","position":{"x":1508.923784762005,"y":-301.6346942632448}},
+    {"id":"cmp-5icre","definitionId":"omron-my2n-dc24","label":"RY1","position":{"x":1061.5031675979171,"y":-135.03581092207517}},
+    {"id":"cmp-6n01i","definitionId":"lamp-dc24v","label":"運転中","position":{"x":1099.2880901273795,"y":734.9515960270509},"lampColor":"green"},
+    {"id":"cmp-7646e","definitionId":"lamp-dc24v","label":"運転許可","position":{"x":1398.1554385708464,"y":155.97388680735526}},
+    {"id":"cmp-16vqh6","definitionId":"omron-my2n-dc24","label":"RY2","position":{"x":898.966601816996,"y":469.9196873857792}}
+  ],
+  "connections": [
+    {"id":"wire-177ny8","from":{"componentId":"cmp-1oc3o","terminalId":"plus"},"to":{"componentId":"cmp-213r9","terminalId":"1"}},
+    {"id":"wire-18ubd4","from":{"componentId":"cmp-213r9","terminalId":"2"},"to":{"componentId":"cmp-5icre","terminalId":"14"}},
+    {"id":"wire-191mjp","from":{"componentId":"cmp-1oc3o","terminalId":"plus"},"to":{"componentId":"cmp-5icre","terminalId":"9"}},
+    {"id":"wire-1cp8vd","from":{"componentId":"cmp-5icre","terminalId":"13"},"to":{"componentId":"cmp-1oc3o","terminalId":"zero"}},
+    {"id":"wire-1ev3iq","from":{"componentId":"cmp-5icre","terminalId":"5"},"to":{"componentId":"cmp-7646e","terminalId":"1"}},
+    {"id":"wire-1f7t9r","from":{"componentId":"cmp-7646e","terminalId":"2"},"to":{"componentId":"cmp-1oc3o","terminalId":"zero"}},
+    {"id":"wire-1gdps9","from":{"componentId":"cmp-5icre","terminalId":"5"},"to":{"componentId":"cmp-16vqh6","terminalId":"9"}},
+    {"id":"wire-1hjtyi","from":{"componentId":"cmp-16vqh6","terminalId":"5"},"to":{"componentId":"cmp-6n01i","terminalId":"1"}},
+    {"id":"wire-1izwvo","from":{"componentId":"cmp-6n01i","terminalId":"2"},"to":{"componentId":"cmp-1oc3o","terminalId":"zero"}},
+    {"id":"wire-1lmrm9","from":{"componentId":"cmp-213r9","terminalId":"2"},"to":{"componentId":"cmp-4ic2l","terminalId":"1"}},
+    {"id":"wire-1mqt2n","from":{"componentId":"cmp-16vqh6","terminalId":"5"},"to":{"componentId":"cmp-16vqh6","terminalId":"14"}},
+    {"id":"wire-1qjbla","from":{"componentId":"cmp-4ic2l","terminalId":"2"},"to":{"componentId":"cmp-16vqh6","terminalId":"14"}},
+    {"id":"wire-1rtnz4","from":{"componentId":"cmp-3nmkp","terminalId":"2"},"to":{"componentId":"cmp-16vqh6","terminalId":"13"}},
+    {"id":"wire-1slcqn","from":{"componentId":"cmp-3nmkp","terminalId":"1"},"to":{"componentId":"cmp-5icre","terminalId":"12"}},
+    {"id":"wire-1tpim1","from":{"componentId":"cmp-5icre","terminalId":"8"},"to":{"componentId":"cmp-1oc3o","terminalId":"zero"}}
+  ],
+  "viewport":{"x":131.56544733880594,"y":255.0645976704227,"zoom":0.6597539553864477}
+}
