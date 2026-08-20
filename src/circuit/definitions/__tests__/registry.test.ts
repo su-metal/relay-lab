@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("25 定義が登録されている", () => {
+  it("27 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
@@ -43,8 +43,10 @@ describe("部品定義レジストリ", () => {
       "dimming-console",
       "diode-generic",
       "terminal-block-6p",
+      "terminal-block-12p",
+      "terminal-block-20p",
     ]);
-    expect(componentRegistry.size).toBe(25);
+    expect(componentRegistry.size).toBe(27);
   });
 
   it("型番から定義を取得できる", () => {
@@ -107,7 +109,7 @@ describe("部品定義レジストリ", () => {
       "light-controller-4ch",
       "dimming-console",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(25);
+    expect(listComponentDefinitions()).toHaveLength(27);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -566,5 +568,25 @@ describe("汎用部品の追加（design.md §4.5）", () => {
     );
     expect(block.electrical.terminals).toEqual(["1", "2", "3", "4", "5", "6"]);
     expect(block.terminals.every((t) => t.number === undefined)).toBe(true);
+  });
+
+  it.each([
+    ["terminal-block-12p", 12],
+    ["terminal-block-20p", 20],
+  ])("極数違いの端子台（%s）も全端子を通し番号で列挙する", (id, poles) => {
+    const block = requireComponentDefinition(id);
+    if (block.electrical.kind !== "terminal") throw new Error("terminal ではない");
+    expect(block.electrical.terminals).toEqual(block.terminals.map((t) => t.id));
+    expect(block.electrical.terminals).toEqual(
+      Array.from({ length: poles }, (_, i) => String(i + 1)),
+    );
+    expect(block.terminals.every((t) => t.number === undefined)).toBe(true);
+    // 上段・下段で半分ずつ。3 台以上で使う片側だけの偏りが起きていないか
+    expect(block.terminals.filter((t) => t.side === "top")).toHaveLength(
+      poles / 2,
+    );
+    expect(block.terminals.filter((t) => t.side === "bottom")).toHaveLength(
+      poles / 2,
+    );
   });
 });
