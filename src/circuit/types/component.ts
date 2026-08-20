@@ -436,6 +436,25 @@ export type ElectricalDefinition =
       zeroTerminal: string;
     }
   /**
+   * AC 入力を受けて DC を出すスイッチング電源。
+   *
+   * `power` はそれ自体が理想電源だが、こちらは入力側に適合する AC 電源が
+   * 来ているときだけ出力を持つ。入力と出力は絶縁され、内部で union しない。
+   * 型番分岐はせず、入出力範囲と端子 ID を定義データで持つ。
+   */
+  | {
+      kind: "ac-dc-power-supply";
+      inputVoltageMin: number;
+      inputVoltageMax: number;
+      lineTerminal: string;
+      neutralTerminal: string;
+      outputVoltage: number;
+      positiveTerminal: string;
+      zeroTerminal: string;
+      ratedOutputCurrent?: number;
+      ratedPower?: number;
+    }
+  /**
    * リレー。`delay` を持つものがタイマーリレー（design.md §5.13）。
    *
    * **`kind` を分けない。** 分けると接点・コイル・端子まわりの分岐が
