@@ -49,7 +49,11 @@ import {
   selectorSwitchNc,
   selectorSwitchNo,
 } from "./switches";
-import { genericTerminalBlock } from "./terminals";
+import {
+  genericTerminalBlock,
+  genericTerminalBlock12P,
+  genericTerminalBlock20P,
+} from "./terminals";
 import { offDelayTimer, onDelayTimer } from "./timers";
 
 /** パレットの表示順もこの並びに従う */
@@ -79,6 +83,8 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   dimmingConsole,
   genericDiode,
   genericTerminalBlock,
+  genericTerminalBlock12P,
+  genericTerminalBlock20P,
 ];
 
 /** 定義 ID → 定義。エンジンへ渡すのはこれ（design.md §5.5 の `defs`） */
@@ -138,6 +144,8 @@ export {
   genericContactor,
   genericDiode,
   genericTerminalBlock,
+  genericTerminalBlock12P,
+  genericTerminalBlock20P,
   offDelayTimer,
   omronG7l1aBDc24,
   omronG7l2aBDc24,
