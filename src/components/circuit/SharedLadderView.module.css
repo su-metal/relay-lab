@@ -1,0 +1,58 @@
+.scroll {
+  overflow-x: auto;
+  padding: 4px 0 8px;
+}
+
+.diagram {
+  display: block;
+  min-width: 100%;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.rail,
+.wire,
+.symbol {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rail {
+  stroke-width: 2.4;
+}
+
+.wire {
+  stroke-width: 1.8;
+}
+
+.mask {
+  fill: var(--panel);
+  stroke: none;
+}
+
+.label,
+.terminals,
+.railLabel {
+  fill: currentColor;
+  font-family: inherit;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.terminals {
+  fill: var(--text-muted);
+  font-size: 10px;
+}
+
+.railLabel {
+  fill: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
