@@ -8,23 +8,31 @@
  * 回路が何をする回路なのかを読むには向いていない。ラダー図はその逆で、
  * 端子の位置を捨てて**条件と出力の並び**だけを見る。
  *
- * 変換も文面もここには書かない（`adapter/ladder.ts` が持つ）。
- * 表示だけを受け持つ —— `WarningList` / `PathPreviewList` と同じ約束。
+ * 単純な回路は従来どおり 1 出力 = 1 段で描く。同じ実接点が複数段へ現れる
+ * 回路だけは `ladder-shared.ts` の共有ネットワークへ切り替え、実接点 1 枚を
+ * 図上でも 1 回だけ描く。
  *
  * **端子番号を落とさない。** 接点の下に必ず実端子番号（`9-5`）を添える。
- * 番号を落とすと一般的なラダー図と変わらなくなり、キャンバスの配線と
- * 照らせなくなる。
  */
 
 import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent } from "react";
 
 import { buildLadder, rungText } from "@/circuit/adapter/ladder";
-import type { LadderContact, LadderExpr, LadderOutput } from "@/circuit/adapter/ladder";
+import type {
+  LadderContact,
+  LadderExpr,
+  LadderOutput,
+} from "@/circuit/adapter/ladder";
+import {
+  buildSharedLadder,
+  hasRepeatedPhysicalContact,
+} from "@/circuit/adapter/ladder-shared";
 import { componentRegistry } from "@/circuit/definitions";
 import { useCircuitStore } from "@/store/circuitStore";
 
 import styles from "./LadderDialog.module.css";
+import { SharedLadderView } from "./SharedLadderView";
 
 export type LadderDialogProps = {
   open: boolean;
@@ -47,6 +55,15 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
     return buildLadder(useCircuitStore.getState().document, componentRegistry);
   }, [open, components, connections]);
 
+  const shared = useMemo(() => {
+    if (!open || !hasRepeatedPhysicalContact(ladder)) return undefined;
+    return buildSharedLadder(
+      useCircuitStore.getState().document,
+      componentRegistry,
+      ladder,
+    );
+  }, [open, ladder]);
+
   /** `HelpDialog` と同じ開き方。モーダルでないと背後の回路を触れてしまう */
   useEffect(() => {
     const dialog = ref.current;
@@ -62,6 +79,8 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
   const swallowKeys = (event: KeyboardEvent<HTMLDialogElement>) => {
     event.stopPropagation();
   };
+
+  const useShared = shared !== undefined && !shared.wiringFaithfulFallback;
 
   return (
     <dialog
@@ -93,17 +112,22 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
         <p className={styles.scope}>
           いまの配線から組み立てた図です。接点の下の番号は実端子番号で、
           キャンバスの配線とそのまま照らせます。
-          {/*
-            **保存対象ではないことを言っておく。** ここを直せば配線が直ると
-            読まれると、図面と実配線が食い違ったまま作業が進む
-          */}
           この図は読むためのもので、ここを編集しても配線は変わりません。
         </p>
+
+        {useShared && (
+          <p className={styles.scope}>
+            この回路は 1 枚の実接点から複数の出力へ分岐しています。
+            同じ接点を段ごとに複製せず、共通配線として 1 回だけ描いています。
+          </p>
+        )}
 
         {ladder.rungs.length === 0 ? (
           <p className={styles.empty}>
             出力（コイル・ランプ）を置いて配線すると、ここに段が出ます。
           </p>
+        ) : useShared ? (
+          <SharedLadderView network={shared} />
         ) : (
           <div className={styles.ladder}>
             <ol className={styles.rungs}>
@@ -135,6 +159,14 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
               ))}
             </ol>
           </div>
+        )}
+
+        {useShared && shared.movedZeroSide && (
+          <ul className={styles.notes}>
+            <li>
+              0V 側にあった接点は、一般的なラダー図の読み方に合わせて出力の左へ移しています。
+            </li>
+          </ul>
         )}
 
         {ladder.notes.length > 0 && (
@@ -187,10 +219,6 @@ function ContactView({ contact }: { contact: LadderContact }) {
     <span className={styles.element}>
       <span className={styles.elementLabel}>
         {contact.label}
-        {/*
-          限時接点はふつうの a / b 接点と動く条件が違う（設定時間の経過が要る）。
-          図記号だけでは読み取れないので言葉で添える（design.md §5.13）
-        */}
         {contact.delay && (
           <span className={styles.badge}>
             {contact.delay === "on-delay" ? "限時動作" : "限時復帰"}
@@ -203,7 +231,6 @@ function ContactView({ contact }: { contact: LadderContact }) {
         <line x1="15" y1="4" x2="15" y2="20" />
         <line x1="29" y1="4" x2="29" y2="20" />
         <line x1="29" y1="12" x2="44" y2="12" />
-        {/* b 接点は 2 本の縦線に斜線を重ねる（JIS の書き方） */}
         {contact.kind === "nc" && <line x1="12" y1="21" x2="32" y2="3" />}
       </svg>
       <span className={styles.elementTerminals}>
@@ -230,13 +257,11 @@ function OutputView({ output }: { output: LadderOutput }) {
         <line x1="30" y1="12" x2="44" y2="12" />
         {output.kind === "coil" ? (
           <>
-            {/* コイルは括弧 —( )— */}
             <path d="M18 4 A 9 9 0 0 0 18 20" fill="none" />
             <path d="M26 4 A 9 9 0 0 1 26 20" fill="none" />
           </>
         ) : (
           <>
-            {/* ランプは丸に × */}
             <circle cx="22" cy="12" r="8" fill="none" />
             <line x1="16.5" y1="6.5" x2="27.5" y2="17.5" />
             <line x1="27.5" y1="6.5" x2="16.5" y2="17.5" />
