@@ -200,6 +200,10 @@ describe("部品定義レジストリ", () => {
                               electrical.relay.power.negativeTerminal,
                             ]
                           : []),
+                        // analogInputs を変換して出す調光出力（§5.17）
+                        ...(electrical.relay.analogOutputs ?? []).map(
+                          (output) => output.signalTerminal,
+                        ),
                         // NC 端子は a 接点のみのリレーには存在しない。
                         // 未定義を混ぜると「実在しない端子を参照している」判定になる
                         ...electrical.relay.contacts.flatMap((c) =>
@@ -211,6 +215,36 @@ describe("部品定義レジストリ", () => {
 
       for (const terminalId of referenced) {
         expect(ids.has(terminalId), `${definition.id}:${terminalId}`).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * `analogOutputs` は「電源が来ているときだけ signals へ足す」前提で書かれて
+   * いる（`engine/analog.ts`）。`power` の無い `analogOutputs` は出しようが
+   * 無く（参照ネットが取れない）、静かに無視されるだけの死んだ設定になる。
+   */
+  it("analogOutputs を持つなら power も持つ", () => {
+    for (const definition of componentDefinitions) {
+      const { electrical } = definition;
+      if (electrical.kind !== "relay") continue;
+      if (!electrical.relay.analogOutputs?.length) continue;
+      expect(electrical.relay.power, definition.id).toBeDefined();
+    }
+  });
+
+  /** `fromInputId` は同じ機器の `analogInputs` を指す。無ければ変換元が無い */
+  it("analogOutputs の fromInputId は analogInputs に実在する", () => {
+    for (const definition of componentDefinitions) {
+      const { electrical } = definition;
+      if (electrical.kind !== "relay") continue;
+      const inputIds = new Set(
+        (electrical.relay.analogInputs ?? []).map((input) => input.id),
+      );
+      for (const output of electrical.relay.analogOutputs ?? []) {
+        expect(inputIds.has(output.fromInputId), `${definition.id}:${output.id}`).toBe(
+          true,
+        );
       }
     }
   });

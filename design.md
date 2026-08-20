@@ -101,9 +101,11 @@ src/
         RelayBody.tsx
         TimerBody.tsx            # タイマー（限時接点＋残り時間・§5.13）
         ContactDiagram.tsx       # 接点の図記号。RelayBody / TimerBody で共有（§8.11）
+        OperationControls.tsx    # フェーダー・入り切りの操作子。RelayBody / DimmerBody で共有（§8.11・§4.16・§4.17）
         SwitchBody.tsx
         PowerSupplyBody.tsx
         LampBody.tsx
+        DimmerBody.tsx           # 調光出力・位相制御調光器・調光操作卓／ライトコントローラ（`kind: "relay"`）
         GenericBody.tsx          # 専用ボディが無いカテゴリのフォールバック
         DiodeBody.tsx
         TerminalBlockBody.tsx
@@ -424,7 +426,15 @@ type RelayDefinition = {
   }
   analogInputs?: readonly AnalogInputChannel[]  // §4.16
   power?: { positiveTerminal: string; negativeTerminal: string }  // §5.17
+  analogOutputs?: readonly RelayAnalogOutputChannel[]  // §5.17
   contacts: RelayContact[]
+}
+
+type RelayAnalogOutputChannel = {
+  id: string
+  fromInputId: string   // どの analogInputs の結果を変換して出すか
+  signalTerminal: string
+  label?: string
 }
 
 type RelayContact = {
@@ -452,6 +462,8 @@ type TimerDelay = {                        // §5.13
 **接点の駆動源はコイルだけではない（Step 22）。** `RelayContact.trigger`（アナログ量）と `operationId`（人の操作）を持つ接点は、コイルの励磁とは無関係に自分の駆動源を見る。あわせて `coil` を省略可能にした —— カットリレーにも操作卓のボタンにも実機にコイルは無く、無い端子を作って埋めないのは `ncTerminal` と同じ（§4.16）。
 
 **`power` はコイルの代わりではない。** `analogInputs` を読む内部回路が実機で要る外部電源（DC24V/GND 等）で、コイルを持たない機器に**追加で**省略可能に持たせる。無ければ従来どおり信号の有無だけで `analogInputs` が決まり、あれば電源が届いていない間は信号があっても未接続として扱う（§5.17）。極性の向きまでは判定しない —— 実機の内部回路がどこまで保護されているかのデータが無いので、「電位差があるか」だけを見る（CLAUDE.md 設計原則 6 と同じ、無いものは検査しない考え方）。
+
+**`analogOutputs` は `analogInputs` の結果を変換して出す。** ライトコントローラのように、受けた 0–10V を接点で終わらせず PWM に変換して別端子へ出す実機がある。波形は扱わないので、電圧としては「変換後の最終的な明るさ（%）」をそのまま表す。**`power` が必須**（JSDoc 参照）—— 内部回路が変換して出す信号なので、電源が無ければ 1 本も出しようが無い。
 
 **タイマーリレーは `kind: "timer"` を作らず、`kind: "relay"` に `delay?: TimerDelay` を足して表す。** タイマーリレーはリレーであって別種の部品ではない —— コイルも接点も同じものを持ち、違うのは接点が動くタイミングだけ。`kind` を分けると接点・コイル・端子まわりの分岐がエンジンと adapter の各所で 2 本になり、片方だけ直す事故が起きる。この形にしたことで、極性判定（§5.3）・接点の開閉（§5.1）・未接続端子（§5.7）・自己保持の検出（§5.9）・経路説明（§5.11）・接点の図記号（§8.11）は**リレー用のコードがそのまま効く。** `ncTerminal` を省略可能にして a 接点のみのリレーを表したのと同じ拡張の形。
 
@@ -1100,10 +1112,12 @@ AC100V 電源。端子は `L`（非接地側）/ `N`（接地側）で、実端�
 |---|---|
 | INPUT `1`–`4` / `G` | 調光信号入力（0–10V）とその基準 |
 | CUT RELAY `1`–`4` / `G` | カットリレー接点（a 接点のみ）とコモン |
-| 出力 `1`–`4` | PWM 出力（**波形は扱わない**・§6） |
+| 出力 `1`–`4` | PWM 出力（**波形は扱わない**・§6。変換後の明るさを調光信号として出す） |
 | `24V` / `GND` | 電源 DC24V |
 
 **`24V`/`GND` が届いていないと `INPUT` は読めない（§5.17）。** カットリレーにコイルは無いが、0–10V を読んでカットリレーを駆動する内部回路自体は実機で DC24V/GND から給電されている。ここが未配線・未給電のままだと、`INPUT` にどんな電圧が来ていても定義の未接続時レベルとして扱われる —— この盤の逆特性では全灯（動作しない）側になる。`RelayDefinition.power` が持つ 2 端子で表し、`engine/analog.ts` の `relayPowered()` が `evaluateCoil()` と同じ `polarityAcross()` で判定する。
+
+**`出力 1`–`4` は `INPUT` を変換して出す（§5.17）。** 実機は PWM へ変換するが波形は扱わないので、電圧としては「変換後の最終的な明るさ（%）」をそのまま表す。`RelayDefinition.analogOutputs` が `fromInputId` で対応する `analogInputs` を指し、基準（コモン）は `power.negativeTerminal`（`GND`）を共用する ——実機の PWM 出力が内部回路と同じ 0V 基準から出ている前提で、専用のコモン端子を新たに立てていない。**`24V`/`GND` が届いていなければ `出力` も 1 本も出さない**（下流の調光ランプ・調光器からは LC が繋がっていないのと同じに見える）。**動作点（カットリレー）と `出力` は独立。** 実機資料に連動の記載が無いため、動作点を割り込んでカットリレーが動作していても `出力` はそのまま最終的な明るさを出し続ける ——実機がこの 2 つを連動させているなら要修正（`definitions/lighting-system.ts` の JSDoc 参照）。
 
 #### 調光操作卓（15 端子）
 
@@ -2023,9 +2037,21 @@ type TimerState = {
 
 **カットリレーにコイルが無いことと、内部回路に電源が要らないことは別の話。** 当初 `RelayDefinition.analogInputs` は `IN1`/`ING` の信号ネットだけを見て % を出しており、機器の `24V`/`GND` 端子が繋がっているかを一度も参照していなかった —— ライトコントローラの `24V`/`GND` を配線し忘れても、調光信号さえ来ていればカットリレーが普通に動作してしまう抜けがあった。
 
-`RelayDefinition` に省略可能な `power: { positiveTerminal, negativeTerminal }` を足し、`resolveAnalog()` の ③（接点駆動用のアナログ入力）で `relayPowered()` を通す。判定は `evaluateCoil()` の極性判定とまったく同じ `polarityAcross()` —— 2 端子が同じ 1 台の電源の + と 0V に届いているかを見る。**向きは問わない**（`forward` / `reverse` のどちらでも「電源あり」）。逆接で壊れるかどうかまでは実機のデータが無く、判定できるのは「電位差があるか」だけ（CLAUDE.md 設計原則 6 と同じ、無いものは検査しない考え方）。
+`RelayDefinition` に省略可能な `power: { positiveTerminal, negativeTerminal }` を足し、`resolveAnalog()` の ①（コイルの無いリレーが受けるアナログ入力）で `relayPowered()` を通す。判定は `evaluateCoil()` の極性判定とまったく同じ `polarityAcross()` —— 2 端子が同じ 1 台の電源の + と 0V に届いているかを見る。**向きは問わない**（`forward` / `reverse` のどちらでも「電源あり」）。逆接で壊れるかどうかまでは実機のデータが無く、判定できるのは「電位差があるか」だけ（CLAUDE.md 設計原則 6 と同じ、無いものは検査しない考え方）。
 
 電源が届いていなければ `inputLevel()` は信号の有無を見る前に `unconnectedVolts` へ落ちる —— 未接続時と同じ経路なので、この盤の逆特性ではやはり全灯（動作しない）側になる。**`power` を持たない機器は今までどおり**（`relayPowered()` は `power` が無ければ常に `true` を返す）。`resolveAnalog()` の引数に `netState`（ネット ID → 電位状態）を足したのはこの判定のためだけで、電圧そのものの畳み込みには一切触れない —— アナログは今も導通レイヤに重ねる第 2 パスのまま（設計原則 9）。
+
+#### コイルの無い機器が、受けた信号を変換して出す（PWM 出力）
+
+**電源ゲートだけでは終わらなかった。** ライトコントローラの `出力 1`–`4`（PWM 出力）は元々「波形は扱わないので端子だけ」の飾りで、`ElectricalDefinition` のどこからも参照されていなかった —— 下流に何を繋いでも導通しない、宣言だけの端子だった。実機はここから変換後の調光信号を出しているので、繋いでも何も起きないのは「未実装」であって「未接続扱い」ではない。ユーザー指摘を受けて `RelayDefinition.analogOutputs` を足し、`出力` を本物の調光信号にした。
+
+**`analogOutputs` は `analogInputs` の結果を変換して出す。** `resolveAnalog()` の ①（コイルの無いリレーの入出力をまとめて解く区画）は、`power` が届いているときに限り、各 `analogInputs` の最終的な明るさ（%）を `voltsForPercent()` で電圧へ戻し、対応する `analogOutputs` の端子ネットへ `mergeSignal()` で足す。**decode（volts→%）と同じ `effectiveCurve()` で再度 encode する** —— シェーピング（`dimmerSettings` の上下限・カーブ・DIRECT）込みの % がそのまま「その % を表す電圧」になって出る。`mergeSignal()` は `collectSignals()` の「2 台がぶつかったら低いほうが勝つ」マージをそのまま関数に切り出したもので、`出力` が他の調光出力と同じネットに乗っても同じ規則で決まる。
+
+**②③（調光器・ランプ）より前に解く。** 下流の `kind: "dimmer"` や調光ランプが読む `signals` に `出力` の値を足してからでないと、①の後に走る②③が古い（`出力` を持たない）`signals` を読んでしまう。元々①②③だった順を、①（アナログ入力＋出力）→②（調光器）→③（ランプ）に並べ替えた。
+
+**未給電なら 1 本も足さない。** `power` が無ければ参照ネット（`power.negativeTerminal`）が取れないので、`analogOutputs` を持たせるなら `power` も必須にしてある（レジストリテストで強制）。未給電の LC を経由した先の調光ランプ・調光器は、`signals` に何も追加されないぶん「LC が繋がっていない」のとまったく同じに見え、それぞれの `unconnectedVolts` に落ちる —— 新しいコードパスを足さずに済んでいる。
+
+**動作点（カットリレー）とは独立。** `出力` の値は `analogInputs` の解のみから決まり、`RelayContact.trigger` の動作点判定（`operatedContactsOf()`）を一切見ない。動作点を割り込んでカットリレーが動作していても `出力` は最終的な明るさをそのまま出し続ける —— 実機がこの 2 つを連動させている（動作点を割り込むと `出力` も強制的に絞る、等）という資料は無いため、独立のまま実装してある。連動の仕様が判明したら `resolveAnalog()` の①に 1 か所だけ手を入れれば直る。
 
 #### V → % の変換は定義側の宣言に閉じる
 
@@ -2207,6 +2233,14 @@ simulate()
 **逆結線と基準の不一致は同時に出す。** どちらか 1 つに丸めると、片方だけ直して直らないという最も時間を溶かす状態になる。
 
 **「繋ごうとしている」ことを先に読む。** `isLinked()` は＋・−のどちらか 1 本でもネットを共有していれば対と見なす —— 正しく繋がっていることを条件にすると、**配線ミスを指摘する相手が見つからない**（誰とも繋がっていない孤立したポートとして黙って通る）。
+
+#### 基準ネットの判定は `netOf` の有無で見ない
+
+`commonTerminals`（操作卓は 9・12、コントローラは 21・44・45・46）は実機で機器内部が繋がっている GND 群で、**どれか 1 本でも配線されていれば** それを基準ネットとして使ってよい設計になっている。
+
+ここで `netOf.get(terminalKey(componentId, terminalId)) !== undefined` を「配線されているか」の判定に使うと壊れる。`buildNets()` は配線の有無に関わらずすべての端子をネットのノードとして登録する（§5.1）ので、未配線の端子も（自分だけの孤立したネットとして）必ず値を持つ。結果、`commonTerminals` の**配列の先頭の端子だけが常に採用され**、それ以外の端子へ実際に配線しても一生反映されない —— 先頭の端子がたまたま接点の COM など内部結線を持つ端子だと動いているように見えてしまい、発見しづらい。
+
+`resolvePorts()`（`engine/communication.ts`）は `document.connections` から作った「実際に配線されている端子」の集合（`wiredTerminalKeys()`）を先にフィルタしてから `netOf` を引く。「配線されているか」と「ネットを持っているか」は別の問いであり、後者だけでは前者を代表できない。
 
 #### 停止中にも出す
 
@@ -3210,6 +3244,14 @@ D / F / L は**修飾キー無しの 1 打鍵で回路を変える**（削除・
 **停止中は静止状態（非励磁）の絵を描く。** これは「消磁している」という状態の主張ではなく、机の上に置いたリレーがそう見えるという事実であり、`SwitchBody` が停止中も b 接点を閉じて描くのと同じ扱い。§8.2 の「停止中は状態を出さない」に反しない。
 
 **左右反転（§8.1）では鏡像にしない。** 端子番号という文字を含む図なので、反転すると番号が読めなくなる（`bodies.module.css` がキャプションを反転させないのと同じ理由）。図記号の向きが部品と揃わなくなるが、**読めない番号よりは揃わない向きのほうがまし。** そのため `.symbol` ではなく専用の `.contactDiagram` クラスを使う。
+
+#### フェーダー・入り切りの操作子は `OperationControls` に共通化する
+
+`RelayDefinition.operations`（人が倒すフェーダー・スイッチ・design.md §4.16・§4.17）を描く UI は、**ボディを問わず 1 つ**（`OperationControls.tsx`）にする。
+
+`bodyForCategory()`（§2 の `bodies/index.ts`）は**カテゴリだけでボディを選ぶ**（`kind` は見ない・CLAUDE.md 設計原則 6 と同じ「カテゴリ／型で分岐しない」）。調光操作卓・ライトコントローラは `category: "dimmer"`（探す場所がパレットの都合）だが `electrical.kind` は `"relay"` なので、`DimmerBody` が描かれる。**もし操作子の UI を `RelayBody` の中だけに書くと、`kind: "relay"` でも `category: "dimmer"` の機器では操作子が一生描かれない** —— 実際に Step 24 で操作卓のフェーダー・照明スイッチ・電源ボタンがこの理由で画面に出ておらず、通信の GND を正しく繋いでコントローラが操作卓の値（フェーダー未操作＝0%）に従い始めた瞬間、画面から動かす手段が無いまま暗くなって見える事故があった。
+
+`OperationControls` は `operations: readonly DeviceOperation[] | undefined` と `componentId` だけを受け取り、`RelayBody` と `DimmerBody`（`electrical.kind === "relay"` のとき）の両方から同じ形で呼ぶ。**カテゴリはボディの選択にだけ効き、`kind` が持つ操作子の絵まで決めない**という筋を、コイル記号やコンタクト図（`RelayBody` 固有）とフェーダー／スイッチ（両方に必要）とで別のコンポーネントに分けることで保っている。
 
 ### 8.12 モバイル表示（`useViewportMode.ts` + `place-component.ts`・Step 13 で確定）
 

@@ -1,5 +1,6 @@
 import { channelVoltsOf } from "@/circuit/engine";
 
+import { OperationControls } from "./OperationControls";
 import styles from "./bodies.module.css";
 import type { BodyProps } from "./types";
 
@@ -10,12 +11,20 @@ import type { BodyProps } from "./types";
  * コイルの励磁でもない、この盤で唯一の「値を出す部品」であることが
  * 一目で分かる絵にする。
  *
- * **1 枚で 2 種類を描く。** 調光出力（`analog-source`）は出す電圧を、
+ * **1 枚で 3 種類を描く。** 調光出力（`analog-source`）は出す電圧を、
  * 位相制御調光器（`dimmer`）は通した先の明るさを出す。図記号は同じで
  * よく、分けると斜線の角度や配色が片方だけずれる。
+ *
+ * **調光操作卓・ライトコントローラ（`kind: "relay"`）もここに来る。**
+ * 探す場所（パレット）は調光だが、電気的にはコイルの無いリレーで、
+ * 人が倒すフェーダー・スイッチを持つ（design.md §4.16・§4.17）。カテゴリは
+ * ボディを選ぶだけで、`kind` が持つ操作子の絵まで決めてはいけない
+ * （CLAUDE.md 設計原則 6）—— `RelayBody` と同じ `OperationControls` を
+ * ここでも使い、フェーダー・スイッチの描き方を 2 箇所に分けない。
  */
 export function DimmerBody({
   definition,
+  componentId,
   simulation,
   channelVolts,
 }: BodyProps) {
@@ -44,6 +53,13 @@ export function DimmerBody({
       )}
 
       {electrical.kind === "dimmer" && <DimmerReadout simulation={simulation} />}
+
+      {electrical.kind === "relay" && (
+        <OperationControls
+          operations={electrical.relay.operations}
+          componentId={componentId}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ export type {
   DimmingInput,
   ElectricalDefinition,
   FadeSpec,
+  RelayAnalogOutputChannel,
   RelayContact,
   RelayDefinition,
   TimerDelay,

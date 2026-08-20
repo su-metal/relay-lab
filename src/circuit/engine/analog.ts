@@ -236,6 +236,33 @@ const relayPowered = (
 };
 
 /**
+ * 信号ネット 1 つに新しい `AnalogSignal` を重ねる。
+ *
+ * **同じネットを 2 台が駆動したら低いほうが勝つ**（`strongerOf`）。
+ * `collectSignals()`（調光出力）と、電源が来ているときだけ LC の
+ * `analogOutputs` が追加登録する分（design.md §5.17）の**両方**がこの
+ * 1 行を通ることで、「2 台がぶつかったら同じ規則で決める」が 1 箇所に閉じる。
+ */
+const mergeSignal = (
+  signals: Map<number, AnalogSignal>,
+  net: number,
+  signal: AnalogSignal,
+): void => {
+  const existing = signals.get(net);
+  if (!existing) {
+    signals.set(net, signal);
+    return;
+  }
+  const winner = strongerOf(existing, signal);
+  signals.set(net, {
+    ...winner,
+    // 「誰が出しているか」は警告文に要るので、負けた側の ID も残す
+    sourceIds: [...existing.sourceIds, ...signal.sourceIds],
+    pulledToReference: existing.pulledToReference || signal.pulledToReference,
+  });
+};
+
+/**
  * 回路中の調光出力を、信号ネットごとの電圧に畳む。
  *
  * **チャンネルごとに別の信号として畳む。** 実機の調光コントローラは
@@ -293,25 +320,11 @@ const collectSignals = (
           instance,
           communicated.get(instance.id),
         );
-      const signal: AnalogSignal = {
+      mergeSignal(signals, signalNet, {
         volts: pulledToReference ? 0 : outputVolts,
         referenceNet,
         sourceIds: [instance.id],
         pulledToReference,
-      };
-
-      const existing = signals.get(signalNet);
-      if (!existing) {
-        signals.set(signalNet, signal);
-        continue;
-      }
-      const winner = strongerOf(existing, signal);
-      signals.set(signalNet, {
-        ...winner,
-        // 「誰が出しているか」は警告文に要るので、負けた側の ID も残す
-        sourceIds: [...existing.sourceIds, ...signal.sourceIds],
-        pulledToReference:
-          existing.pulledToReference || signal.pulledToReference,
       });
     }
   }
@@ -465,7 +478,72 @@ export const resolveAnalog = (
   const levels = new Map<string, DimmingLevel>();
   const netLevels = new Map<number, DimmingLevel>();
 
-  // ① 調光器。出力回路のネットに明るさを乗せる
+  /*
+   * ① コイルの無いリレーが受ける調光入力（カットリレー・design.md §4.16）と、
+   * 電源が来ているときだけそこから作り直して出す調光出力（PWM 変換出力・
+   * design.md §5.17）。
+   *
+   * **入力は `levelOf` に入れない。** カットリレーは自分が点るわけでも暗く
+   * なるわけでもなく、受けた明るさで接点を動かすだけ。混ぜると部品一覧に
+   * 「明るさ」の無い機器の明るさが並ぶ。
+   *
+   * **`power` が届いていなければ、信号が来ていても未接続として扱う。**
+   * 内部回路自体が DC 電源で動く機器（ライトコントローラ等）は、電源が
+   * 無ければ 0–10V を読む回路そのものが死んでいる。
+   *
+   * **出力（`analogOutputs`）はここで `signals` に追加登録する。** ②③が
+   * 読む `signals` はまだ完成していないので、②③より前に済ませる。
+   * 未給電なら追加しない —— 下流の調光ランプ・調光器からは「LC が繋がって
+   * いない」のと同じに見え、それぞれの `unconnectedVolts` へ落ちる。
+   */
+  const inputLevels = new Map<string, DimmingLevel>();
+  for (const { instance, definition } of placed) {
+    const { electrical } = definition;
+    if (electrical.kind !== "relay") continue;
+    const { analogInputs: inputs, analogOutputs: outputs, power } = electrical.relay;
+    if (!inputs || inputs.length === 0) continue;
+
+    const powered = relayPowered(electrical.relay, instance.id, netOf, netState);
+    const levelById = new Map<string, DimmingLevel>();
+    for (const input of inputs) {
+      const level = inputLevel(
+        input,
+        instance.dimmerSettings,
+        instance.id,
+        netOf,
+        signals,
+        powered,
+      );
+      inputLevels.set(analogInputKey(instance.id, input.id), level);
+      levelById.set(input.id, level);
+    }
+
+    if (!powered || !outputs || outputs.length === 0 || !power) continue;
+    const referenceNet = netOf.get(terminalKey(instance.id, power.negativeTerminal));
+    if (referenceNet === undefined) continue;
+
+    for (const output of outputs) {
+      const input = inputs.find((candidate) => candidate.id === output.fromInputId);
+      const level = levelById.get(output.fromInputId);
+      const outNet = netOf.get(terminalKey(instance.id, output.signalTerminal));
+      if (!input || !level || outNet === undefined) continue;
+
+      const pulledToReference = outNet === referenceNet;
+      // 受けた入力の「最終的な」明るさ（%）を、同じカーブで電圧へ戻す。
+      // decode（volts→%）と同じカーブで再度 encode するので、シェーピング
+      // 込みの % がそのまま「その % を表す電圧」になって出る
+      const curve = effectiveCurve(input.curve, instance.dimmerSettings);
+      const volts = pulledToReference ? 0 : voltsForPercent(curve, level.percent);
+      mergeSignal(signals, outNet, {
+        volts,
+        referenceNet,
+        sourceIds: [instance.id],
+        pulledToReference,
+      });
+    }
+  }
+
+  // ② 調光器。出力回路のネットに明るさを乗せる
   for (const { instance, definition } of placed) {
     const { electrical } = definition;
     if (electrical.kind !== "dimmer") continue;
@@ -482,7 +560,7 @@ export const resolveAnalog = (
     }
   }
 
-  // ② ランプ。自分の調光入力が最優先で、無ければ乗っている回路の明るさ
+  // ③ ランプ。自分の調光入力が最優先で、無ければ乗っている回路の明るさ
   for (const { instance, definition } of placed) {
     const { electrical } = definition;
     if (electrical.kind !== "lamp") continue;
@@ -509,40 +587,6 @@ export const resolveAnalog = (
         levels.set(instance.id, level);
         break;
       }
-    }
-  }
-
-  /*
-   * ③ 接点を動かすために受けている調光入力（カットリレー・design.md §4.16）。
-   *
-   * **`levelOf` には入れない。** カットリレーは自分が点るわけでも暗くなる
-   * わけでもなく、受けた明るさで接点を動かすだけ。混ぜると部品一覧に
-   * 「明るさ」の無い機器の明るさが並ぶ。
-   *
-   * **`power` が届いていなければ、信号が来ていても未接続として扱う。**
-   * 内部回路自体が DC 電源で動く機器（ライトコントローラ等）は、電源が
-   * 無ければ 0–10V を読む回路そのものが死んでいる（design.md §5.17）。
-   */
-  const inputLevels = new Map<string, DimmingLevel>();
-  for (const { instance, definition } of placed) {
-    const { electrical } = definition;
-    if (electrical.kind !== "relay") continue;
-    const inputs = electrical.relay.analogInputs;
-    if (!inputs || inputs.length === 0) continue;
-
-    const powered = relayPowered(electrical.relay, instance.id, netOf, netState);
-    for (const input of inputs) {
-      inputLevels.set(
-        analogInputKey(instance.id, input.id),
-        inputLevel(
-          input,
-          instance.dimmerSettings,
-          instance.id,
-          netOf,
-          signals,
-          powered,
-        ),
-      );
     }
   }
 

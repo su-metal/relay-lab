@@ -353,20 +353,27 @@ const LIGHT_CONTROLLER_CHANNELS = 4;
  * ライトコントローラ（4 回路・DC24V）。
  *
  * 0–10V の調光信号を受け、**明るさが動作点を下回るとカットリレーが動作する。**
- * 実機は受けた信号を PWM へ変換して出すが、**波形は扱わない**（design.md §6）
- * —— この盤で読みたいのは「絞ったらリレーが落ちる」という連動のほうなので、
- * PWM 出力は端子として出すだけにしてある。
+ * さらに、受けた信号を**変換して `出力 1–4` にも出す**（実機は PWM へ変換す
+ * るが、波形そのものは扱わない・design.md §6。ここでは変換後の「最終的な
+ * 明るさ」を電圧として表す）。下流に繋いだ調光ランプ・調光器はこの `出力`
+ * を読めば、LC を経由した調光ができる。
  *
  * **コイルを持たない。** カットリレーの接点はコイルではなくアナログ量で
  * 動く。実機に無いコイル端子を作って埋めない（CLAUDE.md 設計原則 6）。
  *
  * **ただしコイルが無いだけで電源は要る。** 0–10V を読んでカットリレーを
- * 駆動する内部回路は実機で DC24V/GND から給電されている。`relay.power` に
- * この 2 端子を持たせてあるので、繋がっていなければ調光信号が来ていても
- * 未接続と同じに扱われる（design.md §5.17）。
+ * 駆動し、`出力 1–4` へ変換して出す内部回路は実機で DC24V/GND から給電さ
+ * れている。`relay.power` にこの 2 端子を持たせてあるので、繋がっていな
+ * ければ調光信号が来ていても未接続と同じに扱われ、**`出力 1–4` も 1 本も
+ * 出さない**（下流は「LC が繋がっていない」のと同じに見える・design.md
+ * §5.17）。
  *
  * 動作点は実機の CUT ADJ.（回路ごとのつまみ）にあたり、インスタンスの
  * `triggerPercents` が持つ。4 回路それぞれ別の動作点に設定できる。
+ * **動作点とカットリレー・`出力` の関係は実機資料に記載が無いため、この
+ * 2 つは独立に動く**（動作点を割り込んでカットリレーが動作していても、
+ * `出力` はそのまま最終的な明るさを出し続ける）——実機がこの 2 つを連動さ
+ * せているなら要修正。
  */
 export const lightController4ch: ComponentDefinition = {
   id: "light-controller-4ch",
@@ -432,13 +439,13 @@ export const lightController4ch: ComponentDefinition = {
       },
       side: "bottom",
     },
-    // PWM 出力。右辺。波形は扱わないので端子だけ
+    // PWM 出力。右辺。波形は扱わないが、変換後の明るさは調光信号として出す
     ...Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => ({
       id: `OUT${i + 1}`,
       label: `${i + 1}`,
       number: `${i + 1}`,
-      role: "generic" as const,
-      description: `出力 ${i + 1} / PWM 出力（波形は扱わない）`,
+      role: "analog_signal" as const,
+      description: `出力 ${i + 1} / PWM 出力（波形は扱わない。GND を基準にした調光信号として明るさを出す。24V/GND 給電時のみ）`,
       position: { x: 1, y: (i + 1) / (LIGHT_CONTROLLER_CHANNELS + 1) },
       side: "right" as const,
       optional: true,
@@ -467,8 +474,9 @@ export const lightController4ch: ComponentDefinition = {
     kind: "relay",
     relay: {
       // **コイルは持たない。** 接点はアナログ量で動く（design.md §4.16）
-      // だが 0–10V を読む内部回路は DC24V/GND で動く。未給電なら
-      // analogInputs は未接続と同じ扱いになる（design.md §5.17）
+      // だが 0–10V を読んで PWM に変換する内部回路は DC24V/GND で動く。
+      // 未給電なら analogInputs は未接続と同じ扱いになり、analogOutputs
+      // （出力 1–4）も 1 本も出さない（design.md §5.17）
       power: { positiveTerminal: "24V", negativeTerminal: "GND" },
       analogInputs: Array.from(
         { length: LIGHT_CONTROLLER_CHANNELS },
@@ -479,6 +487,16 @@ export const lightController4ch: ComponentDefinition = {
           curve: INVERTED_0_10V_CURVE,
           // 入力段はプルダウン。逆特性のこの盤では未接続＝100%（全灯）
           unconnectedVolts: 0,
+        }),
+      ),
+      // 受けた調光信号を「PWM に変換して」出力 1–4 へ出す。power が届いて
+      // いるときだけ signals に載る（design.md §5.17）
+      analogOutputs: Array.from(
+        { length: LIGHT_CONTROLLER_CHANNELS },
+        (_, i) => ({
+          id: `out${i + 1}`,
+          fromInputId: `in${i + 1}`,
+          signalTerminal: `OUT${i + 1}`,
         }),
       ),
       contacts: Array.from({ length: LIGHT_CONTROLLER_CHANNELS }, (_, i) => ({
