@@ -23,7 +23,7 @@ import type {
   SimulationInput,
   Warning,
 } from "@/circuit/types";
-import { operationKey, terminalKey } from "@/circuit/types";
+import { operationKey, terminalKey, terminalRefKey } from "@/circuit/types";
 
 /** 回路に置かれた通信ポート 1 つ分。ネット ID まで解決してある */
 type ResolvedPort = {
@@ -51,21 +51,46 @@ const netOfTerminal = (
   terminalId: string,
 ): number | undefined => netOf.get(terminalKey(componentId, terminalId));
 
+/**
+ * `document.connections` に現れる端子（`terminalKey()` の文字列）の集合。
+ *
+ * `buildNets()` は配線の有無に関わらず**すべての端子をネットのノードとして
+ * 登録する**ので、`netOf.get()` は未配線の端子でも（自分だけの孤立したネットとして）
+ * 値を返してしまう。「配線されているか」を知るには、ネットの有無ではなく
+ * ここを見る必要がある。
+ */
+const wiredTerminalKeys = (document: CircuitDocument): ReadonlySet<string> => {
+  const wired = new Set<string>();
+  for (const connection of document.connections) {
+    wired.add(terminalRefKey(connection.from));
+    wired.add(terminalRefKey(connection.to));
+  }
+  return wired;
+};
+
 const resolvePorts = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   netOf: ReadonlyMap<string, number>,
 ): ResolvedPort[] => {
   const ports: ResolvedPort[] = [];
+  const wired = wiredTerminalKeys(document);
 
   for (const instance of document.components) {
     const definition = definitions.get(instance.definitionId);
     const port = definition?.communication?.port;
     if (!definition || !port) continue;
 
-    // 基準は機器内で繋がっている。1 本でも配線されていればそれを使う
+    /*
+     * 基準は機器内で繋がっている。1 本でも配線されていればそれを使う ——
+     * ただし「配線されている」の判定は `wired`（実際の `CircuitConnection`）
+     * で行う。`netOf` の有無では判定できない（未配線の端子も孤立ネットを
+     * 持つため、配列の先頭の端子が常に採用されてしまい、他の端子へ
+     * 繋いでも一生反映されない）。
+     */
     let commonNet: number | undefined;
     for (const common of port.commonTerminals) {
+      if (!wired.has(terminalKey(instance.id, common))) continue;
       const net = netOfTerminal(netOf, instance.id, common);
       if (net !== undefined) {
         commonNet = net;

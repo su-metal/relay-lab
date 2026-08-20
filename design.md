@@ -100,9 +100,11 @@ src/
         RelayBody.tsx
         TimerBody.tsx            # タイマー（限時接点＋残り時間・§5.13）
         ContactDiagram.tsx       # 接点の図記号。RelayBody / TimerBody で共有（§8.11）
+        OperationControls.tsx    # フェーダー・入り切りの操作子。RelayBody / DimmerBody で共有（§8.11・§4.16・§4.17）
         SwitchBody.tsx
         PowerSupplyBody.tsx
         LampBody.tsx
+        DimmerBody.tsx           # 調光出力・位相制御調光器・調光操作卓／ライトコントローラ（`kind: "relay"`）
         GenericBody.tsx          # 専用ボディが無いカテゴリのフォールバック
         DiodeBody.tsx
         TerminalBlockBody.tsx
@@ -2182,6 +2184,14 @@ simulate()
 
 **「繋ごうとしている」ことを先に読む。** `isLinked()` は＋・−のどちらか 1 本でもネットを共有していれば対と見なす —— 正しく繋がっていることを条件にすると、**配線ミスを指摘する相手が見つからない**（誰とも繋がっていない孤立したポートとして黙って通る）。
 
+#### 基準ネットの判定は `netOf` の有無で見ない
+
+`commonTerminals`（操作卓は 9・12、コントローラは 21・44・45・46）は実機で機器内部が繋がっている GND 群で、**どれか 1 本でも配線されていれば** それを基準ネットとして使ってよい設計になっている。
+
+ここで `netOf.get(terminalKey(componentId, terminalId)) !== undefined` を「配線されているか」の判定に使うと壊れる。`buildNets()` は配線の有無に関わらずすべての端子をネットのノードとして登録する（§5.1）ので、未配線の端子も（自分だけの孤立したネットとして）必ず値を持つ。結果、`commonTerminals` の**配列の先頭の端子だけが常に採用され**、それ以外の端子へ実際に配線しても一生反映されない —— 先頭の端子がたまたま接点の COM など内部結線を持つ端子だと動いているように見えてしまい、発見しづらい。
+
+`resolvePorts()`（`engine/communication.ts`）は `document.connections` から作った「実際に配線されている端子」の集合（`wiredTerminalKeys()`）を先にフィルタしてから `netOf` を引く。「配線されているか」と「ネットを持っているか」は別の問いであり、後者だけでは前者を代表できない。
+
 #### 停止中にも出す
 
 `inspectWiring()`（§5.7）からも `resolveCommunication()` を呼び、▶ を押す前に通信線の不備が出る。**繋ぎ間違いは繋いだ瞬間に言うのが最も安い。** 配線チェックには時間が流れていないので、渡す `SimulationInput` は `AT_REST`（何も倒していない状態）でよい —— 不備の判定は倒した値を見ないため。
@@ -3184,6 +3194,14 @@ D / F / L は**修飾キー無しの 1 打鍵で回路を変える**（削除・
 **停止中は静止状態（非励磁）の絵を描く。** これは「消磁している」という状態の主張ではなく、机の上に置いたリレーがそう見えるという事実であり、`SwitchBody` が停止中も b 接点を閉じて描くのと同じ扱い。§8.2 の「停止中は状態を出さない」に反しない。
 
 **左右反転（§8.1）では鏡像にしない。** 端子番号という文字を含む図なので、反転すると番号が読めなくなる（`bodies.module.css` がキャプションを反転させないのと同じ理由）。図記号の向きが部品と揃わなくなるが、**読めない番号よりは揃わない向きのほうがまし。** そのため `.symbol` ではなく専用の `.contactDiagram` クラスを使う。
+
+#### フェーダー・入り切りの操作子は `OperationControls` に共通化する
+
+`RelayDefinition.operations`（人が倒すフェーダー・スイッチ・design.md §4.16・§4.17）を描く UI は、**ボディを問わず 1 つ**（`OperationControls.tsx`）にする。
+
+`bodyForCategory()`（§2 の `bodies/index.ts`）は**カテゴリだけでボディを選ぶ**（`kind` は見ない・CLAUDE.md 設計原則 6 と同じ「カテゴリ／型で分岐しない」）。調光操作卓・ライトコントローラは `category: "dimmer"`（探す場所がパレットの都合）だが `electrical.kind` は `"relay"` なので、`DimmerBody` が描かれる。**もし操作子の UI を `RelayBody` の中だけに書くと、`kind: "relay"` でも `category: "dimmer"` の機器では操作子が一生描かれない** —— 実際に Step 24 で操作卓のフェーダー・照明スイッチ・電源ボタンがこの理由で画面に出ておらず、通信の GND を正しく繋いでコントローラが操作卓の値（フェーダー未操作＝0%）に従い始めた瞬間、画面から動かす手段が無いまま暗くなって見える事故があった。
+
+`OperationControls` は `operations: readonly DeviceOperation[] | undefined` と `componentId` だけを受け取り、`RelayBody` と `DimmerBody`（`electrical.kind === "relay"` のとき）の両方から同じ形で呼ぶ。**カテゴリはボディの選択にだけ効き、`kind` が持つ操作子の絵まで決めない**という筋を、コイル記号やコンタクト図（`RelayBody` 固有）とフェーダー／スイッチ（両方に必要）とで別のコンポーネントに分けることで保っている。
 
 ### 8.12 モバイル表示（`useViewportMode.ts` + `place-component.ts`・Step 13 で確定）
 
