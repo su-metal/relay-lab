@@ -29,7 +29,8 @@
   stroke-width: 1.8;
 }
 
-.mask {
+.mask,
+.textMask {
   fill: var(--panel);
   stroke: none;
 }
