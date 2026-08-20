@@ -324,19 +324,15 @@ export const computeNetStates = (
     const netId = nets.netOf.get(terminalKey(componentId, terminalId));
     return netId === undefined ? undefined : states.get(netId);
   };
-  const compatibleAcSource = (sourceId: string, min: number, max: number): boolean => {
+  const isAcSource = (sourceId: string): boolean => {
     const source = instanceById.get(sourceId);
     if (!source) return false;
     const sourceElectrical = definitions.get(source.definitionId)?.electrical;
-    return (
-      sourceElectrical?.kind === "power" &&
-      sourceElectrical.currentType === "AC" &&
-      sourceElectrical.voltage >= min &&
-      sourceElectrical.voltage <= max
-    );
+    return sourceElectrical?.kind === "power" && sourceElectrical.currentType === "AC";
   };
 
-  // AC-DC 電源は、L/N が同じ適合 AC 電源の両極へ届いたときだけ DC 出力を持つ。
+  // AC-DC 電源は、L/N が同じ AC 電源の両極へ届いたときだけ DC 出力を持つ。
+  // 入力電圧範囲は仕様情報として保持するが、既存要件どおり電圧不一致判定には使わない。
   for (const instance of document.components) {
     const electrical = definitions.get(instance.definitionId)?.electrical;
     if (electrical?.kind !== "ac-dc-power-supply") continue;
@@ -348,11 +344,11 @@ export const computeNetStates = (
     const powered = [...line.plusFrom].some(
       (sourceId) =>
         neutral.zeroFrom.has(sourceId) &&
-        compatibleAcSource(sourceId, electrical.inputVoltageMin, electrical.inputVoltageMax),
+        isAcSource(sourceId),
     ) || [...line.zeroFrom].some(
       (sourceId) =>
         neutral.plusFrom.has(sourceId) &&
-        compatibleAcSource(sourceId, electrical.inputVoltageMin, electrical.inputVoltageMax),
+        isAcSource(sourceId),
     );
     if (!powered) continue;
 

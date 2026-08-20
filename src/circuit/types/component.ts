@@ -444,8 +444,10 @@ export type ElectricalDefinition =
    */
   | {
       kind: "ac-dc-power-supply";
-      inputVoltageMin: number;
-      inputVoltageMax: number;
+      ratedInputVoltageMin: number;
+      ratedInputVoltageMax: number;
+      allowableInputVoltageMin: number;
+      allowableInputVoltageMax: number;
       lineTerminal: string;
       neutralTerminal: string;
       outputVoltage: number;

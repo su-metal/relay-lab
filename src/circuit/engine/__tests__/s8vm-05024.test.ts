@@ -39,8 +39,10 @@ describe("OMRON S8VM-05024", () => {
     expect(omronS8vm05024.verified).toBe(true);
     expect(omronS8vm05024.electrical).toMatchObject({
       kind: "ac-dc-power-supply",
-      inputVoltageMin: 100,
-      inputVoltageMax: 240,
+      ratedInputVoltageMin: 100,
+      ratedInputVoltageMax: 240,
+      allowableInputVoltageMin: 85,
+      allowableInputVoltageMax: 265,
       outputVoltage: 24,
       ratedOutputCurrent: 2.2,
       ratedPower: 50,
