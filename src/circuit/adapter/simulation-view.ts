@@ -12,10 +12,7 @@
 import {
   analogSignalNets,
   coilEnergized,
-  fadeMsOf,
-  fadeVoltsOf,
   isShorted,
-  channelVoltsOf,
   presetMsOf,
   reachesPlus,
   reachesZero,
@@ -30,7 +27,7 @@ import type {
   NetState,
   SimulationResult,
 } from "@/circuit/types";
-import { fadeKey, terminalKey } from "@/circuit/types";
+import { terminalKey } from "@/circuit/types";
 
 import { EMPTY_SELF_HOLD, type SelfHoldView } from "./self-hold";
 
@@ -405,33 +402,26 @@ export const buildSimulationView = (
       /*
        * **今この瞬間に出している電圧。目標値ではない**（design.md §5.18）。
        *
-       * フェード中は `result.fades` から導いた途中の電圧が入る。ここで
-       * `channelVolts`（目標）を読むと、**本体の数字だけが設定した瞬間に
-       * 飛び、繋がった配線と負荷だけが遅れて動く** —— 同じ 1 本の信号が
-       * 2 つの値で見えることになり、フェードしているのかどうかが読めない。
-       * フェードを持たない機器では今までどおり目標値そのもの。
+       * `result.analog.signalOf`（`terminalVoltsOf` はここから引いている）
+       * が、フェード中の途中電圧・通信で受けた目標値・DIRECT による
+       * 引き下げをすべて解決済みで持っている（`resolveAnalog()` へ渡す
+       * `effectiveVolts` がフェードを、`communicated` が操作卓の値を
+       * 織り込んでいる）。ここで `channelVoltsOf()`（インスタンスの手動
+       * 設定値）を読み直すと、**操作卓のフェーダーを動かしても本体の数字が
+       * 動かない**という食い違いになる —— 電気的な結果と表示が別の経路で
+       * 計算されてしまうため。信号線の電圧の読みと同じ 1 か所（`signalOf`）
+       * から引くことで、この 2 つを常に一致させる。
        */
       channelVolts:
         definition.electrical.kind === "analog-source"
-          ? definition.electrical.channels.map((channel) => {
-              const source = definition.electrical as Extract<
-                typeof definition.electrical,
-                { kind: "analog-source" }
-              >;
-              const state = result.fades.get(fadeKey(instance.id, channel.id));
-              return {
-                id: channel.id,
-                label: channel.label,
-                volts:
-                  source.fade && state
-                    ? fadeVoltsOf(
-                        state,
-                        fadeMsOf(source.fade, instance.fadeMs),
-                        nowMs,
-                      )
-                    : channelVoltsOf(source, channel.id, instance.channelVolts),
-              };
-            })
+          ? definition.electrical.channels.map((channel) => ({
+              id: channel.id,
+              label: channel.label,
+              volts:
+                terminalVoltsOf.get(
+                  terminalKey(instance.id, channel.signalTerminal),
+                ) ?? 0,
+            }))
           : undefined,
     });
   }

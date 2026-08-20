@@ -10,6 +10,10 @@
  *
  * 依存に `document` 全体ではなく `components` / `connections` を並べているのは、
  * **パンやズームで `viewport` が変わるたびに回路を解き直さないため。**
+ *
+ * `pressedSwitches` と並べて `operatedDevices` / `deviceLevels` も要る。
+ * 抜けていると、操作卓のボタンやフェーダーを動かしても `evaluate()` が
+ * 呼び直されず、ストアの値だけ更新されて画面が一切追従しなくなる。
  */
 
 import { useEffect } from "react";
@@ -22,10 +26,20 @@ export function useSimulationSync(): void {
   const connections = useCircuitStore((state) => state.document.connections);
   const running = useSimulationStore((state) => state.running);
   const pressedSwitches = useSimulationStore((state) => state.pressedSwitches);
+  const operatedDevices = useSimulationStore((state) => state.operatedDevices);
+  const deviceLevels = useSimulationStore((state) => state.deviceLevels);
   const evaluate = useSimulationStore((state) => state.evaluate);
 
   useEffect(() => {
     // `result` は依存に入れない。入れると評価 → 結果更新 → 再評価の無限ループになる
     evaluate();
-  }, [components, connections, running, pressedSwitches, evaluate]);
+  }, [
+    components,
+    connections,
+    running,
+    pressedSwitches,
+    operatedDevices,
+    deviceLevels,
+    evaluate,
+  ]);
 }
