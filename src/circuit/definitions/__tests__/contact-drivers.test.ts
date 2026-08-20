@@ -111,6 +111,9 @@ describe("US-AR カットリレーが明るさで動く", () => {
         wire("C1:3", "LC:IN3"),
         wire("C1:4", "LC:IN4"),
         wire("C1:21", "LC:ING"),
+        // ライトコントローラの内部回路自体は DC24V/GND で動く（design.md §5.17）
+        wire("PSD:plus", "LC:24V"),
+        wire("PSD:zero", "LC:GND"),
         wire("PSD:plus", "LC:CRG"),
         wire("LC:CR1", "L1:1"),
         wire("L1:2", "PSD:zero"),
@@ -163,6 +166,60 @@ describe("US-AR カットリレーが明るさで動く", () => {
   it("調光信号が未接続なら全灯扱いで動作しない", () => {
     const bare = circuit([["PSD", DC], ["LC", LIGHT_CTRL]], []);
     expect(conducts(step(bare), "LC:CRG", "LC:CR1")).toBe(false);
+  });
+
+  /**
+   * **DC24V/GND が来ていなければ、内部回路自体が死んでいる。** カットリレー
+   * にコイルは無いが、0–10V を読む回路は実機で電源が要る（design.md §5.17）。
+   * 動作点を割り込む電圧を送っていても、電源が繋がっていなければ未接続と
+   * 同じ扱いになり、接点は動作しない。
+   */
+  it("電源（24V/GND）が来ていなければ、明るさに関わらず接点は動作しない", () => {
+    const noPower = circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": 10 },
+        },
+        ["LC", LIGHT_CTRL],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:21", "LC:ING"),
+        wire("PSD:plus", "LC:CRG"),
+        // 24V/GND はあえて繋がない
+      ],
+    );
+    // 10V＝0% で、動作点（既定 25%）を大きく割り込んでいるが、電源が無い
+    expect(conducts(step(noPower), "LC:CRG", "LC:CR1")).toBe(false);
+  });
+
+  /** GND だけ繋いでも（一方だけでは）電源とみなさない */
+  it("電源が片側だけでは動作しない", () => {
+    const halfPower = circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": 10 },
+        },
+        ["LC", LIGHT_CTRL],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:21", "LC:ING"),
+        wire("PSD:plus", "LC:CRG"),
+        wire("PSD:zero", "LC:GND"),
+      ],
+    );
+    expect(conducts(step(halfPower), "LC:CRG", "LC:CR1")).toBe(false);
   });
 });
 

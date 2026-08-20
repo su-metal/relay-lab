@@ -360,6 +360,11 @@ const LIGHT_CONTROLLER_CHANNELS = 4;
  * **コイルを持たない。** カットリレーの接点はコイルではなくアナログ量で
  * 動く。実機に無いコイル端子を作って埋めない（CLAUDE.md 設計原則 6）。
  *
+ * **ただしコイルが無いだけで電源は要る。** 0–10V を読んでカットリレーを
+ * 駆動する内部回路は実機で DC24V/GND から給電されている。`relay.power` に
+ * この 2 端子を持たせてあるので、繋がっていなければ調光信号が来ていても
+ * 未接続と同じに扱われる（design.md §5.17）。
+ *
  * 動作点は実機の CUT ADJ.（回路ごとのつまみ）にあたり、インスタンスの
  * `triggerPercents` が持つ。4 回路それぞれ別の動作点に設定できる。
  */
@@ -462,6 +467,9 @@ export const lightController4ch: ComponentDefinition = {
     kind: "relay",
     relay: {
       // **コイルは持たない。** 接点はアナログ量で動く（design.md §4.16）
+      // だが 0–10V を読む内部回路は DC24V/GND で動く。未給電なら
+      // analogInputs は未接続と同じ扱いになる（design.md §5.17）
+      power: { positiveTerminal: "24V", negativeTerminal: "GND" },
       analogInputs: Array.from(
         { length: LIGHT_CONTROLLER_CHANNELS },
         (_, i) => ({

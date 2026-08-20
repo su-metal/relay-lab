@@ -118,6 +118,23 @@ export type RelayDefinition = {
   operations?: readonly DeviceOperation[];
   /** 接点を動かすために受ける調光入力。`AnalogTrigger.inputId` から参照する */
   analogInputs?: readonly AnalogInputChannel[];
+  /**
+   * `analogInputs` を読む内部回路が要る外部電源。**省略可能。**
+   *
+   * カットリレーはコイルを持たないが、0–10V を読んでカットリレーを駆動する
+   * 内部回路自体は実機で DC 電源が要る。ここが `polarityAcross()` で
+   * 電位差なし（`"none"`）と判定される間、`analogInputs` は信号の有無に
+   * かかわらず未接続時のレベルとして扱われる（design.md §5.17）。
+   *
+   * **`coil` とは別物。** 極性の向きや逆接の可否までは判定しない —— 実機の
+   * 内部回路がどこまで保護されているかのデータが無いので、`polarity` は
+   * 持たせず「電位差があるか」だけを見る（CLAUDE.md 設計原則 6 と同じ、
+   * 無いものは検査しない考え方）。
+   */
+  power?: {
+    positiveTerminal: string;
+    negativeTerminal: string;
+  };
   contacts: RelayContact[];
 };
 

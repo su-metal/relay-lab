@@ -36,9 +36,12 @@ import type {
   DimmerSettings,
   ElectricalDefinition,
   AnalogCurve,
+  NetState,
+  RelayDefinition,
 } from "@/circuit/types";
 import type { CommunicatedLevels } from "./communication";
 import { EMPTY_COMMUNICATED_LEVELS } from "./communication";
+import { polarityAcross } from "./potential";
 import {
   analogInputKey,
   EMPTY_ANALOG_RESULT,
@@ -203,6 +206,36 @@ const strongerOf = (a: AnalogSignal, b: AnalogSignal): AnalogSignal =>
   b.volts < a.volts ? b : a;
 
 /**
+ * `RelayDefinition.power` が届いているか（design.md §5.17）。
+ *
+ * `power` を持たない機器（大半のリレー・操作卓のボタンなど）は常に `true` ——
+ * 外部電源を検査する対象が無いので、従来どおり信号の有無だけで決まる。
+ *
+ * 判定は `evaluateCoil()` の極性判定とまったく同じ `polarityAcross()`。
+ * ただし向きは問わない —— **ここで見たいのは「電源が来ているか」だけ**で、
+ * 逆接で壊れるかどうかまでは実機のデータが無いので判定しない
+ * （`RelayDefinition.power` の JSDoc と同じ理由）。
+ */
+const relayPowered = (
+  relay: RelayDefinition,
+  componentId: string,
+  netOf: ReadonlyMap<string, number>,
+  netState: ReadonlyMap<number, NetState>,
+): boolean => {
+  if (!relay.power) return true;
+  const stateOfTerminal = (terminalId: string): NetState | undefined => {
+    const net = netOf.get(terminalKey(componentId, terminalId));
+    return net === undefined ? undefined : netState.get(net);
+  };
+  return (
+    polarityAcross(
+      stateOfTerminal(relay.power.positiveTerminal),
+      stateOfTerminal(relay.power.negativeTerminal),
+    ) !== "none"
+  );
+};
+
+/**
  * 回路中の調光出力を、信号ネットごとの電圧に畳む。
  *
  * **チャンネルごとに別の信号として畳む。** 実機の調光コントローラは
@@ -304,7 +337,14 @@ type AnalogInput = {
 /**
  * 入力段 1 個の解。
  *
- * 判定の順は「信号が来ているか」→「基準が共通か」→「レベル」。
+ * 判定の順は「電源が来ているか」→「信号が来ているか」→「基準が共通か」→
+ * 「レベル」。
+ *
+ * **電源が来ていなければ、信号があっても読めない**（`RelayDefinition.power`・
+ * design.md §5.17）。カットリレーのように内部回路が DC 電源で動く機器は、
+ * その電源が届いていない間は入力段自体が死んでいるので未接続と同じに扱う。
+ * 電源を持たない機器（`powered` 省略時＝常に `true`）はここを素通りし、
+ * 従来どおり信号の有無だけで決まる。
  *
  * **基準が共通でない信号は成立しない**（design.md §5.3 の
  * `supplyMismatch` とまったく同じ話）。0–10V は基準に対する電圧なので、
@@ -318,6 +358,7 @@ const inputLevel = (
   componentId: string,
   netOf: ReadonlyMap<string, number>,
   signals: ReadonlyMap<number, AnalogSignal>,
+  powered = true,
 ): DimmingLevel => {
   const curve = effectiveCurve(input.curve, settings);
   const at = (volts: number, floating: boolean, referenceMismatch: boolean) => ({
@@ -327,6 +368,8 @@ const inputLevel = (
     referenceMismatch,
     cutOff: false,
   });
+
+  if (!powered) return at(input.unconnectedVolts, true, false);
 
   const signalNet = netOf.get(terminalKey(componentId, input.signalTerminal));
   const commonNet = netOf.get(terminalKey(componentId, input.commonTerminal));
@@ -389,6 +432,15 @@ export const resolveAnalog = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   netOf: ReadonlyMap<string, number>,
+  /**
+   * ネット ID → 電位状態（design.md §5.3）。`RelayDefinition.power` が
+   * 外部電源を要求する機器かどうかを見るためだけに使う ——
+   * アナログ量そのものはここに触れず、今まで通り第 2 パスのまま重ねる。
+   *
+   * **省略できる。** `power` を持つ機器が無い回路では参照されないので、
+   * 空の Map のままで壊れない。
+   */
+  netState: ReadonlyMap<number, NetState> = new Map(),
   /**
    * フェードで動いている途中の出力電圧（`fadeKey()` → V・design.md §5.18）。
    *
@@ -466,12 +518,20 @@ export const resolveAnalog = (
    * **`levelOf` には入れない。** カットリレーは自分が点るわけでも暗くなる
    * わけでもなく、受けた明るさで接点を動かすだけ。混ぜると部品一覧に
    * 「明るさ」の無い機器の明るさが並ぶ。
+   *
+   * **`power` が届いていなければ、信号が来ていても未接続として扱う。**
+   * 内部回路自体が DC 電源で動く機器（ライトコントローラ等）は、電源が
+   * 無ければ 0–10V を読む回路そのものが死んでいる（design.md §5.17）。
    */
   const inputLevels = new Map<string, DimmingLevel>();
   for (const { instance, definition } of placed) {
     const { electrical } = definition;
     if (electrical.kind !== "relay") continue;
-    for (const input of electrical.relay.analogInputs ?? []) {
+    const inputs = electrical.relay.analogInputs;
+    if (!inputs || inputs.length === 0) continue;
+
+    const powered = relayPowered(electrical.relay, instance.id, netOf, netState);
+    for (const input of inputs) {
       inputLevels.set(
         analogInputKey(instance.id, input.id),
         inputLevel(
@@ -480,6 +540,7 @@ export const resolveAnalog = (
           instance.id,
           netOf,
           signals,
+          powered,
         ),
       );
     }

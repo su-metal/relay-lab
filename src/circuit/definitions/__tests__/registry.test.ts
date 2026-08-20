@@ -193,6 +193,13 @@ describe("部品定義レジストリ", () => {
                         ...(electrical.relay.analogInputs ?? []).flatMap(
                           (input) => [input.signalTerminal, input.commonTerminal],
                         ),
+                        // アナログ入力を読む内部回路の電源（§5.17）
+                        ...(electrical.relay.power
+                          ? [
+                              electrical.relay.power.positiveTerminal,
+                              electrical.relay.power.negativeTerminal,
+                            ]
+                          : []),
                         // NC 端子は a 接点のみのリレーには存在しない。
                         // 未定義を混ぜると「実在しない端子を参照している」判定になる
                         ...electrical.relay.contacts.flatMap((c) =>
