@@ -16,10 +16,11 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("24 定義が登録されている", () => {
+  it("25 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
+      "omron-s8vm-05024",
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
       "switch-selector-no",
@@ -43,7 +44,7 @@ describe("部品定義レジストリ", () => {
       "diode-generic",
       "terminal-block-6p",
     ]);
-    expect(componentRegistry.size).toBe(24);
+    expect(componentRegistry.size).toBe(25);
   });
 
   it("型番から定義を取得できる", () => {
@@ -106,7 +107,7 @@ describe("部品定義レジストリ", () => {
       "light-controller-4ch",
       "dimming-console",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(24);
+    expect(listComponentDefinitions()).toHaveLength(25);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -116,19 +117,17 @@ describe("部品定義レジストリ", () => {
   });
 
   /**
-   * 実端子番号を持たない汎用部品は検証対象そのものが存在しないので、
+   * 実型番を持たない汎用部品は検証対象そのものが存在しないので、
    * 検証済みを名乗ってはいけない（design.md §4.4 / §4.5）。
    *
-   * 逆向き（実端子番号を持つ ⇒ `verified: true`）は**主張しない**。
-   * 新しい型番は `verified: false` から始めるのが正しい手順で、
-   * そこを縛ると未検証の型番を足せなくなる（CLAUDE.md 設計原則 5）。
+   * `number` の有無では判定しない。S8VM の L/N/FG/-V/+V のように、
+   * 実機の端子表示が番号ではなく記号の製品もあるため。
+   * 逆向き（実型番 ⇒ `verified: true`）も主張しない。新しい型番は
+   * 公式資料と照合するまで false のままでよい（CLAUDE.md 設計原則 5）。
    */
-  it("実端子番号を持たない定義は検証済みを名乗らない", () => {
+  it("実型番を持たない汎用部品は検証済みを名乗らない", () => {
     for (const definition of componentDefinitions) {
-      const hasRealNumbers = definition.terminals.some(
-        (t) => t.number !== undefined,
-      );
-      if (hasRealNumbers) continue;
+      if (definition.manufacturer) continue;
       expect(definition.verified, definition.id).toBe(false);
     }
   });
@@ -147,6 +146,13 @@ describe("部品定義レジストリ", () => {
       const referenced: string[] =
         electrical.kind === "power"
           ? [electrical.positiveTerminal, electrical.zeroTerminal]
+          : electrical.kind === "ac-dc-power-supply"
+            ? [
+                electrical.lineTerminal,
+                electrical.neutralTerminal,
+                electrical.positiveTerminal,
+                electrical.zeroTerminal,
+              ]
           : electrical.kind === "switch"
             ? [electrical.terminalA, electrical.terminalB]
             : electrical.kind === "lamp"

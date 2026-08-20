@@ -432,6 +432,7 @@ export const openPairs = (
       );
     case "terminal":
     case "power":
+    case "ac-dc-power-supply":
     case "lamp":
     case "diode":
     case "analog-source":

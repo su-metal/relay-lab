@@ -30,6 +30,7 @@ describe("部品検索", () => {
 
   it("メーカー名で引ける", () => {
     expect(ids("omron")).toEqual([
+      "omron-s8vm-05024",
       "omron-my2n-dc24",
       "omron-my4n-dc24",
       "omron-my4n-d2-dc24",
