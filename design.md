@@ -140,6 +140,7 @@ src/
         g7l-series.ts            # G7L シリーズ共通の端子生成（§4.8）
         g7l-1a-b-dc24.ts
         g7l-2a-b-dc24.ts
+        s8vm-05024.ts           # AC-DC スイッチング電源（§4.18）
       power.ts
       switches.ts                # 押しボタン／切替スイッチ 4 種（§4.5・§4.7）
       timers.ts                  # 汎用タイマー 2 種（オンディレイ／オフディレイ・§4.10）
@@ -319,6 +320,12 @@ type ComponentDefinitionRegistry = ReadonlyMap<string, ComponentDefinition>
 type ElectricalDefinition =
   | { kind: "power";  voltage: number; currentType: "DC" | "AC";
       positiveTerminal: string; zeroTerminal: string }
+  | { kind: "ac-dc-power-supply";             // 入力成立時だけ絶縁 DC 出力を生成（§4.18・§5.20）
+      ratedInputVoltageMin: number; ratedInputVoltageMax: number;
+      allowableInputVoltageMin: number; allowableInputVoltageMax: number;
+      lineTerminal: string; neutralTerminal: string;
+      outputVoltage: number; positiveTerminal: string; zeroTerminal: string;
+      ratedOutputCurrent?: number; ratedPower?: number }
   | { kind: "relay";  relay: RelayDefinition }
   | { kind: "switch"; contactType: "NO" | "NC"; action: "momentary" | "maintained";
       terminalA: string; terminalB: string }
@@ -333,7 +340,7 @@ type ElectricalDefinition =
       fade?: FadeSpec }                         // 持つものがフェードする（§5.18）
 ```
 
-**`kind` を増やすのは最後の手段。** タイマーは `relay` の `delay`、調光ランプは `lamp` の `dimming`、フェードする調光出力は `analog-source` の `fade` で表しており、どれも `kind` を増やしていない（CLAUDE.md 設計原則 7）。`analog-source` だけが増えたのは、既存のどれにも寄せられなかったから —— 電位を配る `power` でも、電位差を受ける `lamp` でもなく、**基準に対する電圧値を出す**という別の振る舞いだった。
+**`kind` を増やすのは最後の手段。** タイマーは `relay` の `delay`、調光ランプは `lamp` の `dimming`、フェードする調光出力は `analog-source` の `fade` で表しており、既存の振る舞いの設定差では `kind` を増やさない（CLAUDE.md 設計原則 2・7）。一方、`analog-source` は**基準に対する電圧値を出す**、`ac-dc-power-supply` は**入力側と絶縁した別の電源電位を条件付きで生成する**という既存 kind では表せない物理的な振る舞いなので、型番非依存の kind として追加する。
 
 ```ts
 // フェードの設定範囲（§5.18）。形は TimerDelay の設定時間 3 点とそろえてある
