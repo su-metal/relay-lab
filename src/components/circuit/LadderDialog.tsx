@@ -10,13 +10,15 @@
  *
  * 変換も文面もここには書かない（`adapter/ladder.ts` が持つ）。
  * 表示だけを受け持つ —— `WarningList` / `PathPreviewList` と同じ約束。
+ * 画像で保存する絵も同じで、描くのは `adapter/ladder-svg.ts`、ダウンロード
+ * 操作は `ladder-image.ts`。ここは押す場所と失敗の断りだけを持つ。
  *
  * **端子番号を落とさない。** 接点の下に必ず実端子番号（`9-5`）を添える。
  * 番号を落とすと一般的なラダー図と変わらなくなり、キャンバスの配線と
  * 照らせなくなる。
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { buildLadder, rungText } from "@/circuit/adapter/ladder";
@@ -24,6 +26,7 @@ import type { LadderContact, LadderExpr, LadderOutput } from "@/circuit/adapter/
 import { componentRegistry } from "@/circuit/definitions";
 import { useCircuitStore } from "@/store/circuitStore";
 
+import { saveLadderPng, saveLadderSvg } from "./ladder-image";
 import styles from "./LadderDialog.module.css";
 
 export type LadderDialogProps = {
@@ -46,6 +49,40 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
     if (!open) return { rungs: [], notes: [] };
     return buildLadder(useCircuitStore.getState().document, componentRegistry);
   }, [open, components, connections]);
+
+  /**
+   * 画像で保存できなかったときの断り（design.md §8.15）。
+   *
+   * PNG は `<img>` と `<canvas>` を通るので落ちうる。**押しても何も
+   * 起きないのが一番困る**ので、失敗はここに出す。
+   */
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  /*
+   * 画像に焼いた図は**そのときの配線のスナップショット**で、以後の配線変更に
+   * 追随しない（CLAUDE.md 設計原則 10）。図の右上に生成日時を入れるのは
+   * そのためで、日時は `renderLadderSvg` ではなくここで読む（設計原則 1）
+   */
+  const handleSaveSvg = useCallback(() => {
+    setSaveError(null);
+    saveLadderSvg(ladder);
+  }, [ladder]);
+
+  const handleSavePng = useCallback(() => {
+    setSaveError(null);
+    void saveLadderPng(ladder).then((saved) => {
+      if (!saved) {
+        setSaveError(
+          "PNG を作れませんでした。SVG で保存すると同じ図を書き出せます。",
+        );
+      }
+    });
+  }, [ladder]);
+
+  // 開き直したら前回の失敗は消す（別の回路の話になっている）
+  useEffect(() => {
+    if (!open) setSaveError(null);
+  }, [open]);
 
   /** `HelpDialog` と同じ開き方。モーダルでないと背後の回路を触れてしまう */
   useEffect(() => {
@@ -79,6 +116,33 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
         <h2 id="ladder-dialog-title" className={styles.title}>
           ラダー図
         </h2>
+        {/*
+          画像で保存（design.md §8.15）。**画面を写し取るのではなく
+          `adapter/ladder-svg.ts` が図を描き直す**ので、横にはみ出した段も
+          スクロールせずに 1 枚へ収まる。
+
+          段が 1 本も無いときは絵にする中身が無いので押せない
+        */}
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={styles.save}
+            onClick={handleSavePng}
+            disabled={ladder.rungs.length === 0}
+            title="いまのラダー図を PNG 画像として保存します（資料に貼る用）"
+          >
+            PNG で保存
+          </button>
+          <button
+            type="button"
+            className={styles.save}
+            onClick={handleSaveSvg}
+            disabled={ladder.rungs.length === 0}
+            title="いまのラダー図を SVG（ベクタ）として保存します（拡大しても崩れません）"
+          >
+            SVG で保存
+          </button>
+        </div>
         <button
           type="button"
           className={styles.close}
@@ -99,6 +163,12 @@ export function LadderDialog({ open, onClose }: LadderDialogProps) {
           */}
           この図は読むためのもので、ここを編集しても配線は変わりません。
         </p>
+
+        {saveError && (
+          <p className={styles.saveError} role="alert">
+            {saveError}
+          </p>
+        )}
 
         {ladder.rungs.length === 0 ? (
           <p className={styles.empty}>
