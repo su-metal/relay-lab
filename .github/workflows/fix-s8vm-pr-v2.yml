@@ -21,7 +21,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply repair
-        run: python .github/scripts/repair_s8vm.py
+        run: |
+          python .github/scripts/repair_s8vm.py
+          python .github/scripts/repair_s8vm_test.py
       - name: Typecheck
         run: npm run typecheck
       - name: Test
@@ -32,7 +34,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/scripts/repair_s8vm.py
+          git rm .github/scripts/repair_s8vm.py .github/scripts/repair_s8vm_test.py
           git rm .github/workflows/fix-s8vm-integration.yml .github/workflows/fix-s8vm-pr.yml .github/workflows/fix-s8vm-pr-v2.yml .github/workflows/fix-s8vm-push-v3.yml
           git add -A
           git commit -m "S8VM-05024 の仕様整合と統合を修正"
