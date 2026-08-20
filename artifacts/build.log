@@ -3,7 +3,7 @@
 > next build
 
 ▲ Next.js 16.3.0 (Turbopack)
-✓ Running next.config.ts took 26ms
+✓ Running next.config.ts took 23ms
 ⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
 Attention: Next.js now collects completely anonymous telemetry regarding usage.
 This information is used to shape Next.js' roadmap and prioritize features.
@@ -12,18 +12,64 @@ https://nextjs.org/telemetry
 
 
   Creating an optimized production build ...
-✓ Compiled successfully in 4.6s
-  Running TypeScript ...
-  Finished TypeScript in 5.1s ...
-  Collecting page data using 3 workers ...
-  Generating static pages using 3 workers (0/3) ...
-✓ Generating static pages using 3 workers (3/3) in 214ms
-  Finalizing page optimization ...
 
-Route (app)
-┌ ○ /
-└ ○ /_not-found
+> Build error occurred
+Error: Turbopack build failed with 2 errors:
+./src/components/circuit/LadderDialog.tsx:35:1
+Error: Export SharedLadderView doesn't exist in target module
+  [90m33 |[0m
+  [90m34 |[0m [36mimport[0m styles [36mfrom[0m [32m"./LadderDialog.module.css"[0m;
+[31m[1m>[0m [90m35 |[0m [36mimport[0m { [33mSharedLadderView[0m } [36mfrom[0m [32m"./SharedLadderView"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m36 |[0m
+  [90m37 |[0m [36mexport[0m [36mtype[0m [33mLadderDialogProps[0m = {
+  [90m38 |[0m   open: boolean;
+
+The export SharedLadderView was not found in module [project]/src/components/circuit/SharedLadderView.tsx [app-client] (ecmascript).
+The module has no exports at all.
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/components/circuit/LadderDialog.tsx [Client Component Browser]
+    ./src/components/circuit/CircuitWorkspace.tsx [Client Component Browser]
+    ./src/components/circuit/CircuitWorkspace.tsx [Server Component]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/circuit/LadderDialog.tsx [Client Component SSR]
+    ./src/components/circuit/CircuitWorkspace.tsx [Client Component SSR]
+    ./src/components/circuit/CircuitWorkspace.tsx [Server Component]
+    ./src/app/page.tsx [Server Component]
 
 
-○  (Static)  prerendered as static content
+./src/components/circuit/LadderDialog.tsx:35:1
+Error: Export SharedLadderView doesn't exist in target module
+  [90m33 |[0m
+  [90m34 |[0m [36mimport[0m styles [36mfrom[0m [32m"./LadderDialog.module.css"[0m;
+[31m[1m>[0m [90m35 |[0m [36mimport[0m { [33mSharedLadderView[0m } [36mfrom[0m [32m"./SharedLadderView"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m36 |[0m
+  [90m37 |[0m [36mexport[0m [36mtype[0m [33mLadderDialogProps[0m = {
+  [90m38 |[0m   open: boolean;
 
+The export SharedLadderView was not found in module [project]/src/components/circuit/SharedLadderView.tsx [app-ssr] (ecmascript).
+The module has no exports at all.
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./src/components/circuit/LadderDialog.tsx [Client Component Browser]
+    ./src/components/circuit/CircuitWorkspace.tsx [Client Component Browser]
+    ./src/components/circuit/CircuitWorkspace.tsx [Server Component]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/circuit/LadderDialog.tsx [Client Component SSR]
+    ./src/components/circuit/CircuitWorkspace.tsx [Client Component SSR]
+    ./src/components/circuit/CircuitWorkspace.tsx [Server Component]
+    ./src/app/page.tsx [Server Component]
+
+
+    at <unknown> (./src/components/circuit/LadderDialog.tsx:35:1)
+    at <unknown> (./src/components/circuit/LadderDialog.tsx:35:1)

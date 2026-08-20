@@ -2,3 +2,4 @@
 > relay-lab@0.1.0 typecheck
 > tsc --noEmit
 
+src/components/circuit/LadderDialog.tsx(35,10): error TS2305: Module '"./SharedLadderView"' has no exported member 'SharedLadderView'.
