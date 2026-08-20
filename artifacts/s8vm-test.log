@@ -1,0 +1,212 @@
+
+> relay-lab@0.1.0 test
+> vitest run
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/runner/work/relay-lab/relay-lab[39m
+
+ [32m✓[39m src/circuit/adapter/__tests__/wire-lane.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/store/__tests__/circuitStore.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/load-path.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 63[2mms[22m[39m
+ [31m❯[39m src/circuit/definitions/__tests__/registry.test.ts [2m([22m[2m30 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[32m 39[2mms[22m[39m
+[31m   [31m×[31m 部品定義レジストリ[2m > [22m24 定義が登録されている[39m[32m 18[2mms[22m[39m
+[31m     → expected [ Array(25) ] to deeply equal [ Array(24) ][39m
+   [32m✓[39m 部品定義レジストリ[2m > [22m型番から定義を取得できる[32m 1[2mms[22m[39m
+   [32m✓[39m 部品定義レジストリ[2m > [22m定義 ID から取得でき、未知の ID は例外になる[32m 1[2mms[22m[39m
+[31m   [31m×[31m 部品定義レジストリ[2m > [22mカテゴリで絞り込める[39m[32m 5[2mms[22m[39m
+[31m     → expected [ { id: 'power-dc24v', …(7) }, …(24) ] to have a length of 24 but got 25[39m
+   [32m✓[39m 部品定義レジストリ[2m > [22m全定義が端子データの出典を持つ[32m 1[2mms[22m[39m
+[31m   [31m×[31m 部品定義レジストリ[2m > [22m実端子番号を持たない定義は検証済みを名乗らない[39m[32m 1[2mms[22m[39m
+[31m     → omron-s8vm-05024: expected true to be false // Object.is equality[39m
+   [32m✓[39m 部品定義レジストリ[2m > [22m部品ごとに端子 ID が重複しない[32m 1[2mms[22m[39m
+[31m   [31m×[31m 部品定義レジストリ[2m > [22m電気的定義が参照する端子が実在する[39m[32m 1[2mms[22m[39m
+[31m     → Cannot read properties of undefined (reading 'coil')[39m
+   [32m✓[39m OMRON MY4N DC24V の端子データ（design.md §4.1）[2m > [22m端子番号が 1〜14 で欠番も重複もない[32m 1[2mms[22m[39m
+   [32m✓[39m OMRON MY4N DC24V の端子データ（design.md §4.1）[2m > [22mコイルは 14 が (+)、13 が (−) で、極性は none[32m 1[2mms[22m[39m
+   [32m✓[39m OMRON MY4N DC24V の端子データ（design.md §4.1）[2m > [22m4 接点の NC / NO / COM が §4.1 の表と一致する[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY4N DC24V の端子データ（design.md §4.1）[2m > [22m接点の各端子が contactGroup で束ねられている[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY4N DC24V の端子データ（design.md §4.1）[2m > [22m実端子番号は公式データシートで検証済み[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY2N DC24V の端子データ（design.md §4.2）[2m > [22m端子番号が 1・4・5・8・9・12・13・14 の飛び番のまま[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY2N DC24V の端子データ（design.md §4.2）[2m > [22m2 接点の NC / NO / COM が §4.2 の表と一致する[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY2N DC24V の端子データ（design.md §4.2）[2m > [22mコイルは MY4N と同じ 14 = (+) / 13 = (−) で極性は none[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY2N DC24V の端子データ（design.md §4.2）[2m > [22m接点の説明は回路番号（第1・第2）で振られる[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）[2m > [22m端子構成は MY4N と完全に同一[32m 1[2mms[22m[39m
+   [32m✓[39m OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）[2m > [22mMY4N との差はコイルの極性だけ[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON MY4N-D2 DC24V の端子データ（design.md §4.3）[2m > [22mコイル端子の説明にダイオード内蔵を明記する[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22m2 極形の端子番号が 0・1・2・4・6・8 で並ぶ[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22m1 極形の端子番号は 0・1・4・6 の飛び番のまま（2 と 8 が欠番）[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22m接点は a 接点のみで、NC 端子を持たない[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22mコイルは 0・1 で極性を持たず、端子の役割も +/− を名乗らない[32m 1[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22m接点端子はどちらも a 接点として扱い、COM を名乗らない[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22m1 極形と 2 極形の差は接点行だけ[32m 0[2mms[22m[39m
+   [32m✓[39m OMRON G7L-□A-B DC24V の端子データ（design.md §4.8）[2m > [22m実端子番号は公式カタログで検証済み[32m 1[2mms[22m[39m
+   [32m✓[39m 汎用部品の追加（design.md §4.5）[2m > [22mダイオードはアノード / カソードを持ち、実端子番号を持たない[32m 0[2mms[22m[39m
+   [32m✓[39m 汎用部品の追加（design.md §4.5）[2m > [22mスイッチ 4 種は端子構成が同一で、接点種別と動作だけが違う（§4.7）[32m 1[2mms[22m[39m
+   [32m✓[39m 汎用部品の追加（design.md §4.5）[2m > [22m端子台は全端子を `electrical.terminals` に列挙する[32m 0[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/fade.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/analog.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/scenarios.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/lighting-system.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/timer.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/circuit/persistence/__tests__/document-storage.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/preview.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/self-hold.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/contact-drivers.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/contactor-scenarios.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/ladder.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/current-flow.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/reactflow.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/path-preview.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/align.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/simulation-view.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/step7-scenarios.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/components/circuit/__tests__/place-component.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/inspection.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/wire-role.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/g7l-scenarios.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/communication.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/wiring.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/auto-layout.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/diode.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/chatter.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/selection.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/store/__tests__/simulationStore.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/circuit/persistence/__tests__/trigger-percents.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/circuit/persistence/__tests__/document-file.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/switch-scenarios.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/terminal-connections.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/shortcuts.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/relay.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/s8vm-05024.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [31m❯[39m src/lib/__tests__/component-search.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 20[2mms[22m[39m
+   [32m✓[39m 部品検索[2m > [22m空のクエリは全件を返す[32m 2[2mms[22m[39m
+   [32m✓[39m 部品検索[2m > [22m型番の一部で引ける（大文字小文字を問わない）[32m 1[2mms[22m[39m
+[31m   [31m×[31m 部品検索[2m > [22mメーカー名で引ける[39m[32m 12[2mms[22m[39m
+[31m     → expected [ 'omron-s8vm-05024', …(5) ] to deeply equal [ 'omron-my2n-dc24', …(4) ][39m
+   [32m✓[39m 部品検索[2m > [22m型番の系列で絞れる[32m 1[2mms[22m[39m
+   [32m✓[39m 部品検索[2m > [22mカテゴリの日本語表示で引ける[32m 1[2mms[22m[39m
+   [32m✓[39m 部品検索[2m > [22m空白区切りの語は AND で絞り込む[32m 0[2mms[22m[39m
+   [32m✓[39m 部品検索[2m > [22m全角で確定した入力でも当たる（IME 対策）[32m 0[2mms[22m[39m
+   [32m✓[39m 部品検索[2m > [22m一致しなければ空を返す[32m 0[2mms[22m[39m
+ [32m✓[39m src/__tests__/setup.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/lib/__tests__/component-search.test.ts[2m > [22m部品検索[2m > [22mメーカー名で引ける
+[31m[1mAssertionError[22m: expected [ 'omron-s8vm-05024', …(5) ] to deeply equal [ 'omron-my2n-dc24', …(4) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -1,6 +1,7 @@[39m
+[2m  [[22m
+[31m+   "omron-s8vm-05024",[39m
+[2m    "omron-my2n-dc24",[22m
+[2m    "omron-my4n-dc24",[22m
+[2m    "omron-my4n-d2-dc24",[22m
+[2m    "omron-g7l-1a-b-dc24",[22m
+[2m    "omron-g7l-2a-b-dc24",[22m
+
+[36m [2m❯[22m src/lib/__tests__/component-search.test.ts:[2m32:26[22m[39m
+    [90m 30| [39m
+    [90m 31| [39m  [34mit[39m([32m"メーカー名で引ける"[39m[33m,[39m () [33m=>[39m {
+    [90m 32| [39m    [34mexpect[39m([34mids[39m([32m"omron"[39m))[33m.[39m[34mtoEqual[39m([
+    [90m   | [39m                         [31m^[39m
+    [90m 33| [39m      [32m"omron-my2n-dc24"[39m[33m,[39m
+    [90m 34| [39m      [32m"omron-my4n-dc24"[39m[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/circuit/definitions/__tests__/registry.test.ts[2m > [22m部品定義レジストリ[2m > [22m24 定義が登録されている
+[31m[1mAssertionError[22m: expected [ Array(25) ] to deeply equal [ Array(24) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -1,8 +1,9 @@[39m
+[2m  [[22m
+[2m    "power-dc24v",[22m
+[2m    "power-ac100v",[22m
+[31m+   "omron-s8vm-05024",[39m
+[2m    "switch-pushbutton-no",[22m
+[2m    "switch-pushbutton-nc",[22m
+[2m    "switch-selector-no",[22m
+[2m    "switch-selector-nc",[22m
+[2m    "omron-my2n-dc24",[22m
+
+[36m [2m❯[22m src/circuit/definitions/__tests__/registry.test.ts:[2m20:51[22m[39m
+    [90m 18| [39m[34mdescribe[39m([32m"部品定義レジストリ"[39m[33m,[39m () [33m=>[39m {
+    [90m 19| [39m  [34mit[39m([32m"24 定義が登録されている"[39m[33m,[39m () [33m=>[39m {
+    [90m 20| [39m    [34mexpect[39m(componentDefinitions[33m.[39m[34mmap[39m((d) [33m=>[39m d[33m.[39mid))[33m.[39m[34mtoEqual[39m([
+    [90m   | [39m                                                  [31m^[39m
+    [90m 21| [39m      [32m"power-dc24v"[39m[33m,[39m
+    [90m 22| [39m      [32m"power-ac100v"[39m[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/circuit/definitions/__tests__/registry.test.ts[2m > [22m部品定義レジストリ[2m > [22mカテゴリで絞り込める
+[31m[1mAssertionError[22m: expected [ { id: 'power-dc24v', …(7) }, …(24) ] to have a length of 24 but got 25[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 24[39m
+[31m+ 25[39m
+
+[36m [2m❯[22m src/circuit/definitions/__tests__/registry.test.ts:[2m109:40[22m[39m
+    [90m107| [39m      [32m"dimming-console"[39m[33m,[39m
+    [90m108| [39m    ])[33m;[39m
+    [90m109| [39m    [34mexpect[39m([34mlistComponentDefinitions[39m())[33m.[39m[34mtoHaveLength[39m([34m24[39m)[33m;[39m
+    [90m   | [39m                                       [31m^[39m
+    [90m110| [39m  })[33m;[39m
+    [90m111| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/circuit/definitions/__tests__/registry.test.ts[2m > [22m部品定義レジストリ[2m > [22m実端子番号を持たない定義は検証済みを名乗らない
+[31m[1mAssertionError[22m: omron-s8vm-05024: expected true to be false // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+[36m [2m❯[22m src/circuit/definitions/__tests__/registry.test.ts:[2m132:50[22m[39m
+    [90m130| [39m      )[33m;[39m
+    [90m131| [39m      [35mif[39m (hasRealNumbers) [35mcontinue[39m[33m;[39m
+    [90m132| [39m      [34mexpect[39m(definition[33m.[39mverified[33m,[39m definition[33m.[39mid)[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m   | [39m                                                 [31m^[39m
+    [90m133| [39m    }
+    [90m134| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/circuit/definitions/__tests__/registry.test.ts[2m > [22m部品定義レジストリ[2m > [22m電気的定義が参照する端子が実在する
+[31m[1mTypeError[22m: Cannot read properties of undefined (reading 'coil')[39m
+[36m [2m❯[22m src/circuit/definitions/__tests__/registry.test.ts:[2m184:46[22m[39m
+    [90m182| [39m                      [33m:[39m [
+    [90m183| [39m                        [90m// コイルの無い機器（カットリレー・操作卓）もある（§4.16）[39m
+    [90m184| [39m                        [33m...[39m(electrical[33m.[39mrelay[33m.[39mcoil
+    [90m   | [39m                                             [31m^[39m
+    [90m185| [39m                          [33m?[39m [
+    [90m186| [39m                              electrical[33m.[39mrelay[33m.[39mcoil[33m.[39mpositiveTerminal[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m39 passed[39m[22m[90m (41)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m585 passed[39m[22m[90m (590)[39m
+[2m   Start at [22m 01:40:45
+[2m   Duration [22m 6.88s[2m (transform 1.59s, setup 0ms, collect 5.80s, tests 963ms, environment 14ms, prepare 5.20s)[22m
+
+
+::error file=/home/runner/work/relay-lab/relay-lab/src/lib/__tests__/component-search.test.ts,title=src/lib/__tests__/component-search.test.ts > 部品検索 > メーカー名で引ける,line=32,column=26::AssertionError: expected [ 'omron-s8vm-05024', …(5) ] to deeply equal [ 'omron-my2n-dc24', …(4) ]%0A%0A- Expected%0A+ Received%0A%0A@@ -1,6 +1,7 @@%0A  [%0A+   "omron-s8vm-05024",%0A    "omron-my2n-dc24",%0A    "omron-my4n-dc24",%0A    "omron-my4n-d2-dc24",%0A    "omron-g7l-1a-b-dc24",%0A    "omron-g7l-2a-b-dc24",%0A%0A ❯ src/lib/__tests__/component-search.test.ts:32:26%0A%0A
+
+::error file=/home/runner/work/relay-lab/relay-lab/src/circuit/definitions/__tests__/registry.test.ts,title=src/circuit/definitions/__tests__/registry.test.ts > 部品定義レジストリ > 24 定義が登録されている,line=20,column=51::AssertionError: expected [ Array(25) ] to deeply equal [ Array(24) ]%0A%0A- Expected%0A+ Received%0A%0A@@ -1,8 +1,9 @@%0A  [%0A    "power-dc24v",%0A    "power-ac100v",%0A+   "omron-s8vm-05024",%0A    "switch-pushbutton-no",%0A    "switch-pushbutton-nc",%0A    "switch-selector-no",%0A    "switch-selector-nc",%0A    "omron-my2n-dc24",%0A%0A ❯ src/circuit/definitions/__tests__/registry.test.ts:20:51%0A%0A
+
+::error file=/home/runner/work/relay-lab/relay-lab/src/circuit/definitions/__tests__/registry.test.ts,title=src/circuit/definitions/__tests__/registry.test.ts > 部品定義レジストリ > カテゴリで絞り込める,line=109,column=40::AssertionError: expected [ { id: 'power-dc24v', …(7) }, …(24) ] to have a length of 24 but got 25%0A%0A- Expected%0A+ Received%0A%0A- 24%0A+ 25%0A%0A ❯ src/circuit/definitions/__tests__/registry.test.ts:109:40%0A%0A
+
+::error file=/home/runner/work/relay-lab/relay-lab/src/circuit/definitions/__tests__/registry.test.ts,title=src/circuit/definitions/__tests__/registry.test.ts > 部品定義レジストリ > 実端子番号を持たない定義は検証済みを名乗らない,line=132,column=50::AssertionError: omron-s8vm-05024: expected true to be false // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- false%0A+ true%0A%0A ❯ src/circuit/definitions/__tests__/registry.test.ts:132:50%0A%0A
+
+::error file=/home/runner/work/relay-lab/relay-lab/src/circuit/definitions/__tests__/registry.test.ts,title=src/circuit/definitions/__tests__/registry.test.ts > 部品定義レジストリ > 電気的定義が参照する端子が実在する,line=184,column=46::TypeError: Cannot read properties of undefined (reading 'coil')%0A ❯ src/circuit/definitions/__tests__/registry.test.ts:184:46%0A%0A
