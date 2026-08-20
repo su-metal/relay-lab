@@ -31,7 +31,12 @@ import type {
   PathStep,
 } from "@/circuit/adapter/load-path";
 import { componentDefinitions, componentRegistry } from "@/circuit/definitions";
-import { channelVoltsOf, presetMsOf } from "@/circuit/engine";
+import {
+  channelVoltsOf,
+  fadeMsOf,
+  presetMsOf,
+  triggerPercentOf,
+} from "@/circuit/engine";
 import type {
   DimmerSettings,
   ComponentDefinition,
@@ -75,8 +80,14 @@ export function PropertiesPanel() {
   const setComponentDimmerSettings = useCircuitStore(
     (state) => state.setComponentDimmerSettings,
   );
+  const setComponentTriggerPercent = useCircuitStore(
+    (state) => state.setComponentTriggerPercent,
+  );
   const setComponentChannelVolts = useCircuitStore(
     (state) => state.setComponentChannelVolts,
+  );
+  const setComponentFadeMs = useCircuitStore(
+    (state) => state.setComponentFadeMs,
   );
   const setComponentLampColor = useCircuitStore(
     (state) => state.setComponentLampColor,
@@ -184,11 +195,17 @@ export function PropertiesPanel() {
           onChannelVoltsChange={(channelId, volts) =>
             setComponentChannelVolts(inspection.instance.id, channelId, volts)
           }
+          onFadeMsChange={(fadeMs) =>
+            setComponentFadeMs(inspection.instance.id, fadeMs)
+          }
           onLampColorChange={(color) =>
             setComponentLampColor(inspection.instance.id, color)
           }
           onDimmerSettingsChange={(patch) =>
             setComponentDimmerSettings(inspection.instance.id, patch)
+          }
+          onTriggerPercentChange={(contactId, percent) =>
+            setComponentTriggerPercent(inspection.instance.id, contactId, percent)
           }
         />
       )}
@@ -219,11 +236,14 @@ type DetailsProps = {
   onReplace: (definition: ComponentDefinition) => void;
   /** タイマーの設定時間（ms）。タイマー以外では呼ばれない */
   onPresetChange: (presetMs: number) => void;
+  /** 調光出力のフェード時間（ms）。フェードを持たない部品では呼ばれない */
+  onFadeMsChange: (fadeMs: number) => void;
   /** 表示ランプのレンズの色。ランプ以外では呼ばれない */
   /** 調光出力の電圧（V）。調光出力以外では呼ばれない */
   onChannelVoltsChange: (channelId: string, volts: number) => void;
   onLampColorChange: (color: LampColor) => void;
   onDimmerSettingsChange: (patch: Partial<DimmerSettings>) => void;
+  onTriggerPercentChange: (contactId: string, percent: number) => void;
 };
 
 function ComponentDetails({
@@ -234,8 +254,10 @@ function ComponentDetails({
   onReplace,
   onPresetChange,
   onChannelVoltsChange,
+  onFadeMsChange,
   onLampColorChange,
   onDimmerSettingsChange,
+  onTriggerPercentChange,
 }: DetailsProps) {
   const { instance, definition, device, contacts, terminals } = inspection;
   const running = device !== undefined;
@@ -254,6 +276,17 @@ function ComponentDetails({
    * あって % へ直す側ではないので、ここには入らない（§4.15）。
    */
   const settings = instance.dimmerSettings ?? {};
+
+  /**
+   * アナログ量で動く接点（カットリレー・design.md §4.16）。
+   *
+   * 実機の CUT ADJ.（回路ごとのつまみ）にあたるので、**接点ごとに欄を出す。**
+   * 4 回路をそれぞれ別の動作点に設定して使うものなので、1 つにまとめない。
+   */
+  const triggerContacts =
+    definition.electrical.kind === "relay"
+      ? definition.electrical.relay.contacts.filter((c) => c.trigger)
+      : [];
 
   const dimmerTarget =
     definition.electrical.kind === "dimmer" ||
@@ -366,6 +399,42 @@ function ComponentDetails({
         ))}
 
         {/*
+          フェード時間（design.md §5.18）。**秒で入力させる。**
+          内部は ms だが、実機のフェード時間は秒なので、タイマーの設定時間と
+          同じ理由で「3000」と打たせない。
+
+          **チャンネルごとに出さない。** 実機のフェードはシーン全体にかかる
+          設定で、回路ごとの値ではない（電圧は回路ごと・フェードは機器ごと）。
+          16 回路の機器で 16 個並べると、実機に無い設定があるように読める。
+
+          既定は 0 秒（フェードしない）。設定時間と同じく Undo の対象にしてある。
+        */}
+        {source?.fade && (
+          <label className={styles.labelField}>
+            <span className={styles.fieldName}>フェード</span>
+            <span className={styles.presetField}>
+              <input
+                className={styles.presetInput}
+                type="number"
+                inputMode="decimal"
+                step={0.1}
+                min={source.fade.minFadeMs / 1000}
+                max={source.fade.maxFadeMs / 1000}
+                value={fadeMsOf(source.fade, instance.fadeMs) / 1000}
+                onChange={(event) => {
+                  const seconds = Number(event.target.value);
+                  // 入力途中の空欄・記号だけの状態では書き込まない。
+                  // 範囲外は circuitStore が上下限へ丸める
+                  if (!Number.isFinite(seconds)) return;
+                  onFadeMsChange(Math.round(seconds * 1000));
+                }}
+              />
+              <span className={styles.presetUnit}>秒</span>
+            </span>
+          </label>
+        )}
+
+        {/*
           レンズの色（design.md §4.11）。**ランプのときだけ出す。**
 
           盤面では色そのものが意味を持つ（赤＝異常・緑＝運転）ので、
@@ -418,6 +487,50 @@ function ComponentDetails({
           **とくに極性。** 0V = 100% はこの盤の設定であって機器の仕様では
           ないので、ここで切り替えられないと順特性の盤が描けない。
         */}
+        {/*
+          カットリレーの動作点（design.md §4.16）。**接点ごとに出す。**
+
+          実機の CUT ADJ. は回路ごとのつまみで、4 回路それぞれ別の動作点に
+          設定して使う。ここで入れられないと、定義の既定値から動かせない。
+
+          **% で入れさせる。** 実機の「0〜50% で動作」という表記がそのまま
+          設定になる。V にすると、極性を反転した盤で動作点の意味が裏返る。
+        */}
+        {triggerContacts.map((contact) => {
+          const trigger = contact.trigger;
+          if (!trigger) return null;
+          return (
+            <label key={contact.id} className={styles.labelField}>
+              <span className={styles.fieldName}>
+                {triggerContacts.length === 1
+                  ? "動作点"
+                  : `動作点 ${contact.id.replace(/^c/, "")}`}
+              </span>
+              <span className={styles.presetField}>
+                <input
+                  className={styles.presetInput}
+                  type="number"
+                  inputMode="decimal"
+                  step={1}
+                  min={trigger.minPercent}
+                  max={trigger.maxPercent}
+                  value={triggerPercentOf(
+                    trigger,
+                    instance.triggerPercents?.[contact.id],
+                  )}
+                  onChange={(event) => {
+                    const percent = Number(event.target.value);
+                    // 入力途中の空欄では書き込まない。範囲外は circuitStore が丸める
+                    if (!Number.isFinite(percent)) return;
+                    onTriggerPercentChange(contact.id, percent);
+                  }}
+                />
+                <span className={styles.presetUnit}>% 以下で動作</span>
+              </span>
+            </label>
+          );
+        })}
+
         {dimmerTarget && (
           <div className={styles.labelField}>
             <span className={styles.fieldName}>調光の設定</span>

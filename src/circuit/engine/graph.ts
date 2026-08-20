@@ -156,6 +156,7 @@ export const conductingPairs = (
         .slice(1)
         .map((id) => [electrical.terminals[0], id] as TerminalPair);
     case "power":
+    case "ac-dc-power-supply":
     case "lamp":
     case "diode":
       // 電源の +/0V、ランプの 2 端子、ダイオードの 2 端子はいずれも非導通。
@@ -309,11 +310,54 @@ export const computeNetStates = (
     mark(instance.id, electrical.zeroTerminal, "zeroFrom");
   }
 
-  spreadThroughDiodes(states, [
+  const directionalEdges = [
     ...collectDiodeEdges(document, definitions, nets.netOf),
     // 調光器の AC の通り道。ネットは分けたまま電位だけ流す（design.md §4.15）
     ...collectDimmerEdges(document, definitions, nets.netOf),
-  ]);
+  ];
+
+  // まず一次側の電位を有向要素の先まで届ける。
+  spreadThroughDiodes(states, directionalEdges);
+
+  const instanceById = new Map(document.components.map((instance) => [instance.id, instance]));
+  const stateOfTerminal = (componentId: string, terminalId: string): MutableNetState | undefined => {
+    const netId = nets.netOf.get(terminalKey(componentId, terminalId));
+    return netId === undefined ? undefined : states.get(netId);
+  };
+  const isAcSource = (sourceId: string): boolean => {
+    const source = instanceById.get(sourceId);
+    if (!source) return false;
+    const sourceElectrical = definitions.get(source.definitionId)?.electrical;
+    return sourceElectrical?.kind === "power" && sourceElectrical.currentType === "AC";
+  };
+
+  // AC-DC 電源は、L/N が同じ AC 電源の両極へ届いたときだけ DC 出力を持つ。
+  // 入力電圧範囲は仕様情報として保持するが、既存要件どおり電圧不一致判定には使わない。
+  for (const instance of document.components) {
+    const electrical = definitions.get(instance.definitionId)?.electrical;
+    if (electrical?.kind !== "ac-dc-power-supply") continue;
+
+    const line = stateOfTerminal(instance.id, electrical.lineTerminal);
+    const neutral = stateOfTerminal(instance.id, electrical.neutralTerminal);
+    if (!line || !neutral) continue;
+
+    const powered = [...line.plusFrom].some(
+      (sourceId) =>
+        neutral.zeroFrom.has(sourceId) &&
+        isAcSource(sourceId),
+    ) || [...line.zeroFrom].some(
+      (sourceId) =>
+        neutral.plusFrom.has(sourceId) &&
+        isAcSource(sourceId),
+    );
+    if (!powered) continue;
+
+    mark(instance.id, electrical.positiveTerminal, "plusFrom");
+    mark(instance.id, electrical.zeroTerminal, "zeroFrom");
+  }
+
+  // 変換後の DC 出力もダイオード等の先へ伝搬させる。
+  spreadThroughDiodes(states, directionalEdges);
 
   return states;
 };
@@ -384,6 +428,7 @@ export const openPairs = (
       );
     case "terminal":
     case "power":
+    case "ac-dc-power-supply":
     case "lamp":
     case "diode":
     case "analog-source":

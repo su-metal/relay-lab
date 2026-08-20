@@ -37,6 +37,7 @@ export {
   closedContactPairs,
   evaluateCoil,
   openContactPairs,
+  triggerPercentOf,
 } from "./relay";
 export type { CoilEvaluation, TerminalPair } from "./relay";
 export {
@@ -49,14 +50,32 @@ export {
   timerOutputOn,
 } from "./timer";
 export {
+  advanceFade,
+  fadeElapsedMs,
+  fadeMsOf,
+  fadeNextEventAtMs,
+  fadeVoltsOf,
+  initialFadeState,
+} from "./fade";
+export {
   analogPercent,
   analogSignalNets,
   channelVoltsOf,
   effectiveCurve,
   shapePercent,
   outputVoltsOf,
+  targetVoltsOf,
+  voltsForPercent,
   resolveAnalog,
 } from "./analog";
+export {
+  resolveCommunication,
+  EMPTY_COMMUNICATED_LEVELS,
+} from "./communication";
+export type {
+  CommunicatedLevels,
+  CommunicationFault,
+} from "./communication";
 export { collectDiodeEdges, inspectDiodes, spreadThroughDiodes } from "./diode";
 export type {
   DiodeBias,

@@ -31,7 +31,8 @@ import type {
 } from "@/circuit/types";
 
 import { resolveAnalog } from "./analog";
-import { solveWithoutRelays } from "./graph";
+import { resolveCommunication } from "./communication";
+import { AT_REST, solveWithoutRelays } from "./graph";
 import {
   detectAnalogReferenceMismatch,
   detectDiodeOrientation,
@@ -76,5 +77,14 @@ export const inspectWiring = (
       definitions,
       resolveAnalog(document, definitions, lookup.netOf),
     ),
+    /*
+     * 通信線の配線（§5.19）。片側だけ・＋と − が逆・基準（GND）が共通でない。
+     *
+     * **ここも静止状態で答えが決まる。** 通信線は常時接続で、接点の開閉に
+     * 左右されない。**▶ を押す前に出るのが肝心** —— 「繋いだのに操作卓が
+     * 効かない」は、動かしてみて初めて気付くと原因を探すのに時間がかかる。
+     */
+    ...resolveCommunication(document, definitions, lookup.netOf, AT_REST)
+      .warnings,
   ];
 };

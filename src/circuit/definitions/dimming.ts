@@ -81,6 +81,16 @@ export const dimmerOutput0to10v: ComponentDefinition = {
     minVolts: 0,
     maxVolts: 10,
     defaultVolts: 5,
+    /**
+     * フェード（design.md §5.18）。
+     *
+     * **既定は 0（フェードしない）。** 実機のフェード時間は盤ごとに設定する
+     * もので、ここに 0 以外を焼き付けると**保存済みの回路を開いた瞬間に
+     * 挙動が変わる。** プロパティパネルで秒を入れて初めてフェードする。
+     *
+     * 上限 60 秒は実機のシーンフェードで使う範囲を覆う値。
+     */
+    fade: { minFadeMs: 0, maxFadeMs: 60_000, defaultFadeMs: 0 },
   },
   // 本体に出す出力電圧（"5.0V ／ 50%"）が収まる幅
   visual: { width: 170, height: 150 },

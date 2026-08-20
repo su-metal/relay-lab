@@ -14,7 +14,7 @@
  * このファイルは React を import しない純粋関数なので node 環境の Vitest で検証できる。
  */
 
-import { conductingPairs } from "@/circuit/engine";
+import { buildNets, computeNetStates, conductingPairs } from "@/circuit/engine";
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
@@ -93,6 +93,14 @@ export const buildPathGraph = (
     );
   }
 
+  const nets = buildNets(
+    document,
+    definitions,
+    { pressedSwitches },
+    energizedRelays,
+  );
+  const states = computeNetStates(document, definitions, nets);
+
   for (const instance of document.components) {
     const definition = definitions.get(instance.definitionId);
     if (!definition) continue;
@@ -117,6 +125,20 @@ export const buildPathGraph = (
     if (electrical.kind === "power") {
       connect(terminalKey(instance.id, electrical.positiveTerminal), PLUS_NODE);
       connect(terminalKey(instance.id, electrical.zeroTerminal), ZERO_NODE);
+    }
+
+    if (electrical.kind === "ac-dc-power-supply") {
+      const plusNet = nets.netOf.get(terminalKey(instance.id, electrical.positiveTerminal));
+      const zeroNet = nets.netOf.get(terminalKey(instance.id, electrical.zeroTerminal));
+      const powered =
+        plusNet !== undefined &&
+        zeroNet !== undefined &&
+        states.get(plusNet)?.plusFrom.has(instance.id) === true &&
+        states.get(zeroNet)?.zeroFrom.has(instance.id) === true;
+      if (powered) {
+        connect(terminalKey(instance.id, electrical.positiveTerminal), PLUS_NODE);
+        connect(terminalKey(instance.id, electrical.zeroTerminal), ZERO_NODE);
+      }
     }
   }
 

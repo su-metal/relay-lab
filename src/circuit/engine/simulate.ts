@@ -12,6 +12,7 @@ import type {
   AnalogResult,
   CircuitDocument,
   ComponentDefinitionRegistry,
+  FadeState,
   NetState,
   SimulationInput,
   SimulationResult,
@@ -19,10 +20,17 @@ import type {
   TimerState,
   Warning,
 } from "@/circuit/types";
+import { fadeKey } from "@/circuit/types";
 import { MAX_ITERATIONS } from "@/lib/app-info";
 
-import { resolveAnalog } from "./analog";
+import { resolveAnalog, targetVoltsOf } from "./analog";
 import { detectSelfInterruptingCoils } from "./chatter";
+import {
+  advanceFade,
+  fadeMsOf,
+  fadeNextEventAtMs,
+  fadeVoltsOf,
+} from "./fade";
 import {
   buildNets,
   computeNetStates,
@@ -32,6 +40,10 @@ import {
   type OperatedContacts,
 } from "./graph";
 import { polarityAcross } from "./potential";
+import {
+  resolveCommunication,
+  type CommunicatedLevels,
+} from "./communication";
 import { evaluateCoil, operatedContactsOf } from "./relay";
 import {
   advanceTimer,
@@ -202,34 +214,124 @@ type Iteration = {
   timers: Map<string, TimerState>;
 };
 
+/** フェードを進めた結果。状態と、そこから導いた「今の電圧」の組 */
+type FadeEvaluation = {
+  /** 次回の `previousFades` になる */
+  fades: Map<string, FadeState>;
+  /** `fadeKey()` → 今この瞬間に出している電圧（V）。`resolveAnalog()` へ渡す */
+  effectiveVolts: Map<string, number>;
+};
+
 /**
- * カウント中のタイマーのうち、次に接点が変わる最も早い時刻（design.md §5.13）。
+ * 調光出力のフェードを 1 目盛ぶん進める（design.md §5.18）。
  *
- * ストアが「まだ時計を進める必要があるか」を判断する唯一の手がかり。
- * タイマーが 1 個も無い回路では `undefined` になり、再計算のループは回らない。
+ * **収束ループの外で 1 回だけ呼ぶ。** `previousTimers` とまったく同じ理由で、
+ * 反復のたびに進めると `changedAtMs` が毎回打ち直されて電圧が動かない。
+ * 目標（`channelVolts`）は 1 回の `simulate()` の中で変わらないので、
+ * ループの手前で決めきってしまってよい。
+ *
+ * **状態と電圧を一度に返す。** `evaluateRelays()` が励磁とタイマー状態を
+ * 一度に返しているのと同じで、どちらも同じ 1 回の走査から出る ——
+ * 分けると定義の引き当てとフェード時間の丸めを 2 度なぞることになる。
+ *
+ * **フェード時間そのものは `resolveAnalog()` へ持ち込まない。** あちらは
+ * ネットの上に電圧を重ねる第 2 パスで、時間の話を知る必要が無い ——
+ * 「今この瞬間に何 V 出ているか」まで解いてから渡す（CLAUDE.md 設計原則 9）。
+ *
+ * `fade` を持たない調光出力はここに入らない —— 状態を持たせても
+ * 常に目標値を返すだけで、`fades` に読み手のいない項目が並ぶ。
+ */
+const advanceFades = (
+  document: CircuitDocument,
+  definitions: ComponentDefinitionRegistry,
+  previous: ReadonlyMap<string, FadeState>,
+  nowMs: number,
+  communicated: CommunicatedLevels,
+): FadeEvaluation => {
+  const fades = new Map<string, FadeState>();
+  const effectiveVolts = new Map<string, number>();
+
+  for (const instance of document.components) {
+    const electrical = definitions.get(instance.definitionId)?.electrical;
+    if (electrical?.kind !== "analog-source" || !electrical.fade) continue;
+    const fadeMs = fadeMsOf(electrical.fade, instance.fadeMs);
+
+    for (const channel of electrical.channels) {
+      const key = fadeKey(instance.id, channel.id);
+      const state = advanceFade(
+        previous.get(key),
+        // 通信で来た値もフェードの目標になる（design.md §4.17）——
+        // シーン切替に時間をかけるのが実機のフェードそのもの
+        targetVoltsOf(
+          electrical,
+          channel.id,
+          instance,
+          communicated.get(instance.id),
+        ),
+        fadeMs,
+        nowMs,
+      );
+      fades.set(key, state);
+      effectiveVolts.set(key, fadeVoltsOf(state, fadeMs, nowMs));
+    }
+  }
+
+  return { fades, effectiveVolts };
+};
+
+/**
+ * 次に結果が変わり終わる、最も早い時刻（design.md §5.13・§5.18）。
+ *
+ * 見るのは 2 種類で、**混ぜてよい。**
+ *
+ * - カウント中のタイマー … 接点が変わる時刻。**離散**（その瞬間だけ変わる）
+ * - ランプ中の調光出力 … フェードが終わる時刻。**連続**（そこまで毎瞬変わる）
+ *
+ * ストアはこの値を「まだ時計を進める必要があるか」の 1 ビットとしか読まず、
+ * 刻みは自分で決めている（固定 50ms）。だから連続なものは「終わる時刻」を
+ * 返すだけでよく、途中の値は解き直しのたびに出る。
+ *
+ * タイマーも調光出力も置いていない回路では `undefined` になり、
+ * 再計算のループは回らない。
  */
 const nextEventOf = (
   document: CircuitDocument,
   definitions: ComponentDefinitionRegistry,
   timers: ReadonlyMap<string, TimerState>,
+  fades: ReadonlyMap<string, FadeState>,
   nowMs: number,
 ): number | undefined => {
   let earliest: number | undefined;
+  const consider = (at: number | undefined) => {
+    if (at !== undefined && (earliest === undefined || at < earliest)) {
+      earliest = at;
+    }
+  };
 
   for (const instance of document.components) {
     const electrical = definitions.get(instance.definitionId)?.electrical;
-    if (electrical?.kind !== "relay" || !electrical.delay) continue;
-    const state = timers.get(instance.id);
-    if (!state) continue;
 
-    const at = timerNextEventAtMs(
-      electrical.delay,
-      state,
-      presetMsOf(electrical.delay, instance.presetMs),
-      nowMs,
-    );
-    if (at !== undefined && (earliest === undefined || at < earliest)) {
-      earliest = at;
+    if (electrical?.kind === "relay" && electrical.delay) {
+      const state = timers.get(instance.id);
+      if (!state) continue;
+      consider(
+        timerNextEventAtMs(
+          electrical.delay,
+          state,
+          presetMsOf(electrical.delay, instance.presetMs),
+          nowMs,
+        ),
+      );
+      continue;
+    }
+
+    if (electrical?.kind === "analog-source" && electrical.fade) {
+      const fadeMs = fadeMsOf(electrical.fade, instance.fadeMs);
+      for (const channel of electrical.channels) {
+        const state = fades.get(fadeKey(instance.id, channel.id));
+        if (!state) continue;
+        consider(fadeNextEventAtMs(state, fadeMs, nowMs));
+      }
     }
   }
 
@@ -270,6 +372,40 @@ export const simulate = (
    * 時間が進むのは `simulate()` の呼び出しをまたいだときだけ。
    */
   const previousTimers = input.previousTimers ?? new Map<string, TimerState>();
+  /*
+   * フェードも**収束ループの手前で 1 回だけ進める**（design.md §5.18）。
+   *
+   * 理由は `previousTimers` とまったく同じで、反復のたびに進めると
+   * `changedAtMs` が打ち直されて電圧が動かない。目標（`channelVolts`）は
+   * 1 回の `simulate()` の中で変わらないので、ここで決めきってよい。
+   */
+  /*
+   * **通信はループの外で 1 回だけ解く**（design.md §5.19）。
+   *
+   * 通信の相手を知るにはネットが要るので、入ってきた励磁状態で一度だけ
+   * 組む。タイマー（`previousTimers`）やフェードと同じ「呼び出し 1 回の
+   * あいだ固定」の扱いで、反復のたびに解き直すと**フェードの目標が
+   * 揺れて時間が進まない。**
+   *
+   * **既知の割り切り**：通信線をリレー接点で切り替える配線は、その接点が
+   * 収束の途中で動いても通信に反映されない。実機の通信線は常時接続で、
+   * 接点で切る配線を見たことが無いため、この単純化を採る（§6）。
+   */
+  const entryNets = buildNets(document, definitions, input, energized);
+  const communication = resolveCommunication(
+    document,
+    definitions,
+    entryNets.netOf,
+    input,
+  );
+
+  const { fades, effectiveVolts } = advanceFades(
+    document,
+    definitions,
+    input.previousFades ?? new Map<string, FadeState>(),
+    nowMs,
+    communication.levels,
+  );
 
   let status: SimulationStatus = "not-converged";
   let iterations = 0;
@@ -308,7 +444,13 @@ export const simulate = (
      * アナログは今もネットの上に重ねる第 2 パスのまま。変わったのは
      * 解く順番だけ（CLAUDE.md 設計原則 9）。
      */
-    const analog = resolveAnalog(document, definitions, nets.netOf);
+    const analog = resolveAnalog(
+      document,
+      definitions,
+      nets.netOf,
+      effectiveVolts,
+      communication.levels,
+    );
     const nextOperated = operatedContactsOf(
       document,
       definitions,
@@ -360,6 +502,8 @@ export const simulate = (
   const analog = last.analog;
 
   const warnings: Warning[] = [
+    // 通信線の配線の不備（§5.19）。ループの外で解いた結果をそのまま出す
+    ...communication.warnings,
     ...detectPowerShortCircuits(document, definitions, lookup),
     ...detectDiodeOrientation(document, definitions, lookup),
     ...last.coilWarnings,
@@ -378,7 +522,14 @@ export const simulate = (
     energizedRelays: last.energized,
     operatedContacts: last.operatedContacts,
     timers: last.timers,
-    nextEventAtMs: nextEventOf(document, definitions, last.timers, nowMs),
+    fades,
+    nextEventAtMs: nextEventOf(
+      document,
+      definitions,
+      last.timers,
+      fades,
+      nowMs,
+    ),
     litLamps: collectLitLamps(document, definitions, lookup, analog),
     analog,
     netOf: last.nets.netOf,

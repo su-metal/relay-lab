@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   dc24vLamp,
   dc24vPowerSupply,
+  dimmerOutput0to10v,
   omronMy2nDc24,
   omronMy4nDc24,
   pushbuttonNc,
@@ -543,6 +544,53 @@ describe("replaceDocument", () => {
     expect(store().past).toHaveLength(0);
     expect(store().future).toHaveLength(0);
     expect(store().selectedComponentIds).toEqual([]);
+  });
+});
+
+describe("調光出力のフェード時間（design.md §5.18）", () => {
+  const addDimmer = (): string =>
+    store().addComponent(dimmerOutput0to10v, { x: 0, y: 0 });
+
+  it("設定を変えられ、Undo で戻せる", () => {
+    const id = addDimmer();
+    store().setComponentFadeMs(id, 3000);
+
+    const changed = () =>
+      store().document.components.find((c) => c.id === id)?.fadeMs;
+    expect(changed()).toBe(3000);
+
+    // 設定時間と同じく回路の動きを変えるので履歴に載せる
+    store().undo();
+    expect(changed()).toBeUndefined();
+
+    store().redo();
+    expect(changed()).toBe(3000);
+  });
+
+  it("範囲外は上下限へ丸める", () => {
+    const id = addDimmer();
+    const fade = () =>
+      store().document.components.find((c) => c.id === id)?.fadeMs;
+
+    store().setComponentFadeMs(id, -1);
+    expect(fade()).toBe(0);
+
+    store().setComponentFadeMs(id, 10_000_000);
+    expect(fade()).toBe(60_000);
+  });
+
+  it("同じ値・フェードを持たない部品への設定は履歴を汚さない", () => {
+    const dimmerId = addDimmer();
+    store().setComponentFadeMs(dimmerId, 3000);
+    const lampId = store().addComponent(dc24vLamp, { x: 0, y: 0 });
+
+    const before = store().document;
+    // 同じ値
+    store().setComponentFadeMs(dimmerId, 3000);
+    expect(store().document).toBe(before);
+    // フェードを持たない部品
+    store().setComponentFadeMs(lampId, 3000);
+    expect(store().document).toBe(before);
   });
 });
 

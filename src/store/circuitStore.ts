@@ -20,7 +20,12 @@ import {
   isSameTerminalPair,
 } from "@/circuit/adapter/reactflow";
 import { getComponentDefinition } from "@/circuit/definitions";
-import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
+import {
+  fadeMsOf,
+  outputVoltsOf,
+  presetMsOf,
+  triggerPercentOf,
+} from "@/circuit/engine";
 import type {
   DimmerSettings,
   CircuitDocument,
@@ -162,6 +167,15 @@ export type CircuitStore = {
   ) => void;
 
   /**
+   * 調光出力のフェード時間を変える（design.md §5.18）。
+   *
+   * `setComponentPreset` とまったく同じ扱い —— **Undo の対象**にし、
+   * 範囲外は定義の上下限へ丸め（判定はエンジンの `fadeMsOf`）、
+   * `fade` を持たない部品には書き込まない。
+   */
+  setComponentFadeMs: (componentId: string, fadeMs: number) => void;
+
+  /**
    * 調光器の盤ごとの設定を変える（design.md §4.15）。
    *
    * 渡した項目だけを差し替える —— 極性を切り替えるたびに上限や下限が
@@ -171,6 +185,18 @@ export type CircuitStore = {
   setComponentDimmerSettings: (
     componentId: string,
     patch: Partial<DimmerSettings>,
+  ) => void;
+
+  /**
+   * アナログ量で動く接点の動作点を変える（実機の CUT ADJ.・design.md §4.16）。
+   *
+   * 接点ごとに持つ。4 回路のカットリレーはそれぞれ別の動作点に設定できる。
+   * 動作点を持たない接点には書き込まない。
+   */
+  setComponentTriggerPercent: (
+    componentId: string,
+    contactId: string,
+    percent: number,
   ) => void;
 
   /**
@@ -492,6 +518,60 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           };
         });
         // 同じ値への設定・調光出力以外への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentFadeMs: (componentId, fadeMs) => {
+      if (!Number.isFinite(fadeMs)) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          // フェードを持たない部品には書き込まない。誰も読まない値が残る
+          if (electrical?.kind !== "analog-source" || !electrical.fade) {
+            return component;
+          }
+
+          const next = fadeMsOf(electrical.fade, fadeMs);
+          if (component.fadeMs === next) return component;
+          changed = true;
+          return { ...component, fadeMs: next };
+        });
+        // 同じ値への設定・フェードを持たない部品への設定で履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    setComponentTriggerPercent: (componentId, contactId, percent) => {
+      if (!Number.isFinite(percent)) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const electrical = getComponentDefinition(
+            component.definitionId,
+          )?.electrical;
+          if (electrical?.kind !== "relay") return component;
+          const contact = electrical.relay.contacts.find(
+            (entry) => entry.id === contactId,
+          );
+          // 動作点を持たない接点には書かない（誰も読まない値を残さない）
+          if (!contact?.trigger) return component;
+
+          const next = triggerPercentOf(contact.trigger, percent);
+          if (component.triggerPercents?.[contactId] === next) return component;
+          changed = true;
+          return {
+            ...component,
+            triggerPercents: { ...component.triggerPercents, [contactId]: next },
+          };
+        });
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });

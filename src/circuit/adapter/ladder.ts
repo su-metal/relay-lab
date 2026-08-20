@@ -353,7 +353,10 @@ export const buildLadder = (
         );
       }
     }
-    if (electrical.kind === "power") {
+    if (
+      electrical.kind === "power" ||
+      electrical.kind === "ac-dc-power-supply"
+    ) {
       powerCount += 1;
       dsu.union(
         terminalKey(instance.id, electrical.positiveTerminal),
@@ -467,6 +470,7 @@ export const buildLadder = (
         });
         break;
       case "power":
+      case "ac-dc-power-supply":
       case "terminal":
       case "diode":
       case "analog-source":

@@ -203,6 +203,33 @@ export type AnalogOutputChannel = {
 };
 
 /**
+ * フェード（時間をかけた明るさの変化）の設定範囲（design.md §5.18）。
+ *
+ * **`analog-source` に省略可能で足す。** タイマーを `kind: "timer"` にせず
+ * `relay` の `delay` の有無で表したのと同じ形（CLAUDE.md 設計原則 7）。
+ * フェードする調光出力も**ただの調光出力**であって別種の機器ではなく、
+ * 電圧の畳み込みも基準の突き合わせも DIRECT もまったく同じコードが効く。
+ * `fade` を持たない機器は今までどおり設定を変えた瞬間に目標値を出す。
+ *
+ * 形は `TimerDelay` の設定時間 3 点とそろえてある —— 実機のダイヤルに
+ * あたるものを定義が上下限と既定値で、インスタンスが実際の値で持つ。
+ */
+export type FadeSpec = {
+  /** 設定できる最短のフェード時間（ms）。0 は「フェードしない」 */
+  minFadeMs: number;
+  /** 設定できる最長のフェード時間（ms） */
+  maxFadeMs: number;
+  /**
+   * 既定のフェード時間（ms）。
+   *
+   * **0 から始める。** 実機のフェード時間は盤ごとに設定するもので、
+   * ここに 0 以外を焼き付けると**保存済みの回路を開いた瞬間に挙動が変わる。**
+   * ユーザーがプロパティパネルで秒を入れて初めてフェードする。
+   */
+  defaultFadeMs: number;
+};
+
+/**
  * 実機の調光器で盤ごとに設定する量（design.md §4.15・§5.17）。
  *
  * **定義ではなくインスタンスに持つ。** これらは実機の DIP スイッチと
@@ -244,8 +271,72 @@ export type AnalogTrigger = {
 export type DeviceOperation = {
   /** 定義内で一意な ID */
   id: string;
-  /** 画面に出す名前（"電源"） */
+  /** 画面に出す名前（"電源"・"フェーダー 1"） */
   label: string;
+  /**
+   * 操作子の性質（design.md §4.17）。省略は `"switch"`。
+   *
+   * - `"switch"` … 入り切り。接点を動かす（既存の操作卓の電源ボタン）
+   * - `"level"` … 0–100% の連続量。**フェーダー。** 接点ではなく
+   *   通信で送る値になる
+   *
+   * **入り切りと連続量を別の型に分けない。** どちらも「人が倒す盤の状態」
+   * であり、保存しない・停止で戻るという扱いも同じ。分けると
+   * `SimulationInput` も store も UI も 2 本になる。
+   */
+  kind?: "switch" | "level";
+  /** `"level"` のときの既定値（%）。省略は 0 */
+  defaultPercent?: number;
+};
+
+/**
+ * 通信ポート（design.md §4.17）。
+ *
+ * **電気モデルには参加しない。** 通信線が運ぶのは電位ではなく値で、
+ * ネットの分割にも `NetState` にも関係が無い。だから
+ * `ElectricalDefinition` の中ではなく、`ComponentDefinition` に
+ * `electrical` と並ぶ別の面として持たせる。
+ */
+export type CommunicationPort = {
+  /** ＋側（A）の端子 */
+  plusTerminal: string;
+  /** −側（B）の端子 */
+  minusTerminal: string;
+  /**
+   * 信号の基準（GND）となる端子。
+   *
+   * **差動信号は基準を共有していないと成立しない。** 0–10V の調光信号と
+   * まったく同じ話で（design.md §5.17）、繋ぎ忘れは実務で最も多い誤配線の
+   * 1 つ。エンジンはここが共通かどうかを見て、共通でなければ通信を
+   * 成立させない。
+   */
+  commonTerminals: readonly string[];
+};
+
+/**
+ * 受け取った値を自分の出力へ割り当てる指定（design.md §4.17）。
+ *
+ * **名前で対応させる。** 送り手と受け手は `signalId`（"fader1"）という
+ * 共有した名前だけで繋がり、エンジンはどちらの機器かを見ない
+ * （CLAUDE.md 設計原則 2）。
+ */
+export type CommunicationBinding = {
+  /** 受け取る値の名前。送り手の `DeviceOperation.id` と一致させる */
+  signalId: string;
+  /** 割り当て先の調光出力チャンネル（`analog-source` の `channels` の id） */
+  channelId: string;
+};
+
+/** 機器の通信の面（design.md §4.17） */
+export type CommunicationDefinition = {
+  port: CommunicationPort;
+  /**
+   * この機器が送る操作子の ID（`RelayDefinition.operations` の id）。
+   * 操作卓が持つ。
+   */
+  transmits?: readonly string[];
+  /** 受け取った値を出力へ割り当てる指定。コントローラが持つ */
+  receives?: readonly CommunicationBinding[];
 };
 
 /**
@@ -323,18 +414,17 @@ export type DimmingInput = {
 /**
  * カテゴリごとの電気的なふるまい。`kind` による判別可能ユニオン。
  *
- * エンジンが持ってよい分岐はこの `kind` の 7 通りだけ。
- * 端子は必ず ID 参照で指定し、端子番号そのものをエンジンに埋め込まない。
+ * エンジンが持ってよい分岐は、この `kind` が表す汎用の電気的な振る舞いだけ。
+ * 端子は必ず ID 参照で指定し、端子番号や型番そのものをエンジンに埋め込まない。
  *
  * **タイマーで 1 通り増やさない。** タイマーリレーはリレーであり、
  * `relay` の `delay` の有無で表す（`TimerDelay` 参照）。
  * **調光ランプでも増やさない** —— 調光ランプはランプであり、
  * `lamp` の `dimming` の有無で表す（`DimmingInput` 参照）。
  *
- * 7 通目の `analog-source` だけは既存のどれにも寄せられない。
- * 電位を配る `power` でも、電位差を受ける `lamp` でもなく、
- * **基準に対する電圧値を出す**という別の振る舞いだから
- * （design.md §5.17）。
+ * `analog-source` は基準に対する電圧値を出す振る舞い、
+ * `ac-dc-power-supply` は入力側の成立を条件に絶縁された出力電位を生成する振る舞いで、
+ * いずれも既存 kind へ無理に寄せず、型番非依存の振る舞いとして定義する。
  */
 export type ElectricalDefinition =
   | {
@@ -343,6 +433,27 @@ export type ElectricalDefinition =
       currentType: "DC" | "AC";
       positiveTerminal: string;
       zeroTerminal: string;
+    }
+  /**
+   * AC 入力を受けて DC を出すスイッチング電源。
+   *
+   * `power` はそれ自体が理想電源だが、こちらは入力側に適合する AC 電源が
+   * 来ているときだけ出力を持つ。入力と出力は絶縁され、内部で union しない。
+   * 型番分岐はせず、入出力範囲と端子 ID を定義データで持つ。
+   */
+  | {
+      kind: "ac-dc-power-supply";
+      ratedInputVoltageMin: number;
+      ratedInputVoltageMax: number;
+      allowableInputVoltageMin: number;
+      allowableInputVoltageMax: number;
+      lineTerminal: string;
+      neutralTerminal: string;
+      outputVoltage: number;
+      positiveTerminal: string;
+      zeroTerminal: string;
+      ratedOutputCurrent?: number;
+      ratedPower?: number;
     }
   /**
    * リレー。`delay` を持つものがタイマーリレー（design.md §5.13）。
@@ -403,6 +514,28 @@ export type ElectricalDefinition =
       maxVolts: number;
       /** 既定の出力電圧。インスタンスの `channelVolts` で回路ごとに上書きできる */
       defaultVolts: number;
+      /**
+       * 通信で受けた **% を V へ直す規則**（design.md §4.17）。
+       *
+       * 通信は「フェーダーが 70%」という値を運ぶだけで、それが何 V に
+       * なるかは**出す側の機器の設定**。実機も調整ボリュームで
+       * 「消灯時 10V・点灯時 0V」に合わせる。
+       *
+       * 省略すると通信を受けても電圧に直せないので、`receives` を持つ
+       * 機器は必ず持つ。インスタンスの `dimmerSettings.inverted` で
+       * 反転でき、そこは他の機器とまったく同じ扱い。
+       */
+      outputCurve?: AnalogCurve;
+      /**
+       * フェード（design.md §5.18）。**持たない機器は即座に目標値を出す。**
+       *
+       * フェードするのは**出力する電圧そのもの**で、受け側の入力段は
+       * 何も知らない —— 実機でも時間をかけているのはコントローラであり、
+       * 調光器は来ている 0–10V に追従しているだけ。だから接点で 0V へ
+       * 落とす配線（DIRECT）は**瞬時のまま**になる（機器の外の短絡で、
+       * 出力段を通らない）。
+       */
+      fade?: FadeSpec;
     }
   /**
    * 位相制御調光器（design.md §4.15・§5.17）。
@@ -460,6 +593,13 @@ export type ComponentDefinition = {
    * 汎用部品は実端子番号ではない旨を記す。
    */
   source?: string;
+  /**
+   * 通信の面（design.md §4.17）。持たない機器では `undefined`。
+   *
+   * **`electrical` と並べる。** 通信は電位を運ばないので電気モデルの
+   * 一部ではなく、ネットの分割にも配線色にも影響しない。
+   */
+  communication?: CommunicationDefinition;
   /**
    * 実機／公式データシートで端子データを検証済みか。
    * 未検証の型番を検証済みとして扱わないこと（CLAUDE.md 設計原則 5）。

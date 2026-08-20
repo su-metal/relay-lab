@@ -16,7 +16,12 @@
  * **読めない要素は捨てて、捨てた理由を日本語で返す。**
  */
 
-import { outputVoltsOf, presetMsOf } from "@/circuit/engine";
+import {
+  fadeMsOf,
+  outputVoltsOf,
+  presetMsOf,
+  triggerPercentOf,
+} from "@/circuit/engine";
 import type {
   CircuitComponentInstance,
   CircuitConnection,
@@ -95,6 +100,23 @@ const readPresetMs = (
 };
 
 /**
+ * 調光出力のフェード時間を読む（design.md §5.18）。
+ *
+ * `readPresetMs` とまったく同じ扱い —— `fade` を持たない部品では `undefined`
+ * （保存 JSON に無意味な値を残さない）、数値でなければ定義の既定値へ倒し、
+ * 範囲外は上下限へ丸める。
+ */
+const readFadeMs = (
+  definition: ComponentDefinition,
+  value: unknown,
+): number | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "analog-source" || !electrical.fade) return undefined;
+  if (!isFiniteNumber(value)) return undefined;
+  return fadeMsOf(electrical.fade, value);
+};
+
+/**
  * 調光出力の電圧を読む（design.md §5.17）。
  *
  * `readPresetMs` とまったく同じ扱い —— 調光出力以外では `undefined`
@@ -136,6 +158,36 @@ const readChannelVolts = (
 /** 0〜100 に収まる数値だけを通す。実機のつまみの目盛りに相当する */
 const readPercent = (value: unknown): number | undefined =>
   isFiniteNumber(value) ? Math.min(Math.max(value, 0), 100) : undefined;
+
+/**
+ * アナログ量で動く接点の動作点を読む（design.md §4.16）。
+ *
+ * `readChannelVolts` と同じ扱い —— **定義に無い接点の値は捨てる**
+ * （端子を減らした定義への対応）。範囲外は定義の上下限へ丸める。
+ *
+ * 動作点を持つ接点が 1 つも無い部品では `undefined`（保存 JSON に
+ * 誰も読まない値を残さない）。
+ */
+const readTriggerPercents = (
+  definition: ComponentDefinition,
+  value: unknown,
+): CircuitComponentInstance["triggerPercents"] => {
+  const { electrical } = definition;
+  if (electrical.kind !== "relay") return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const percents: Record<string, number> = {};
+  const entry = value as Record<string, unknown>;
+
+  for (const contact of electrical.relay.contacts) {
+    if (!contact.trigger) continue;
+    const raw = entry[contact.id];
+    if (!isFiniteNumber(raw)) continue;
+    percents[contact.id] = triggerPercentOf(contact.trigger, raw);
+  }
+
+  return Object.keys(percents).length === 0 ? undefined : percents;
+};
 
 /**
  * 調光器の盤ごとの設定を読む（design.md §4.15）。
@@ -295,8 +347,15 @@ export const parseDocument = (
         entry.channelVolts,
         entry.outputVolts,
       ),
+      /*
+       * 調光出力のフェード時間（design.md §5.18）。設定時間と同じ扱いで、
+       * 壊れていても部品ごと捨てず定義の既定値へ倒す。
+       */
+      fadeMs: readFadeMs(definition, entry.fadeMs),
       /* 調光器の盤ごとの設定（極性・上下限・カーブ・DIRECT）（§4.15） */
       dimmerSettings: readDimmerSettings(definition, entry.dimmerSettings),
+      /* アナログ量で動く接点の動作点（実機の CUT ADJ.）（§4.16） */
+      triggerPercents: readTriggerPercents(definition, entry.triggerPercents),
     });
     terminalsOf.set(
       entry.id,

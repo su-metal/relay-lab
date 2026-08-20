@@ -12,6 +12,8 @@
 import {
   analogSignalNets,
   coilEnergized,
+  fadeMsOf,
+  fadeVoltsOf,
   isShorted,
   channelVoltsOf,
   presetMsOf,
@@ -28,7 +30,7 @@ import type {
   NetState,
   SimulationResult,
 } from "@/circuit/types";
-import { terminalKey } from "@/circuit/types";
+import { fadeKey, terminalKey } from "@/circuit/types";
 
 import { EMPTY_SELF_HOLD, type SelfHoldView } from "./self-hold";
 
@@ -400,20 +402,36 @@ export const buildSimulationView = (
       timer: timerDisplayOf(instance, definition, result, nowMs),
       dimming: result.analog.levelOf.get(instance.id),
       operatedContacts: result.operatedContacts.get(instance.id),
+      /*
+       * **今この瞬間に出している電圧。目標値ではない**（design.md §5.18）。
+       *
+       * フェード中は `result.fades` から導いた途中の電圧が入る。ここで
+       * `channelVolts`（目標）を読むと、**本体の数字だけが設定した瞬間に
+       * 飛び、繋がった配線と負荷だけが遅れて動く** —— 同じ 1 本の信号が
+       * 2 つの値で見えることになり、フェードしているのかどうかが読めない。
+       * フェードを持たない機器では今までどおり目標値そのもの。
+       */
       channelVolts:
         definition.electrical.kind === "analog-source"
-          ? definition.electrical.channels.map((channel) => ({
-              id: channel.id,
-              label: channel.label,
-              volts: channelVoltsOf(
-                definition.electrical as Extract<
-                  typeof definition.electrical,
-                  { kind: "analog-source" }
-                >,
-                channel.id,
-                instance.channelVolts,
-              ),
-            }))
+          ? definition.electrical.channels.map((channel) => {
+              const source = definition.electrical as Extract<
+                typeof definition.electrical,
+                { kind: "analog-source" }
+              >;
+              const state = result.fades.get(fadeKey(instance.id, channel.id));
+              return {
+                id: channel.id,
+                label: channel.label,
+                volts:
+                  source.fade && state
+                    ? fadeVoltsOf(
+                        state,
+                        fadeMsOf(source.fade, instance.fadeMs),
+                        nowMs,
+                      )
+                    : channelVoltsOf(source, channel.id, instance.channelVolts),
+              };
+            })
           : undefined,
     });
   }

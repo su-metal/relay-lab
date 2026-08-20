@@ -212,6 +212,69 @@ describe("parseDocument の要素検証", () => {
   });
 });
 
+describe("調光出力のフェード時間（design.md §5.18）", () => {
+  /** 調光出力 1 台。フェード時間だけを差し替えて検証する */
+  const withFade = (fadeMs?: unknown): unknown => ({
+    version: 1,
+    components: [
+      {
+        id: "cmp-dim",
+        definitionId: "dimmer-0-10v",
+        label: "DIM1",
+        position: { x: 0, y: 0 },
+        ...(fadeMs === undefined ? {} : { fadeMs }),
+      },
+    ],
+    connections: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+
+  it("フェード時間を保存して読み戻す", () => {
+    const result = roundTrip(withFade(3000));
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.fadeMs).toBe(3000);
+  });
+
+  it("範囲外は上下限へ丸める（部品ごと捨てない）", () => {
+    const tooLong = roundTrip(withFade(999_999_999));
+    expect(tooLong.status).toBe("loaded");
+    if (tooLong.status !== "loaded") return;
+    expect(tooLong.document.components[0]?.fadeMs).toBe(60_000);
+
+    const negative = roundTrip(withFade(-1));
+    expect(negative.status).toBe("loaded");
+    if (negative.status !== "loaded") return;
+    expect(negative.document.components[0]?.fadeMs).toBe(0);
+  });
+
+  it("数値でなければ持たない（定義の既定値へ倒れる）", () => {
+    const result = roundTrip(withFade("3秒"));
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.fadeMs).toBeUndefined();
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("調光出力以外に付いていても落とす（誰も読まない値を残さない）", () => {
+    const result = roundTrip({
+      ...document,
+      components: document.components.map((component) => ({
+        ...component,
+        fadeMs: 5000,
+      })),
+    });
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    for (const component of result.document.components) {
+      expect(component.fadeMs).toBeUndefined();
+    }
+  });
+});
+
 describe("タイマーの設定時間（design.md §5.13）", () => {
   /** 押しボタン → オンディレイタイマー。設定時間だけを差し替えて検証する */
   const withTimer = (presetMs?: unknown): unknown => ({
