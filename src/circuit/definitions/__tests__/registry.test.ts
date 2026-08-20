@@ -117,17 +117,19 @@ describe("部品定義レジストリ", () => {
   });
 
   /**
-   * 実型番を持たない汎用部品は検証対象そのものが存在しないので、
-   * 検証済みを名乗ってはいけない（design.md §4.4 / §4.5）。
+   * 実端子を持たない純粋な汎用部品は検証済みを名乗らない。
    *
-   * `number` の有無では判定しない。S8VM の L/N/FG/-V/+V のように、
-   * 実機の端子表示が番号ではなく記号の製品もあるため。
-   * 逆向き（実型番 ⇒ `verified: true`）も主張しない。新しい型番は
-   * 公式資料と照合するまで false のままでよい（CLAUDE.md 設計原則 5）。
+   * 実端子の識別子は数字とは限らない。S8VM の L/N/FG/-V/+V のように
+   * 公式端子記号だけを持つ実型番もあるため、メーカー付き実型番はここでは
+   * `number` を必須にしない。一方、社内仕様で実端子番号を持つ機器は
+   * `number` があるので従来どおり検証済みにできる。
    */
-  it("実型番を持たない汎用部品は検証済みを名乗らない", () => {
+  it("実端子の根拠を持たない汎用部品は検証済みを名乗らない", () => {
     for (const definition of componentDefinitions) {
-      if (definition.manufacturer) continue;
+      const hasNumberedTerminals = definition.terminals.some(
+        (terminal) => terminal.number !== undefined,
+      );
+      if (definition.manufacturer || hasNumberedTerminals) continue;
       expect(definition.verified, definition.id).toBe(false);
     }
   });
