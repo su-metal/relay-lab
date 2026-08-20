@@ -9,6 +9,7 @@ import styles from "./SharedLadderView.module.css";
 
 type Point = { x: number; y: number };
 type PlacedEdge = { edge: SharedLadderEdge; path: string; symbol: Point };
+type Junction = Point & { node: string };
 
 type Layout = {
   width: number;
@@ -16,6 +17,7 @@ type Layout = {
   plusX: number;
   zeroX: number;
   placed: PlacedEdge[];
+  junctions: Junction[];
 };
 
 const compareEdge = (a: SharedLadderEdge, b: SharedLadderEdge) =>
@@ -24,7 +26,15 @@ const compareEdge = (a: SharedLadderEdge, b: SharedLadderEdge) =>
 const otherEnd = (edge: SharedLadderEdge, node: string) =>
   edge.from === node ? edge.to : edge.from;
 
-const layoutNetwork = (network: SharedLadderNetwork): Layout => {
+/**
+ * 共有ラダーを配置する。
+ *
+ * 重要なのは「電気的に別の節点を、見た目の都合で同じ縦線へ置かない」こと。
+ * 以前は BFS の深さだけで x 座標を決めていたため、同じ深さにある別節点 B / D が
+ * 同じ x に並び、出力へ降ろす縦線がもう一方の節点を通って、接続しているように
+ * 見えていた。ここでは同じ深さでも節点ごとに別の x レーンを割り当てる。
+ */
+export const layoutSharedLadder = (network: SharedLadderNetwork): Layout => {
   const contacts = network.edges.filter((edge) => edge.kind === "contact");
   const outputs = network.edges
     .filter((edge) => edge.kind === "output")
@@ -58,6 +68,7 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
     }
   }
 
+  // 孤立した接点も消さない。右側へ順に置く。
   let maxDepth = Math.max(0, ...depth.values());
   for (const edge of contacts) {
     for (const node of [edge.from, edge.to]) {
@@ -69,7 +80,9 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
 
   const outputRowGap = 104;
   const rowOfOutput = new Map<string, number>();
-  outputs.forEach((edge, index) => rowOfOutput.set(edge.id, 82 + index * outputRowGap));
+  outputs.forEach((edge, index) =>
+    rowOfOutput.set(edge.id, 82 + index * outputRowGap),
+  );
 
   const outputRowsAt = new Map<string, number[]>();
   for (const output of outputs) {
@@ -95,7 +108,9 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
     visiting.add(node);
 
     const rows = [...(outputRowsAt.get(node) ?? [])];
-    for (const child of children.get(node) ?? []) rows.push(computeRawY(child, visiting));
+    for (const child of children.get(node) ?? []) {
+      rows.push(computeRawY(child, visiting));
+    }
 
     if (rows.length === 0) {
       const incident = adjacency.get(node) ?? [];
@@ -103,7 +118,10 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
       const rank =
         orders.length === 0
           ? 0
-          : Math.max(0, orders.reduce((a, b) => a + b, 0) / orders.length);
+          : Math.max(
+              0,
+              orders.reduce((a, b) => a + b, 0) / orders.length,
+            );
       rows.push(82 + (rank % 4) * 24);
     }
 
@@ -116,9 +134,7 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
   computeRawY(network.plus);
   for (const node of depth.keys()) computeRawY(node);
 
-  // 同じ列の接点ラベルがぶつからないよう、節点の縦間隔を確保する。
-  const displayY = new Map(rawY);
-  const minNodeGap = 64;
+  // 同じ論理列の接点ラベルが上下に重ならないようにする。
   const nodesByDepth = new Map<number, string[]>();
   for (const [node, d] of depth) {
     if (node === network.plus || node === network.zero) continue;
@@ -127,7 +143,15 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
     else nodesByDepth.set(d, [node]);
   }
   for (const nodes of nodesByDepth.values()) {
-    nodes.sort((a, b) => (rawY.get(a) ?? 0) - (rawY.get(b) ?? 0));
+    nodes.sort(
+      (a, b) =>
+        (rawY.get(a) ?? 0) - (rawY.get(b) ?? 0) || a.localeCompare(b),
+    );
+  }
+
+  const displayY = new Map(rawY);
+  const minNodeGap = 64;
+  for (const nodes of nodesByDepth.values()) {
     let previous = -Infinity;
     for (const node of nodes) {
       const desired = rawY.get(node) ?? 82;
@@ -138,11 +162,25 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
   }
 
   const plusX = 34;
-  const stepX = 170;
-  const nodeX = (node: string) => plusX + (depth.get(node) ?? 0) * stepX;
-  const nodeY = (node: string) => displayY.get(node) ?? computeRawY(node);
-  const zeroX = plusX + (maxDepth + 2) * stepX;
+  const depthGap = 150;
+  const sameDepthLaneGap = 44;
+  const displayX = new Map<string, number>([[network.plus, plusX]]);
+  let columnRight = plusX;
 
+  // 同じ depth の別節点には別 x を与える。これが B / D の誤合流を防ぐ本体。
+  for (let d = 1; d <= maxDepth; d += 1) {
+    const nodes = nodesByDepth.get(d) ?? [];
+    const startX = columnRight + depthGap;
+    nodes.forEach((node, index) => {
+      displayX.set(node, startX + index * sameDepthLaneGap);
+    });
+    columnRight =
+      startX + Math.max(0, nodes.length - 1) * sameDepthLaneGap;
+  }
+
+  const nodeX = (node: string) => displayX.get(node) ?? plusX;
+  const nodeY = (node: string) => displayY.get(node) ?? computeRawY(node);
+  const zeroX = columnRight + depthGap;
   const placed: PlacedEdge[] = [];
 
   for (const edge of contacts) {
@@ -154,7 +192,8 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
     const by = nodeY(b);
 
     if (treeEdgeIds.has(edge.id)) {
-      const child = parent.has(b) && parent.get(b)?.edge.id === edge.id ? b : a;
+      const child =
+        parent.has(b) && parent.get(b)?.edge.id === edge.id ? b : a;
       const info = parent.get(child);
       const p = info?.node ?? (child === a ? b : a);
       const px = nodeX(p);
@@ -169,6 +208,7 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
       continue;
     }
 
+    // 木に入らない接点は渡り線。端点は必ず実節点の座標に戻す。
     const bridgeY = Math.max(50, (ay + by) / 2 - 34);
     placed.push({
       edge,
@@ -177,16 +217,35 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
     });
   }
 
+  // 出力へ向かう縦線は節点そのものの x から少し右へ逃がす。
+  // そうしないと、同じ列にある別節点を縦線が貫いて「接続点」に見えてしまう。
+  const outputUseAt = new Map<string, number>();
   for (const edge of outputs) {
     const row = rowOfOutput.get(edge.id) as number;
     const from = edge.to === network.zero ? edge.from : edge.to;
     const fx = nodeX(from);
     const fy = nodeY(from);
+    const useIndex = outputUseAt.get(from) ?? 0;
+    outputUseAt.set(from, useIndex + 1);
+    const laneX = fx + 22 + useIndex * 14;
     placed.push({
       edge,
-      path: `M ${fx} ${fy} V ${row} H ${zeroX}`,
+      path: `M ${fx} ${fy} H ${laneX} V ${row} H ${zeroX}`,
       symbol: { x: zeroX - 66, y: row },
     });
+  }
+
+  // 本当に3本以上が集まる節点だけ黒丸を置く。交差線には丸が無いので、
+  // 「交差」と「接続」を図面上でも区別できる。
+  const degree = new Map<string, number>();
+  for (const edge of network.edges) {
+    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+  }
+  const junctions: Junction[] = [];
+  for (const [node, count] of degree) {
+    if (count < 3 || node === network.plus || node === network.zero) continue;
+    junctions.push({ node, x: nodeX(node), y: nodeY(node) });
   }
 
   const bottom = Math.max(
@@ -194,10 +253,14 @@ const layoutNetwork = (network: SharedLadderNetwork): Layout => {
     ...placed.map(({ symbol }) => symbol.y),
     ...[...displayY.values()],
   );
-  const height = Math.max(190, bottom + 72, 128 + outputs.length * outputRowGap);
+  const height = Math.max(
+    190,
+    bottom + 72,
+    128 + outputs.length * outputRowGap,
+  );
   const width = Math.max(820, zeroX + 34);
 
-  return { width, height, plusX, zeroX, placed };
+  return { width, height, plusX, zeroX, placed, junctions };
 };
 
 const labelWidth = (text: string): number =>
@@ -210,7 +273,7 @@ const labelWidth = (text: string): number =>
   );
 
 export function SharedLadderView({ network }: { network: SharedLadderNetwork }) {
-  const layout = useMemo(() => layoutNetwork(network), [network]);
+  const layout = useMemo(() => layoutSharedLadder(network), [network]);
 
   return (
     <div className={styles.scroll}>
@@ -222,13 +285,44 @@ export function SharedLadderView({ network }: { network: SharedLadderNetwork }) 
         role="img"
         aria-label="同じ実接点を一度だけ描いた共有配線ラダー図"
       >
-        <line className={styles.rail} x1={layout.plusX} y1="24" x2={layout.plusX} y2={layout.height - 24} />
-        <line className={styles.rail} x1={layout.zeroX} y1="24" x2={layout.zeroX} y2={layout.height - 24} />
-        <text className={styles.railLabel} x={layout.plusX + 6} y="18">+24V</text>
-        <text className={styles.railLabel} x={layout.zeroX - 6} y="18" textAnchor="end">0V</text>
+        <line
+          className={styles.rail}
+          x1={layout.plusX}
+          y1="24"
+          x2={layout.plusX}
+          y2={layout.height - 24}
+        />
+        <line
+          className={styles.rail}
+          x1={layout.zeroX}
+          y1="24"
+          x2={layout.zeroX}
+          y2={layout.height - 24}
+        />
+        <text className={styles.railLabel} x={layout.plusX + 6} y="18">
+          +24V
+        </text>
+        <text
+          className={styles.railLabel}
+          x={layout.zeroX - 6}
+          y="18"
+          textAnchor="end"
+        >
+          0V
+        </text>
 
         {layout.placed.map(({ edge, path }) => (
           <path key={`wire:${edge.id}`} className={styles.wire} d={path} />
+        ))}
+
+        {layout.junctions.map((junction) => (
+          <circle
+            key={`junction:${junction.node}`}
+            className={styles.junction}
+            cx={junction.x}
+            cy={junction.y}
+            r="3.2"
+          />
         ))}
 
         {layout.placed.map(({ edge, symbol }) =>
@@ -255,14 +349,25 @@ function ContactSymbol({
   return (
     <g transform={`translate(${point.x - 28} ${point.y - 12})`}>
       <rect className={styles.mask} x="6" y="-5" width="44" height="34" rx="2" />
-      <rect className={styles.textMask} x={28 - width / 2} y="-20" width={width} height="15" rx="2" />
+      <rect
+        className={styles.textMask}
+        x={28 - width / 2}
+        y="-20"
+        width={width}
+        height="15"
+        rx="2"
+      />
       <rect className={styles.textMask} x="8" y="29" width="40" height="14" rx="2" />
       <line className={styles.symbol} x1="0" y1="12" x2="15" y2="12" />
       <line className={styles.symbol} x1="15" y1="4" x2="15" y2="20" />
       <line className={styles.symbol} x1="41" y1="4" x2="41" y2="20" />
       <line className={styles.symbol} x1="41" y1="12" x2="56" y2="12" />
-      {contact.kind === "nc" && <line className={styles.symbol} x1="12" y1="21" x2="44" y2="3" />}
-      <text className={styles.label} x="28" y="-8" textAnchor="middle">{contact.label}</text>
+      {contact.kind === "nc" && (
+        <line className={styles.symbol} x1="12" y1="21" x2="44" y2="3" />
+      )}
+      <text className={styles.label} x="28" y="-8" textAnchor="middle">
+        {contact.label}
+      </text>
       <text className={styles.terminals} x="28" y="39" textAnchor="middle">
         {contact.terminalLabels[0]}-{contact.terminalLabels[1]}
       </text>
@@ -282,7 +387,14 @@ function OutputSymbol({
   return (
     <g transform={`translate(${point.x - 28} ${point.y - 12})`}>
       <rect className={styles.mask} x="6" y="-5" width="44" height="34" rx="2" />
-      <rect className={styles.textMask} x={28 - width / 2} y="-20" width={width} height="15" rx="2" />
+      <rect
+        className={styles.textMask}
+        x={28 - width / 2}
+        y="-20"
+        width={width}
+        height="15"
+        rx="2"
+      />
       <rect className={styles.textMask} x="8" y="29" width="40" height="14" rx="2" />
       <line className={styles.symbol} x1="0" y1="12" x2="15" y2="12" />
       <line className={styles.symbol} x1="41" y1="12" x2="56" y2="12" />
@@ -298,7 +410,9 @@ function OutputSymbol({
           <line className={styles.symbol} x1="34.5" y1="5.5" x2="21.5" y2="18.5" />
         </>
       )}
-      <text className={styles.label} x="28" y="-8" textAnchor="middle">{output.label}</text>
+      <text className={styles.label} x="28" y="-8" textAnchor="middle">
+        {output.label}
+      </text>
       <text className={styles.terminals} x="28" y="39" textAnchor="middle">
         {output.terminalLabels[0]}-{output.terminalLabels[1]}
       </text>
