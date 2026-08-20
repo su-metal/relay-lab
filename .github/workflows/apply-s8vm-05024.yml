@@ -1,0 +1,94 @@
+name: Apply S8VM-05024 implementation
+
+on:
+  push:
+    branches: [feature/omron-s8vm-05024]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/omron-s8vm-05024
+
+      - name: Apply implementation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found: {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # ElectricalDefinition: AC input -> DC output converter.
+          replace_once(
+              "src/circuit/types/component.ts",
+              '''  | {\n      kind: "power";\n      voltage: number;\n      currentType: "DC" | "AC";\n      positiveTerminal: string;\n      zeroTerminal: string;\n    }\n  /**\n   * リレー。''',
+              '''  | {\n      kind: "power";\n      voltage: number;\n      currentType: "DC" | "AC";\n      positiveTerminal: string;\n      zeroTerminal: string;\n    }\n  /**\n   * AC 入力を受けて DC を出すスイッチング電源。\n   *\n   * `power` はそれ自体が理想電源だが、こちらは入力側に適合する AC 電源が\n   * 来ているときだけ出力を持つ。入力と出力は絶縁され、内部で union しない。\n   * 型番分岐はせず、入出力範囲と端子 ID を定義データで持つ。\n   */\n  | {\n      kind: "ac-dc-power-supply";\n      inputVoltageMin: number;\n      inputVoltageMax: number;\n      lineTerminal: string;\n      neutralTerminal: string;\n      outputVoltage: number;\n      positiveTerminal: string;\n      zeroTerminal: string;\n      ratedOutputCurrent?: number;\n      ratedPower?: number;\n    }\n  /**\n   * リレー。'''
+          )
+
+          # graph.ts: converter is not a conducting pair.
+          replace_once(
+              "src/circuit/engine/graph.ts",
+              '''    case "power":\n    case "lamp":''',
+              '''    case "power":\n    case "ac-dc-power-supply":\n    case "lamp":'''
+          )
+
+          old = '''  for (const instance of document.components) {\n    const definition = definitions.get(instance.definitionId);\n    if (!definition) continue;\n    const { electrical } = definition;\n    if (electrical.kind !== "power") continue;\n    mark(instance.id, electrical.positiveTerminal, "plusFrom");\n    mark(instance.id, electrical.zeroTerminal, "zeroFrom");\n  }\n\n  spreadThroughDiodes(states, [\n    ...collectDiodeEdges(document, definitions, nets.netOf),\n    // 調光器の AC の通り道。ネットは分けたまま電位だけ流す（design.md §4.15）\n    ...collectDimmerEdges(document, definitions, nets.netOf),\n  ]);\n\n  return states;'''
+          new = '''  for (const instance of document.components) {\n    const definition = definitions.get(instance.definitionId);\n    if (!definition) continue;\n    const { electrical } = definition;\n    if (electrical.kind !== "power") continue;\n    mark(instance.id, electrical.positiveTerminal, "plusFrom");\n    mark(instance.id, electrical.zeroTerminal, "zeroFrom");\n  }\n\n  const directionalEdges = [\n    ...collectDiodeEdges(document, definitions, nets.netOf),\n    // 調光器の AC の通り道。ネットは分けたまま電位だけ流す（design.md §4.15）\n    ...collectDimmerEdges(document, definitions, nets.netOf),\n  ];\n\n  // まず一次側の電位を有向要素の先まで届ける。\n  spreadThroughDiodes(states, directionalEdges);\n\n  const instanceById = new Map(document.components.map((instance) => [instance.id, instance]));\n  const stateOfTerminal = (componentId: string, terminalId: string): MutableNetState | undefined => {\n    const netId = nets.netOf.get(terminalKey(componentId, terminalId));\n    return netId === undefined ? undefined : states.get(netId);\n  };\n  const compatibleAcSource = (sourceId: string, min: number, max: number): boolean => {\n    const source = instanceById.get(sourceId);\n    if (!source) return false;\n    const sourceElectrical = definitions.get(source.definitionId)?.electrical;\n    return (\n      sourceElectrical?.kind === "power" &&\n      sourceElectrical.currentType === "AC" &&\n      sourceElectrical.voltage >= min &&\n      sourceElectrical.voltage <= max\n    );\n  };\n\n  // AC-DC 電源は、L/N が同じ適合 AC 電源の両極へ届いたときだけ DC 出力を持つ。\n  for (const instance of document.components) {\n    const electrical = definitions.get(instance.definitionId)?.electrical;\n    if (electrical?.kind !== "ac-dc-power-supply") continue;\n\n    const line = stateOfTerminal(instance.id, electrical.lineTerminal);\n    const neutral = stateOfTerminal(instance.id, electrical.neutralTerminal);\n    if (!line || !neutral) continue;\n\n    const powered = [...line.plusFrom].some(\n      (sourceId) =>\n        neutral.zeroFrom.has(sourceId) &&\n        compatibleAcSource(sourceId, electrical.inputVoltageMin, electrical.inputVoltageMax),\n    ) || [...line.zeroFrom].some(\n      (sourceId) =>\n        neutral.plusFrom.has(sourceId) &&\n        compatibleAcSource(sourceId, electrical.inputVoltageMin, electrical.inputVoltageMax),\n    );\n    if (!powered) continue;\n\n    mark(instance.id, electrical.positiveTerminal, "plusFrom");\n    mark(instance.id, electrical.zeroTerminal, "zeroFrom");\n  }\n\n  // 変換後の DC 出力もダイオード等の先へ伝搬させる。\n  spreadThroughDiodes(states, directionalEdges);\n\n  return states;'''
+          replace_once("src/circuit/engine/graph.ts", old, new)
+
+          # Converter output short is a power short too.
+          replace_once(
+              "src/circuit/engine/validation.ts",
+              '''    const { electrical } = definition;\n    if (electrical.kind !== "power") continue;\n\n    const plusNet = lookup.netOf.get(\n      terminalKey(instance.id, electrical.positiveTerminal),\n    );''',
+              '''    const { electrical } = definition;\n    if (electrical.kind !== "power" && electrical.kind !== "ac-dc-power-supply") continue;\n\n    const plusNet = lookup.netOf.get(\n      terminalKey(instance.id, electrical.positiveTerminal),\n    );'''
+          )
+          replace_once(
+              "src/circuit/engine/validation.ts",
+              '''      message: `${describeComponent(instance, definition)} の + 側と 0V 側が導通しています（電源短絡）。`,''',
+              '''      message:\n        electrical.kind === "ac-dc-power-supply"\n          ? `${describeComponent(instance, definition)} の DC 出力 +V と -V が導通しています（電源短絡）。`\n          : `${describeComponent(instance, definition)} の + 側と 0V 側が導通しています（電源短絡）。`,'''
+          )
+
+          # Actual OMRON definition. The circled 1/2/3 in nomenclature are item numbers, not terminal numbers;
+          # actual terminal markings are L, N, FG, -V, +V, so `number` is intentionally omitted.
+          Path("src/circuit/definitions/omron/s8vm-05024.ts").write_text(r'''import type { ComponentDefinition } from "@/circuit/types";\n\n/**\n * OMRON S8VM-05024 — 50W / DC24V 2.2A、オープン・底面取りつけタイプ。\n *\n * OMRON 公式 S8VM 形式一覧:\n * - S8VM-05024 = 50W / 24V / 2.2A\n * - 全機種の入力は AC100〜240V フリー入力\n *\n * OMRON 公式 S8VM 接続資料（50W ブロック図）と nomenclature では、\n * 入力端子は L/N、オープンタイプの接地は FG、出力端子は -V/+V。\n * 図中の 1/2/3 は名称表の項目番号であり実端子番号ではないため `number` は持たせない。\n */\nexport const S8VM_05024_SOURCE =\n  "https://www.fa.omron.co.jp/products/family/1616/network/";\n\nexport const omronS8vm05024: ComponentDefinition = {\n  id: "omron-s8vm-05024",\n  manufacturer: "OMRON",\n  model: "S8VM-05024",\n  category: "power",\n  terminals: [\n    {\n      id: "L",\n      label: "L",\n      role: "power_line",\n      description: "AC入力 L / AC100〜240V",\n      position: { x: 0, y: 0.25 },\n      side: "left",\n    },\n    {\n      id: "N",\n      label: "N",\n      role: "power_neutral",\n      description: "AC入力 N / AC100〜240V",\n      position: { x: 0, y: 0.48 },\n      side: "left",\n    },\n    {\n      id: "FG",\n      label: "FG",\n      role: "generic",\n      description: "FG / フレームグラウンド端子（保護接地）",\n      position: { x: 0.5, y: 1 },\n      side: "bottom",\n    },\n    {\n      id: "-V",\n      label: "-V",\n      role: "power_zero",\n      description: "DC出力 -V / DC24V",\n      position: { x: 1, y: 0.62 },\n      side: "right",\n    },\n    {\n      id: "+V",\n      label: "+V",\n      role: "power_positive",\n      description: "DC出力 +V / DC24V・定格2.2A",\n      position: { x: 1, y: 0.34 },\n      side: "right",\n    },\n  ],\n  electrical: {\n    kind: "ac-dc-power-supply",\n    inputVoltageMin: 100,\n    inputVoltageMax: 240,\n    lineTerminal: "L",\n    neutralTerminal: "N",\n    outputVoltage: 24,\n    positiveTerminal: "+V",\n    zeroTerminal: "-V",\n    ratedOutputCurrent: 2.2,\n    ratedPower: 50,\n  },\n  visual: { width: 200, height: 180 },\n  source: S8VM_05024_SOURCE,\n  verified: true,\n};\n'''.replace('\\n', '\n'))
+
+          # Registry.
+          replace_once(
+              "src/circuit/definitions/index.ts",
+              '''import { omronMy4nDc24 } from "./omron/my4n-dc24";\nimport { ac100vPowerSupply, dc24vPowerSupply } from "./power";''',
+              '''import { omronMy4nDc24 } from "./omron/my4n-dc24";\nimport { omronS8vm05024 } from "./omron/s8vm-05024";\nimport { ac100vPowerSupply, dc24vPowerSupply } from "./power";'''
+          )
+          replace_once(
+              "src/circuit/definitions/index.ts",
+              '''  dc24vPowerSupply,\n  ac100vPowerSupply,\n  pushbuttonNo,''',
+              '''  dc24vPowerSupply,\n  ac100vPowerSupply,\n  omronS8vm05024,\n  pushbuttonNo,'''
+          )
+          replace_once(
+              "src/circuit/definitions/index.ts",
+              '''  omronMy4nD2Dc24,\n  omronMy4nDc24,\n  onDelayTimer,''',
+              '''  omronMy4nD2Dc24,\n  omronMy4nDc24,\n  omronS8vm05024,\n  onDelayTimer,'''
+          )
+
+          Path("src/circuit/engine/__tests__/s8vm-05024.test.ts").write_text(r'''import { describe, expect, it } from "vitest";\n\nimport { componentRegistry, omronS8vm05024 } from "@/circuit/definitions";\nimport { simulate } from "@/circuit/engine";\nimport type { CircuitConnection, CircuitDocument } from "@/circuit/types";\n\nconst wire = (from: string, to: string): CircuitConnection => {\n  const [fromComponent, fromTerminal] = from.split(":");\n  const [toComponent, toTerminal] = to.split(":");\n  return {\n    id: `${from}-${to}`,\n    from: { componentId: fromComponent, terminalId: fromTerminal },\n    to: { componentId: toComponent, terminalId: toTerminal },\n  };\n};\n\nconst makeCircuit = (withInput: boolean): CircuitDocument => ({\n  version: 1,\n  components: [\n    { id: "AC1", definitionId: "power-ac100v", label: "AC1", position: { x: 0, y: 0 } },\n    { id: "PS1", definitionId: "omron-s8vm-05024", label: "PS1", position: { x: 200, y: 0 } },\n    { id: "PL1", definitionId: "lamp-dc24v", label: "PL1", position: { x: 400, y: 0 } },\n  ],\n  connections: [\n    ...(withInput ? [wire("AC1:L", "PS1:L"), wire("AC1:N", "PS1:N")] : []),\n    wire("PS1:+V", "PL1:1"),\n    wire("PL1:2", "PS1:-V"),\n  ],\n  viewport: { x: 0, y: 0, zoom: 1 },\n});\n\ndescribe("OMRON S8VM-05024", () => {\n  it("公式仕様の端子と定格を保持する", () => {\n    expect(omronS8vm05024.manufacturer).toBe("OMRON");\n    expect(omronS8vm05024.model).toBe("S8VM-05024");\n    expect(omronS8vm05024.terminals.map((terminal) => terminal.id)).toEqual([\n      "L", "N", "FG", "-V", "+V",\n    ]);\n    expect(omronS8vm05024.verified).toBe(true);\n    expect(omronS8vm05024.electrical).toMatchObject({\n      kind: "ac-dc-power-supply",\n      inputVoltageMin: 100,\n      inputVoltageMax: 240,\n      outputVoltage: 24,\n      ratedOutputCurrent: 2.2,\n      ratedPower: 50,\n    });\n  });\n\n  it("AC100V が L/N に来たときだけ DC24V 出力が有効になる", () => {\n    const powered = simulate(makeCircuit(true), componentRegistry, { pressedSwitches: new Set() });\n    expect(powered.litLamps.has("PL1")).toBe(true);\n\n    const unpowered = simulate(makeCircuit(false), componentRegistry, { pressedSwitches: new Set() });\n    expect(unpowered.litLamps.has("PL1")).toBe(false);\n  });\n\n  it("DC 出力短絡を検出する", () => {\n    const document = makeCircuit(true);\n    document.connections.push(wire("PS1:+V", "PS1:-V"));\n    const result = simulate(document, componentRegistry, { pressedSwitches: new Set() });\n    expect(result.warnings.some((warning) =>\n      warning.code === "power-short-circuit" && warning.componentId === "PS1"\n    )).toBe(true);\n  });\n});\n'''.replace('\\n', '\n'))
+
+          # One-shot workflow removes itself from the resulting implementation commit.
+          Path(".github/workflows/apply-s8vm-05024.yml").unlink()
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "OMRON S8VM-05024 を追加"
+          git push
