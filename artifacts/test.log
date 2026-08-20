@@ -5,50 +5,50 @@
 
 [1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/runner/work/relay-lab/relay-lab[39m
 
- [32m✓[39m src/circuit/adapter/__tests__/wire-lane.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 16[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/load-path.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 61[2mms[22m[39m
- [32m✓[39m src/store/__tests__/circuitStore.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 30[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/registry.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 25[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/analog.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 27[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/fade.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 27[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/scenarios.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 35[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/lighting-system.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 38[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/timer.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/wire-lane.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/store/__tests__/circuitStore.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/load-path.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/registry.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/analog.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/fade.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/scenarios.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/lighting-system.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/timer.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 43[2mms[22m[39m
  [32m✓[39m src/circuit/persistence/__tests__/document-storage.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 17[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/preview.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 14[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/self-hold.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 41[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/contactor-scenarios.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 22[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/contact-drivers.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 37[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/ladder.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 17[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/reactflow.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 12[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/current-flow.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 23[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/path-preview.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 17[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/align.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 9[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/step7-scenarios.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 22[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/simulation-view.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/preview.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/self-hold.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 60[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/contactor-scenarios.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/contact-drivers.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/ladder.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/current-flow.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/reactflow.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/path-preview.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/align.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/step7-scenarios.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/simulation-view.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/inspection.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 26[2mms[22m[39m
  [32m✓[39m src/components/circuit/__tests__/place-component.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 9[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/inspection.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/g7l-scenarios.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 16[2mms[22m[39m
  [32m✓[39m src/circuit/adapter/__tests__/wire-role.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 11[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/g7l-scenarios.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 15[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/communication.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 23[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/wiring.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/communication.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 41[2mms[22m[39m
  [32m✓[39m src/circuit/adapter/__tests__/auto-layout.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 18[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/diode.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 15[2mms[22m[39m
- [32m✓[39m src/circuit/engine/__tests__/chatter.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 23[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/selection.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 12[2mms[22m[39m
- [32m✓[39m src/store/__tests__/simulationStore.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 9[2mms[22m[39m
- [32m✓[39m src/circuit/persistence/__tests__/trigger-percents.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 23[2mms[22m[39m
- [32m✓[39m src/circuit/persistence/__tests__/document-file.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 21[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/terminal-connections.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 14[2mms[22m[39m
- [32m✓[39m src/circuit/adapter/__tests__/ladder-shared.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 22[2mms[22m[39m
- [32m✓[39m src/circuit/definitions/__tests__/switch-scenarios.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/wiring.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/diode.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/selection.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/circuit/engine/__tests__/chatter.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/store/__tests__/simulationStore.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/circuit/persistence/__tests__/trigger-percents.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/circuit/persistence/__tests__/document-file.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/ladder-shared.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/circuit/adapter/__tests__/terminal-connections.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/circuit/definitions/__tests__/switch-scenarios.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/shortcuts.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 9[2mms[22m[39m
  [32m✓[39m src/circuit/engine/__tests__/relay.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 5[2mms[22m[39m
- [32m✓[39m src/lib/__tests__/shortcuts.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 12[2mms[22m[39m
- [32m✓[39m src/lib/__tests__/component-search.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/lib/__tests__/component-search.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 9[2mms[22m[39m
  [32m✓[39m src/__tests__/setup.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
 
 [2m Test Files [22m [1m[32m41 passed[39m[22m[90m (41)[39m
 [2m      Tests [22m [1m[32m588 passed[39m[22m[90m (588)[39m
-[2m   Start at [22m 00:59:13
-[2m   Duration [22m 6.74s[2m (transform 1.69s, setup 0ms, collect 5.79s, tests 843ms, environment 15ms, prepare 4.69s)[22m
+[2m   Start at [22m 01:01:13
+[2m   Duration [22m 6.93s[2m (transform 1.56s, setup 0ms, collect 5.74s, tests 954ms, environment 10ms, prepare 4.85s)[22m
 
