@@ -1,0 +1,547 @@
+name: Fix S8VM-05024 integration
+
+on:
+  push:
+    branches: [feature/omron-s8vm-05024]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/omron-s8vm-05024
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      - name: Apply S8VM integration fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor not found in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) S8VM-05024 definition: official markings + rated/allowable ranges.
+          Path("src/circuit/definitions/omron/s8vm-05024.ts").write_text('''import type { ComponentDefinition } from "@/circuit/types";
+
+/**
+ * OMRON S8VM-05024 — 50W / DC24V 2.2A、オープン・底面取りつけタイプ。
+ *
+ * OMRON 公式資料:
+ * - 形式/種類: S8VM-05024 = 50W / 24V / 2.2A、オープン・底面取りつけ
+ *   https://www.fa.omron.co.jp/products/family/1616/lineup/
+ * - 定格/性能: 定格入力 AC100〜240V、使用可能範囲 AC85〜265V
+ *   https://www.fa.omron.co.jp/products/family/1616/specification/
+ * - 配線/接続: 「形S8VM-050□□□□（50W）」ブロック図
+ *   https://www.fa.omron.co.jp/products/family/1616/network/
+ *
+ * 実機の端子表示は L / N / FG / -V / +V。Nomenclature の 1 / 2 / 3 は
+ * 「AC入力」「FG」「DC出力」という説明項目番号で、物理端子番号ではない。
+ * `number` には実機に刻印される端子記号そのものを保持する。
+ */
+export const S8VM_05024_SOURCE =
+  "https://www.fa.omron.co.jp/products/family/1616/network/";
+
+export const omronS8vm05024: ComponentDefinition = {
+  id: "omron-s8vm-05024",
+  manufacturer: "OMRON",
+  model: "S8VM-05024",
+  category: "power",
+  terminals: [
+    {
+      id: "L",
+      label: "L",
+      number: "L",
+      role: "power_line",
+      description: "AC入力 L / 定格AC100〜240V（使用可能範囲AC85〜265V）",
+      position: { x: 0, y: 0.25 },
+      side: "left",
+    },
+    {
+      id: "N",
+      label: "N",
+      number: "N",
+      role: "power_neutral",
+      description: "AC入力 N / 定格AC100〜240V（使用可能範囲AC85〜265V）",
+      position: { x: 0, y: 0.48 },
+      side: "left",
+    },
+    {
+      id: "FG",
+      label: "FG",
+      number: "FG",
+      role: "generic",
+      description: "FG / フレームグラウンド端子（保護接地）",
+      position: { x: 0.5, y: 1 },
+      side: "bottom",
+    },
+    {
+      id: "-V",
+      label: "-V",
+      number: "-V",
+      role: "power_zero",
+      description: "DC出力 -V / DC24V",
+      position: { x: 1, y: 0.62 },
+      side: "right",
+    },
+    {
+      id: "+V",
+      label: "+V",
+      number: "+V",
+      role: "power_positive",
+      description: "DC出力 +V / DC24V・定格2.2A",
+      position: { x: 1, y: 0.34 },
+      side: "right",
+    },
+  ],
+  electrical: {
+    kind: "ac-dc-power-supply",
+    ratedInputVoltageMin: 100,
+    ratedInputVoltageMax: 240,
+    allowableInputVoltageMin: 85,
+    allowableInputVoltageMax: 265,
+    lineTerminal: "L",
+    neutralTerminal: "N",
+    outputVoltage: 24,
+    positiveTerminal: "+V",
+    zeroTerminal: "-V",
+    ratedOutputCurrent: 2.2,
+    ratedPower: 50,
+  },
+  visual: { width: 200, height: 180 },
+  source: S8VM_05024_SOURCE,
+  verified: true,
+};
+''')
+
+          # 2) ElectricalDefinition: keep official ranges as metadata.
+          p = Path("src/circuit/types/component.ts")
+          text = p.read_text()
+          old = '''  | {
+      kind: "ac-dc-power-supply";
+      inputVoltageMin: number;
+      inputVoltageMax: number;
+      lineTerminal: string;
+      neutralTerminal: string;
+      outputVoltage: number;
+      positiveTerminal: string;
+      zeroTerminal: string;
+      ratedOutputCurrent?: number;
+      ratedPower?: number;
+    }'''
+          new = '''  | {
+      kind: "ac-dc-power-supply";
+      /** メーカーの定格入力範囲。現行シミュレータでは電圧不一致判定には使わない */
+      ratedInputVoltageMin: number;
+      ratedInputVoltageMax: number;
+      /** メーカーが示す使用可能な入力電圧範囲（仕様表示用） */
+      allowableInputVoltageMin: number;
+      allowableInputVoltageMax: number;
+      lineTerminal: string;
+      neutralTerminal: string;
+      outputVoltage: number;
+      positiveTerminal: string;
+      zeroTerminal: string;
+      ratedOutputCurrent?: number;
+      ratedPower?: number;
+    }'''
+          if old not in text:
+              raise SystemExit("ac-dc type block not found")
+          p.write_text(text.replace(old, new, 1))
+
+          # 3) Engine: AC voltage mismatch remains out of scope. Same AC source on L/N is enough.
+          p = Path("src/circuit/engine/graph.ts")
+          text = p.read_text()
+          pattern = re.compile(r'''  const compatibleAcSource = \(sourceId: string, min: number, max: number\): boolean => \{.*?\n  \};''', re.S)
+          replacement = '''  const isAcSource = (sourceId: string): boolean => {
+    const source = instanceById.get(sourceId);
+    if (!source) return false;
+    const sourceElectrical = definitions.get(source.definitionId)?.electrical;
+    return sourceElectrical?.kind === "power" && sourceElectrical.currentType === "AC";
+  };'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit("compatibleAcSource block not found")
+          text = text.replace(
+              "compatibleAcSource(sourceId, electrical.inputVoltageMin, electrical.inputVoltageMax)",
+              "isAcSource(sourceId)",
+          )
+          text = text.replace(
+              "// AC-DC 電源は、L/N が同じ適合 AC 電源の両極へ届いたときだけ DC 出力を持つ。",
+              "// AC-DC 電源は、L/N が同じ AC 電源の両極へ届いたときだけ DC 出力を持つ。\n  // 電圧範囲は仕様データとして保持するが、requirements_definition.md §6.1 の\n  // 『定格電圧の不一致は検出しない』に合わせ、ここでは判定条件にしない。",
+          )
+          p.write_text(text)
+
+          # 4) Path graph: powered AC-DC output must be a supply endpoint for current/path views.
+          p = Path("src/circuit/adapter/path-graph.ts")
+          text = p.read_text()
+          text = text.replace(
+              'import { conductingPairs } from "@/circuit/engine";',
+              'import { buildNets, computeNetStates, conductingPairs } from "@/circuit/engine";',
+              1,
+          )
+          anchor = '''  for (const connection of document.connections) {
+    connect(
+      terminalRefKey(connection.from),
+      terminalRefKey(connection.to),
+      connection.id,
+    );
+  }
+
+  for (const instance of document.components) {'''
+          replacement = '''  for (const connection of document.connections) {
+    connect(
+      terminalRefKey(connection.from),
+      terminalRefKey(connection.to),
+      connection.id,
+    );
+  }
+
+  // AC-DC 電源の二次側は、一次側 L/N に AC が成立しているときだけ電源端点になる。
+  // 判定を adapter に書き直さず、エンジンが解いた NetState の source ID を読む。
+  const nets = buildNets(
+    document,
+    definitions,
+    { pressedSwitches },
+    energizedRelays,
+  );
+  const states = computeNetStates(document, definitions, nets);
+
+  for (const instance of document.components) {'''
+          if anchor not in text:
+              raise SystemExit("path graph insertion anchor not found")
+          text = text.replace(anchor, replacement, 1)
+          anchor = '''    if (electrical.kind === "power") {
+      connect(terminalKey(instance.id, electrical.positiveTerminal), PLUS_NODE);
+      connect(terminalKey(instance.id, electrical.zeroTerminal), ZERO_NODE);
+    }
+  }'''
+          replacement = '''    if (electrical.kind === "power") {
+      connect(terminalKey(instance.id, electrical.positiveTerminal), PLUS_NODE);
+      connect(terminalKey(instance.id, electrical.zeroTerminal), ZERO_NODE);
+    }
+
+    if (electrical.kind === "ac-dc-power-supply") {
+      const plusNet = nets.netOf.get(
+        terminalKey(instance.id, electrical.positiveTerminal),
+      );
+      const zeroNet = nets.netOf.get(
+        terminalKey(instance.id, electrical.zeroTerminal),
+      );
+      const powered =
+        plusNet !== undefined &&
+        zeroNet !== undefined &&
+        states.get(plusNet)?.plusFrom.has(instance.id) === true &&
+        states.get(zeroNet)?.zeroFrom.has(instance.id) === true;
+      if (powered) {
+        connect(terminalKey(instance.id, electrical.positiveTerminal), PLUS_NODE);
+        connect(terminalKey(instance.id, electrical.zeroTerminal), ZERO_NODE);
+      }
+    }
+  }'''
+          if anchor not in text:
+              raise SystemExit("path graph power anchor not found")
+          p.write_text(text.replace(anchor, replacement, 1))
+
+          # 5) Ladder is topology, not current state: treat the converter's DC output as rails.
+          p = Path("src/circuit/adapter/ladder.ts")
+          text = p.read_text()
+          text = text.replace(
+              '    if (electrical.kind === "power") {',
+              '    if (\n      electrical.kind === "power" ||\n      electrical.kind === "ac-dc-power-supply"\n    ) {',
+              1,
+          )
+          text = text.replace(
+              '      case "power":\n      case "terminal":',
+              '      case "power":\n      case "ac-dc-power-supply":\n      case "terminal":',
+              1,
+          )
+          p.write_text(text)
+
+          # 6) Registry invariant: don't weaken verification just because manufacturer is present.
+          p = Path("src/circuit/definitions/__tests__/registry.test.ts")
+          text = p.read_text()
+          start = text.index('  /**\n   * 実端子を持たない純粋な汎用部品は検証済みを名乗らない。')
+          end = text.index('\n\n  it("部品ごとに端子 ID が重複しない"', start)
+          block = '''  /**
+   * 実端子番号／記号を持たない汎用部品は検証対象そのものが存在しないので、
+   * 検証済みを名乗ってはいけない（design.md §4.4 / §4.5）。
+   *
+   * S8VM の L/N/FG/-V/+V のように数字ではない実端子表示も `number` に
+   * そのまま保持する。メーカー名があるだけで検証済み扱いにはしない。
+   */
+  it("実端子番号／記号を持たない定義は検証済みを名乗らない", () => {
+    for (const definition of componentDefinitions) {
+      const hasRealTerminals = definition.terminals.some(
+        (terminal) => terminal.number !== undefined,
+      );
+      if (hasRealTerminals) continue;
+      expect(definition.verified, definition.id).toBe(false);
+    }
+  });'''
+          p.write_text(text[:start] + block + text[end:])
+
+          # 7) S8VM engine tests.
+          Path("src/circuit/engine/__tests__/s8vm-05024.test.ts").write_text('''import { describe, expect, it } from "vitest";
+
+import { componentRegistry, omronS8vm05024 } from "@/circuit/definitions";
+import { simulate } from "@/circuit/engine";
+import type { CircuitConnection, CircuitDocument } from "@/circuit/types";
+
+const wire = (from: string, to: string): CircuitConnection => {
+  const [fromComponent, fromTerminal] = from.split(":");
+  const [toComponent, toTerminal] = to.split(":");
+  return {
+    id: `${from}-${to}`,
+    from: { componentId: fromComponent, terminalId: fromTerminal },
+    to: { componentId: toComponent, terminalId: toTerminal },
+  };
+};
+
+const makeCircuit = (withInput: boolean): CircuitDocument => ({
+  version: 1,
+  components: [
+    { id: "AC1", definitionId: "power-ac100v", label: "AC1", position: { x: 0, y: 0 } },
+    { id: "PS1", definitionId: "omron-s8vm-05024", label: "PS1", position: { x: 200, y: 0 } },
+    { id: "PL1", definitionId: "lamp-dc24v", label: "PL1", position: { x: 400, y: 0 } },
+  ],
+  connections: [
+    ...(withInput ? [wire("AC1:L", "PS1:L"), wire("AC1:N", "PS1:N")] : []),
+    wire("PS1:+V", "PL1:1"),
+    wire("PL1:2", "PS1:-V"),
+  ],
+  viewport: { x: 0, y: 0, zoom: 1 },
+});
+
+describe("OMRON S8VM-05024", () => {
+  it("公式仕様の端子表示と定格を保持する", () => {
+    expect(omronS8vm05024.manufacturer).toBe("OMRON");
+    expect(omronS8vm05024.model).toBe("S8VM-05024");
+    expect(omronS8vm05024.terminals.map((terminal) => terminal.id)).toEqual([
+      "L", "N", "FG", "-V", "+V",
+    ]);
+    expect(omronS8vm05024.terminals.map((terminal) => terminal.number)).toEqual([
+      "L", "N", "FG", "-V", "+V",
+    ]);
+    expect(omronS8vm05024.verified).toBe(true);
+    expect(omronS8vm05024.electrical).toMatchObject({
+      kind: "ac-dc-power-supply",
+      ratedInputVoltageMin: 100,
+      ratedInputVoltageMax: 240,
+      allowableInputVoltageMin: 85,
+      allowableInputVoltageMax: 265,
+      outputVoltage: 24,
+      ratedOutputCurrent: 2.2,
+      ratedPower: 50,
+    });
+  });
+
+  it("同じ AC 電源が L/N に来たときだけ DC24V 出力が有効になる", () => {
+    const powered = simulate(makeCircuit(true), componentRegistry, { pressedSwitches: new Set() });
+    expect(powered.litLamps.has("PL1")).toBe(true);
+
+    const unpowered = simulate(makeCircuit(false), componentRegistry, { pressedSwitches: new Set() });
+    expect(unpowered.litLamps.has("PL1")).toBe(false);
+  });
+
+  it("DC 出力短絡を検出する", () => {
+    const document = makeCircuit(true);
+    document.connections.push(wire("PS1:+V", "PS1:-V"));
+    const result = simulate(document, componentRegistry, { pressedSwitches: new Set() });
+    expect(result.warnings.some((warning) =>
+      warning.code === "power-short-circuit" && warning.componentId === "PS1"
+    )).toBe(true);
+  });
+});
+''')
+
+          # 8) Adapter integration tests: path views and ladder must agree with engine/topology.
+          Path("src/circuit/adapter/__tests__/s8vm-power-source.test.ts").write_text('''import { describe, expect, it } from "vitest";
+
+import { buildLadder } from "@/circuit/adapter/ladder";
+import {
+  buildPathGraph,
+  PLUS_NODE,
+  ZERO_NODE,
+  reachableFrom,
+} from "@/circuit/adapter/path-graph";
+import { componentRegistry } from "@/circuit/definitions";
+import type { CircuitConnection, CircuitDocument } from "@/circuit/types";
+import { terminalKey } from "@/circuit/types";
+
+const wire = (from: string, to: string): CircuitConnection => {
+  const [fromComponent, fromTerminal] = from.split(":");
+  const [toComponent, toTerminal] = to.split(":");
+  return {
+    id: `${from}-${to}`,
+    from: { componentId: fromComponent, terminalId: fromTerminal },
+    to: { componentId: toComponent, terminalId: toTerminal },
+  };
+};
+
+const poweredCircuit = (withInput: boolean): CircuitDocument => ({
+  version: 1,
+  components: [
+    { id: "AC1", definitionId: "power-ac100v", position: { x: 0, y: 0 } },
+    { id: "PS1", definitionId: "omron-s8vm-05024", position: { x: 180, y: 0 } },
+    { id: "PL1", definitionId: "lamp-dc24v", position: { x: 360, y: 0 } },
+  ],
+  connections: [
+    ...(withInput ? [wire("AC1:L", "PS1:L"), wire("AC1:N", "PS1:N")] : []),
+    wire("PS1:+V", "PL1:1"),
+    wire("PL1:2", "PS1:-V"),
+  ],
+  viewport: { x: 0, y: 0, zoom: 1 },
+});
+
+describe("S8VM-05024 の adapter 統合", () => {
+  it("一次側が生きているときだけ経路グラフで二次側を電源として扱う", () => {
+    const on = buildPathGraph(poweredCircuit(true), componentRegistry, new Set(), new Set());
+    expect(reachableFrom(on, PLUS_NODE).has(terminalKey("PS1", "+V"))).toBe(true);
+    expect(reachableFrom(on, ZERO_NODE).has(terminalKey("PS1", "-V"))).toBe(true);
+
+    const off = buildPathGraph(poweredCircuit(false), componentRegistry, new Set(), new Set());
+    expect(reachableFrom(off, PLUS_NODE).has(terminalKey("PS1", "+V"))).toBe(false);
+    expect(reachableFrom(off, ZERO_NODE).has(terminalKey("PS1", "-V"))).toBe(false);
+  });
+
+  it("ラダー図では S8VM の DC 出力を電源母線として扱う", () => {
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "PS1", definitionId: "omron-s8vm-05024", position: { x: 0, y: 0 } },
+        { id: "PL1", definitionId: "lamp-dc24v", position: { x: 200, y: 0 } },
+      ],
+      connections: [
+        wire("PS1:+V", "PL1:1"),
+        wire("PL1:2", "PS1:-V"),
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const ladder = buildLadder(document, componentRegistry);
+    const lamp = ladder.rungs.find((rung) => rung.output.componentId === "PL1");
+    expect(lamp).toBeDefined();
+    expect(lamp?.blocked).toBeUndefined();
+    expect(lamp?.condition).toBeUndefined();
+  });
+});
+''')
+
+          # 9) CLAUDE.md: clarify extensibility rule and record S8VM verification.
+          p = Path("CLAUDE.md")
+          text = p.read_text()
+          old = '2. **エンジンに型番分岐を書かない。** `if (model === "MY4N")` は禁止。エンジンは `ComponentDefinition` を読んで動作する。新型番の追加が定義ファイル 1 枚で完結すること。'
+          new = '2. **エンジンに型番分岐を書かない。** `if (model === "MY4N")` は禁止。エンジンは `ComponentDefinition` を読んで動作する。**既に対応済みの電気的な振る舞いを持つ新型番**の追加が定義ファイル 1 枚で完結すること。新しい物理的な振る舞い（例: AC 入力から DC 出力を作る電源）を初めて導入するときは、型番名ではなく汎用の `ElectricalDefinition.kind` として一度だけエンジンへ追加し、その後の同種型番ではエンジンを触らない。'
+          if old not in text:
+              raise SystemExit("CLAUDE principle 2 anchor not found")
+          text = text.replace(old, new, 1)
+          old = 'MY2N / MY4N / MY4N-D2 は OMRON 公式データシート（J199）と照合済み、G7L-1A-B / G7L-2A-B は公式カタログ（CDPA-041C）と照合済みで `verified: true`（`design.md` §4.4・§4.9）。'
+          new = 'MY2N / MY4N / MY4N-D2 は OMRON 公式データシート（J199）と照合済み、G7L-1A-B / G7L-2A-B は公式カタログ（CDPA-041C）と照合済み、S8VM-05024 は OMRON 公式 S8VM の「形式/種類」「定格/性能」「配線/接続 > 形S8VM-050□□□□（50W）ブロック図」と照合済みで `verified: true`（`design.md` §4.4・§4.9・§4.18）。S8VM の L/N/FG/-V/+V のように端子表示が数字でない場合も、実機の刻印を `number` にそのまま保持する。'
+          if old not in text:
+              raise SystemExit("CLAUDE principle 5 anchor not found")
+          p.write_text(text.replace(old, new, 1))
+
+          # 10) Product requirements: supported component list + explicit simulation boundary.
+          p = Path("requirements_definition.md")
+          text = p.read_text()
+          old = '| 電源 | DC24V 電源（+24V 端子 / 0V 端子）/ AC100V 電源（L 端子 / N 端子） |'
+          new = '| 電源 | DC24V 電源（+24V 端子 / 0V 端子）/ AC100V 電源（L 端子 / N 端子）/ OMRON S8VM-05024（AC入力 L/N・FG・DC出力 -V/+V） |'
+          if old not in text:
+              raise SystemExit("requirements power row anchor not found")
+          text = text.replace(old, new, 1)
+          anchor = 'AC 電源は**交流として扱わない。** 位相・実効値・力率は再現せず、L と N は電位差の両端としてのみ扱う。定格電圧の不一致（AC100V の回路に DC24V のランプなど）も検出しない（`design.md` §4.13）。'
+          addition = '''OMRON S8VM-05024 は**実型番の AC-DC スイッチング電源**として扱う。実機端子表示は L / N / FG / -V / +V、定格入力 AC100〜240V（使用可能範囲 AC85〜265V）、出力 DC24V・2.2A・50W。シミュレーションでは L/N が同じ AC 電源の両端へ届いたときだけ +V/-V に DC 電源を成立させ、一次側と二次側は内部で導通させない。入力電圧範囲は仕様情報として保持するが、既存方針どおり**定格電圧不一致の一般判定は行わない**。効率・リップル・V.ADJ・過電流/過電圧保護などは現スコープ外（`design.md` §4.18・§5.20）。
+
+'''
+          if anchor not in text:
+              raise SystemExit("requirements AC paragraph anchor not found")
+          text = text.replace(anchor, addition + anchor, 1)
+          p.write_text(text)
+
+          # 11) design.md: keep type/definition/engine documentation fresh as CLAUDE.md requires.
+          p = Path("design.md")
+          text = p.read_text()
+          dir_anchor = '        g7l-2a-b-dc24.ts\n      power.ts'
+          if dir_anchor in text:
+              text = text.replace(dir_anchor, '        g7l-2a-b-dc24.ts\n        s8vm-05024.ts           # S8VM-05024（AC→DC電源・§4.18）\n      power.ts', 1)
+
+          type_anchor = '''  | { kind: "power";  voltage: number; currentType: "DC" | "AC";
+      positiveTerminal: string; zeroTerminal: string }'''
+          type_add = '''  | { kind: "power";  voltage: number; currentType: "DC" | "AC";
+      positiveTerminal: string; zeroTerminal: string }
+  | { kind: "ac-dc-power-supply";
+      ratedInputVoltageMin: number; ratedInputVoltageMax: number;
+      allowableInputVoltageMin: number; allowableInputVoltageMax: number;
+      lineTerminal: string; neutralTerminal: string;
+      outputVoltage: number; positiveTerminal: string; zeroTerminal: string;
+      ratedOutputCurrent?: number; ratedPower?: number }'''
+          if type_anchor in text:
+              text = text.replace(type_anchor, type_add, 1)
+          else:
+              raise SystemExit("design ElectricalDefinition anchor not found")
+
+          section_418 = '''
+### 4.18 OMRON S8VM-05024（AC-DC スイッチング電源）
+
+`omron-s8vm-05024` は OMRON 公式 S8VM 資料で照合した実型番。オープン・底面取りつけの 50W / DC24V 2.2A タイプで、定格入力は AC100〜240V、使用可能範囲は AC85〜265V。端子は実機表示どおり `L` / `N` / `FG` / `-V` / `+V` を持つ。Nomenclature の 1 / 2 / 3 は説明項目番号なので端子番号として保存せず、`TerminalDefinition.number` には実機の刻印 `L` / `N` / `FG` / `-V` / `+V` をそのまま入れる。
+
+出典は OMRON 公式の「形式/種類」「定格/性能」「配線/接続 > 形S8VM-050□□□□（50W）ブロック図」。一次側 L/N と二次側 -V/+V は絶縁され、`conductingPairs()` では union しない。FG は保護接地用の実端子だが、現行エンジンは接地系統そのものを解かないため電位源にはしない。
+
+`ElectricalDefinition.kind = "ac-dc-power-supply"` は型番固有の分岐ではなく、今後の同種 AC-DC 電源が共有する振る舞い。公式の入力電圧範囲は定義に保持するが、§4.13 の「定格電圧不一致を一般判定しない」方針を維持するため、現行の ON/OFF 判定は L/N が**同じ AC 電源の両端**へ届くかだけを見る。
+
+'''
+          if '### 4.18 OMRON S8VM-05024' not in text:
+              marker = '\n## 5. '
+              idx = text.find(marker)
+              if idx < 0:
+                  raise SystemExit("design ##5 marker not found")
+              text = text[:idx] + '\n' + section_418 + text[idx:]
+
+          section_520 = '''
+### 5.20 AC-DC 電源の電位生成
+
+`computeNetStates()` はまず従来の `kind: "power"` とダイオード/調光器の有向伝搬を解き、その結果から `kind: "ac-dc-power-supply"` の L/N を確認する。同じ AC 電源 ID の両極が L/N に届いていれば、その AC-DC 電源自身の component ID を +V 側の `plusFrom` と -V 側の `zeroFrom` に追加する。一次側と二次側を union しないので絶縁は保たれ、既存の「同じ電源 ID の両端で負荷を判定する」規則も変えない。
+
+経路グラフ（§5.9〜§5.11）はエンジンの `NetState` を読み、実際に出力が成立している AC-DC 電源だけを電源端点として扱う。ラダー図（§5.16）は瞬時状態ではなく回路トポロジーなので、AC 入力の現在状態に関係なく +V/-V を DC 側の母線として扱う。これによりシミュレーション表示とラダー図の役割を混同しない。
+
+入力の定格/使用可能電圧範囲は定義データとして保持するが、§4.13 の既存スコープに従い電圧不一致を動作判定・警告には使わない。将来、電圧適合性を扱う場合は S8VM だけの例外ではなく `power` / 負荷を含む全体仕様として別スコープで追加する。
+
+'''
+          if '### 5.20 AC-DC 電源の電位生成' not in text:
+              marker = '\n## 6. '
+              idx = text.find(marker)
+              if idx < 0:
+                  raise SystemExit("design ##6 marker not found")
+              text = text[:idx] + '\n' + section_520 + text[idx:]
+          p.write_text(text)
+
+      - name: Run typecheck tests and build
+        shell: bash
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Commit verified fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-s8vm-integration.yml
+          git add -A
+          git commit -m "S8VM-05024 の仕様整合と統合を修正"
+          git push
