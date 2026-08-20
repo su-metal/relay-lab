@@ -1,13 +1,9 @@
 /**
- * 同じ実接点を 1 回だけ描くための、共有配線ラダー表現。
+ * 同じ実接点を 1 回だけ描くための共有ラダー表現。
  *
- * `ladder.ts` の 1 出力 = 1 段という表現は、単純な自己保持回路には読みやすい。
- * 一方、1 枚の実接点の先から複数の負荷へ分岐する回路を出力ごとに展開すると、
- * 同じ端子対（例: RY1 9-5）が複数段へ複製され、実機に接点が複数あるように
- * 見えてしまう。このモジュールはその場合だけ使う「実接点 1 枚 = 図記号 1 個」の
- * 共有ネットワークを組み立てる。
- *
- * 保存データは増やさない。CircuitDocument から毎回導く派生表現である。
+ * `ladder.ts` の「1 出力 = 1 段」は単純な回路では読みやすいが、1 枚の実接点の
+ * 先から複数負荷へ分岐する回路では、同じ端子対を複数段へ展開してしまう。
+ * ここでは電線で同電位になった節点と実接点を共有したまま持ち、図記号を複製しない。
  */
 
 import { UnionFind, describeComponent } from "@/circuit/engine";
@@ -15,7 +11,6 @@ import type {
   CircuitDocument,
   ComponentDefinition,
   ComponentDefinitionRegistry,
-  TimerDelay,
 } from "@/circuit/types";
 import { terminalKey, terminalRefKey } from "@/circuit/types";
 
@@ -42,9 +37,8 @@ export type SharedLadderNetwork = {
   plus: string;
   zero: string;
   edges: SharedLadderEdge[];
-  /** 0V 側の条件を出力の左へ移した場合に表示する注記。 */
   movedZeroSide: boolean;
-  /** 標準形へ安全に並べ替えられず、実配線の向きを保った場合。 */
+  /** 安全に標準形へ移せず実配線の向きを残した場合。UI は従来表示へ戻す。 */
   wiringFaithfulFallback: boolean;
 };
 
@@ -68,7 +62,46 @@ const labelOf = (definition: ComponentDefinition, terminalId: string): string =>
   definition.terminals.find((terminal) => terminal.id === terminalId)?.label ??
   terminalId;
 
-const other = (edge: { a: string; b: string }, node: string): string =>
+const physicalKey = (contact: LadderContact): string =>
+  `${contact.componentId}:${contact.kind}:${contact.terminalLabels[0]}:${contact.terminalLabels[1]}`;
+
+const visitExpr = (expr: LadderExpr, visit: (contact: LadderContact) => void) => {
+  if (expr.kind === "contact") {
+    visit(expr.contact);
+    return;
+  }
+  for (const item of expr.items) visitExpr(item, visit);
+};
+
+const keysOfDiagram = (diagram: LadderDiagram): Set<string> => {
+  const keys = new Set<string>();
+  for (const rung of diagram.rungs) {
+    if (rung.condition) visitExpr(rung.condition, (contact) => keys.add(physicalKey(contact)));
+  }
+  return keys;
+};
+
+const keysOfRung = (diagram: LadderDiagram, componentId: string): Set<string> => {
+  const keys = new Set<string>();
+  const rung = diagram.rungs.find((entry) => entry.output.componentId === componentId);
+  if (rung?.condition) visitExpr(rung.condition, (contact) => keys.add(physicalKey(contact)));
+  return keys;
+};
+
+/** 出力ごとの展開で同じ物理接点が複数回参照されたか。 */
+export const hasRepeatedPhysicalContact = (diagram: LadderDiagram): boolean => {
+  const counts = new Map<string, number>();
+  for (const rung of diagram.rungs) {
+    if (!rung.condition) continue;
+    visitExpr(rung.condition, (contact) => {
+      const key = physicalKey(contact);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+  }
+  return [...counts.values()].some((count) => count > 1);
+};
+
+const other = (edge: ContactEdge, node: string): string =>
   edge.a === node ? edge.b : edge.a;
 
 const reachable = (contacts: readonly ContactEdge[], start: string): Set<string> => {
@@ -87,99 +120,45 @@ const reachable = (contacts: readonly ContactEdge[], start: string): Set<string>
   return seen;
 };
 
-const componentEdges = (
-  contacts: readonly ContactEdge[],
-  start: string,
-): ContactEdge[] => {
+const componentEdges = (contacts: readonly ContactEdge[], start: string): ContactEdge[] => {
   const nodes = reachable(contacts, start);
   return contacts.filter((edge) => nodes.has(edge.a) && nodes.has(edge.b));
 };
 
-const edgeKey = (contact: LadderContact): string =>
-  `${contact.componentId}:${contact.kind}:${contact.terminalLabels[0]}:${contact.terminalLabels[1]}`;
-
-const visitExpr = (expr: LadderExpr, visit: (contact: LadderContact) => void) => {
-  if (expr.kind === "contact") {
-    visit(expr.contact);
-    return;
-  }
-  for (const item of expr.items) visitExpr(item, visit);
-};
-
-/**
- * 出力ごとの段へ展開した結果で、同じ物理接点が複数回参照されているか。
- * 端子番号まで含めるので、同じリレーの別接点は別物として数える。
- */
-export const hasRepeatedPhysicalContact = (diagram: LadderDiagram): boolean => {
-  const counts = new Map<string, number>();
-  for (const rung of diagram.rungs) {
-    if (!rung.condition) continue;
-    visitExpr(rung.condition, (contact) => {
-      const key = edgeKey(contact);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    });
-  }
-  return [...counts.values()].some((count) => count > 1);
-};
-
-/** 式に含まれる物理接点のキー。 */
-const keysOfExpr = (expr: LadderExpr | undefined): Set<string> => {
-  const keys = new Set<string>();
-  if (expr) visitExpr(expr, (contact) => keys.add(edgeKey(contact)));
-  return keys;
-};
-
-/**
- * 0V 側の接点網を、出力の左へそのまま写す。
- * 直列・並列のどちらでも「接点そのもの」は複製しない。
- */
-const appendExpr = (
-  expr: LadderExpr,
-  start: string,
-  end: string,
-  edgeByKey: ReadonlyMap<string, ContactEdge>,
-  serial: { value: number },
-  out: SharedLadderEdge[],
-): boolean => {
-  if (expr.kind === "contact") {
-    const source = edgeByKey.get(edgeKey(expr.contact));
-    if (!source) return false;
-    out.push({
-      id: source.id,
+const rawNetwork = (
+  contacts: readonly ContactEdge[],
+  loads: readonly LoadEdge[],
+  plus: string,
+  zero: string,
+): SharedLadderNetwork => ({
+  plus,
+  zero,
+  edges: [
+    ...contacts.map<SharedLadderEdge>((edge) => ({
+      id: edge.id,
       kind: "contact",
-      from: start,
-      to: end,
-      order: source.order,
-      contact: source.contact,
-    });
-    return true;
-  }
-
-  if (expr.kind === "parallel") {
-    return expr.items.every((item) =>
-      appendExpr(item, start, end, edgeByKey, serial, out),
-    );
-  }
-
-  let here = start;
-  for (let index = 0; index < expr.items.length; index += 1) {
-    const last = index === expr.items.length - 1;
-    const next = last ? end : `ladder-shared:${serial.value++}`;
-    if (!appendExpr(expr.items[index], here, next, edgeByKey, serial, out)) {
-      return false;
-    }
-    here = next;
-  }
-  return true;
-};
+      from: edge.a,
+      to: edge.b,
+      order: edge.order,
+      contact: edge.contact,
+    })),
+    ...loads.map<SharedLadderEdge>((load) => ({
+      id: load.id,
+      kind: "output",
+      from: load.a,
+      to: load.b,
+      order: load.order,
+      output: load.output,
+    })),
+  ],
+  movedZeroSide: false,
+  wiringFaithfulFallback: true,
+});
 
 /**
- * 実体配線から、接点を一度だけ持つ共有ラダー網を作る。
- *
- * + 側の接点網は物理ネットをそのまま共有する。0V 側にだけ置かれた条件は、
- * その接点群を使う負荷が 1 個だけなら、一般的なラダーの読み方に合わせて
- * 「条件 → 出力 → 0V」の順へ移す。複数負荷で 0V 側の網を共有している場合は、
- * 無理に複製せず実配線の向きを保つ。
+ * + 側の接点網は共有したまま残す。0V 側にだけある条件は、その接点群を使う負荷が
+ * 1 個なら出力の左へ移す。これで「共通接点 → 分岐 → 各出力」という現場で読む形に
+ * しつつ、同じ実接点は 1 回しか現れない。
  */
 export const buildSharedLadder = (
   document: CircuitDocument,
@@ -218,27 +197,25 @@ export const buildSharedLadder = (
     if (!definition) continue;
     const electrical = definition.electrical;
     const name = describeComponent(instance, definition);
-    const node = (terminalId: string) =>
-      dsu.find(terminalKey(instance.id, terminalId));
+    const node = (terminalId: string) => dsu.find(terminalKey(instance.id, terminalId));
 
     if (electrical.kind === "switch") {
-      const contact: LadderContact = {
-        componentId: instance.id,
-        label: name,
-        kind: electrical.contactType === "NO" ? "no" : "nc",
-        terminalLabels: [
-          labelOf(definition, electrical.terminalA),
-          labelOf(definition, electrical.terminalB),
-        ],
-        operatedBy: "hand",
-        maintained: electrical.action === "maintained" || undefined,
-      };
       contacts.push({
         id: `contact:${instance.id}:switch`,
         a: node(electrical.terminalA),
         b: node(electrical.terminalB),
         order: instance.position.y,
-        contact,
+        contact: {
+          componentId: instance.id,
+          label: name,
+          kind: electrical.contactType === "NO" ? "no" : "nc",
+          terminalLabels: [
+            labelOf(definition, electrical.terminalA),
+            labelOf(definition, electrical.terminalB),
+          ],
+          operatedBy: "hand",
+          maintained: electrical.action === "maintained" || undefined,
+        },
       });
       continue;
     }
@@ -252,23 +229,22 @@ export const buildSharedLadder = (
         ];
         for (const [terminalId, kind] of branches) {
           if (terminalId === undefined) continue;
-          const contact: LadderContact = {
-            componentId: instance.id,
-            label: name,
-            kind,
-            terminalLabels: [
-              labelOf(definition, relayContact.commonTerminal),
-              labelOf(definition, terminalId),
-            ],
-            operatedBy: "coil",
-            delay: delay?.mode,
-          };
           contacts.push({
             id: `contact:${instance.id}:${relayContact.id}:${kind}`,
             a: node(relayContact.commonTerminal),
             b: node(terminalId),
             order: instance.position.y,
-            contact,
+            contact: {
+              componentId: instance.id,
+              label: name,
+              kind,
+              terminalLabels: [
+                labelOf(definition, relayContact.commonTerminal),
+                labelOf(definition, terminalId),
+              ],
+              operatedBy: "coil",
+              delay: delay?.mode,
+            },
           });
         }
       }
@@ -320,24 +296,13 @@ export const buildSharedLadder = (
 
   const fromPlus = reachable(contacts, plus);
   const fromZero = reachable(contacts, zero);
+  const usedKeys = keysOfDiagram(expanded);
 
   const orient = (load: LoadEdge): { input: string; output: string } | null => {
-    if (fromPlus.has(load.a) && fromZero.has(load.b)) {
+    if ((load.a === plus || fromPlus.has(load.a)) && (load.b === zero || fromZero.has(load.b))) {
       return { input: load.a, output: load.b };
     }
-    if (fromPlus.has(load.b) && fromZero.has(load.a)) {
-      return { input: load.b, output: load.a };
-    }
-    if (load.a === plus && fromZero.has(load.b)) {
-      return { input: load.a, output: load.b };
-    }
-    if (load.b === plus && fromZero.has(load.a)) {
-      return { input: load.b, output: load.a };
-    }
-    if (fromPlus.has(load.a) && load.b === zero) {
-      return { input: load.a, output: load.b };
-    }
-    if (fromPlus.has(load.b) && load.a === zero) {
+    if ((load.b === plus || fromPlus.has(load.b)) && (load.a === zero || fromZero.has(load.a))) {
       return { input: load.b, output: load.a };
     }
     return null;
@@ -350,25 +315,21 @@ export const buildSharedLadder = (
   const zeroComponent = componentEdges(contacts, zero);
   const zeroIds = new Set(zeroComponent.map((edge) => edge.id));
 
-  // + と 0V が接点だけで同じ成分に入る回路は、この並べ替えでは扱わない。
+  // 接点だけで + と 0V が同じ成分になる場合は、位置を移すと意味を壊す可能性がある。
   if ([...plusComponent].some((id) => zeroIds.has(id))) {
     return rawNetwork(contacts, loads, plus, zero);
   }
 
-  const edgeByKey = new Map(contacts.map((edge) => [edgeKey(edge.contact), edge]));
+  const contactByKey = new Map(contacts.map((edge) => [physicalKey(edge.contact), edge]));
 
-  // expanded の各出力と load を componentId で対応させる。
-  const rungOf = new Map(expanded.rungs.map((rung) => [rung.output.componentId, rung]));
-
-  // 0V 側の同一接点を複数負荷が使うなら、移動すると複製が必要になる。
+  // 0V 側の同一接点を複数負荷が使う場合、左へ移すと接点を複製する必要がある。
   const rightUse = new Map<string, number>();
   for (const { load, ends } of oriented) {
     if (!ends || ends.output === zero) continue;
-    const rung = rungOf.get(load.output.componentId);
-    for (const key of keysOfExpr(rung?.movedFromZeroSide ? rung.condition : undefined)) {
-      const source = edgeByKey.get(key);
-      if (source && zeroIds.has(source.id)) {
-        rightUse.set(source.id, (rightUse.get(source.id) ?? 0) + 1);
+    for (const key of keysOfRung(expanded, load.output.componentId)) {
+      const edge = contactByKey.get(key);
+      if (edge && zeroIds.has(edge.id)) {
+        rightUse.set(edge.id, (rightUse.get(edge.id) ?? 0) + 1);
       }
     }
   }
@@ -376,12 +337,12 @@ export const buildSharedLadder = (
     return rawNetwork(contacts, loads, plus, zero);
   }
 
-  const out: SharedLadderEdge[] = [];
+  const result: SharedLadderEdge[] = [];
 
-  // + 側の物理接点網は一切展開せず、そのまま 1 回ずつ置く。
+  // 実際にいずれかの段で使われた + 側接点だけを、物理ネット上に 1 回置く。
   for (const edge of contacts) {
-    if (!plusComponent.has(edge.id)) continue;
-    out.push({
+    if (!plusComponent.has(edge.id) || !usedKeys.has(physicalKey(edge.contact))) continue;
+    result.push({
       id: edge.id,
       kind: "contact",
       from: edge.a,
@@ -392,14 +353,17 @@ export const buildSharedLadder = (
   }
 
   let movedZeroSide = false;
-  const serial = { value: 0 };
 
   for (const { load, ends } of oriented) {
     if (!ends) continue;
-    const rung = rungOf.get(load.output.componentId);
+    const rung = expanded.rungs.find((entry) => entry.output.componentId === load.output.componentId);
+    const rungKeys = keysOfRung(expanded, load.output.componentId);
+    const rightEdges = zeroComponent.filter(
+      (edge) => rungKeys.has(physicalKey(edge.contact)) && usedKeys.has(physicalKey(edge.contact)),
+    );
 
-    if (ends.output === zero || !rung?.movedFromZeroSide || !rung.condition) {
-      out.push({
+    if (ends.output === zero || !rung?.movedFromZeroSide || rightEdges.length === 0) {
+      result.push({
         id: load.id,
         kind: "output",
         from: ends.input,
@@ -410,29 +374,7 @@ export const buildSharedLadder = (
       continue;
     }
 
-    /*
-     * rung.condition は + 側と 0V 側を直列に連結した式なので、そのまま使うと
-     * + 側の接点をもう一度描いてしまう。0V 成分に属する葉だけを抽出して、
-     * 元の 0V 側ネットそのものを移す。
-     */
-    const rightEdges = zeroComponent.filter((edge) => {
-      const used = keysOfExpr(rung.condition).has(edgeKey(edge.contact));
-      return used;
-    });
-
-    if (rightEdges.length === 0) {
-      out.push({
-        id: load.id,
-        kind: "output",
-        from: ends.input,
-        to: ends.output,
-        order: load.order,
-        output: load.output,
-      });
-      continue;
-    }
-
-    // 0V 側成分を start=input, end=beforeOutput へ写像する。
+    // 0V 側の成分を input の先へ写し、最後に出力を置く。
     const beforeOutput = `ladder-shared:before-output:${load.id}`;
     const mapNode = (node: string): string => {
       if (node === ends.output) return ends.input;
@@ -441,7 +383,7 @@ export const buildSharedLadder = (
     };
 
     for (const edge of rightEdges) {
-      out.push({
+      result.push({
         id: edge.id,
         kind: "contact",
         from: mapNode(edge.a),
@@ -450,7 +392,7 @@ export const buildSharedLadder = (
         contact: edge.contact,
       });
     }
-    out.push({
+    result.push({
       id: load.id,
       kind: "output",
       from: beforeOutput,
@@ -461,8 +403,7 @@ export const buildSharedLadder = (
     movedZeroSide = true;
   }
 
-  // 同じ物理接点が 2 回入っていたら共有図として失格。安全側へ倒す。
-  const contactIds = out.filter((edge) => edge.kind === "contact").map((edge) => edge.id);
+  const contactIds = result.filter((edge) => edge.kind === "contact").map((edge) => edge.id);
   if (new Set(contactIds).size !== contactIds.length) {
     return rawNetwork(contacts, loads, plus, zero);
   }
@@ -470,38 +411,8 @@ export const buildSharedLadder = (
   return {
     plus,
     zero,
-    edges: out,
+    edges: result,
     movedZeroSide,
     wiringFaithfulFallback: false,
   };
 };
-
-const rawNetwork = (
-  contacts: readonly ContactEdge[],
-  loads: readonly LoadEdge[],
-  plus: string,
-  zero: string,
-): SharedLadderNetwork => ({
-  plus,
-  zero,
-  edges: [
-    ...contacts.map<SharedLadderEdge>((edge) => ({
-      id: edge.id,
-      kind: "contact",
-      from: edge.a,
-      to: edge.b,
-      order: edge.order,
-      contact: edge.contact,
-    })),
-    ...loads.map<SharedLadderEdge>((load) => ({
-      id: load.id,
-      kind: "output",
-      from: load.a,
-      to: load.b,
-      order: load.order,
-      output: load.output,
-    })),
-  ],
-  movedZeroSide: false,
-  wiringFaithfulFallback: true,
-});
