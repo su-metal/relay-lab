@@ -42,7 +42,7 @@ const cdp = (method, params = {}) =>
 try {
   await waitFor("http://127.0.0.1:9222/json/version");
   const targetResponse = await fetch(
-    "http://127.0.0.1:9222/json/new?http://127.0.0.1:3000",
+    "http://127.0.0.1:9222/json/new?http://localhost:3000",
     { method: "PUT" },
   );
   const target = await targetResponse.json();
@@ -81,7 +81,7 @@ try {
   const extracted = await cdp("Runtime.evaluate", {
     expression: `(() => {
       const svg = document.querySelector('dialog[open] svg[aria-label="同じ実接点を一度だけ描いた共有配線ラダー図"]');
-      if (!svg) return { error: 'shared-svg-not-found', text: document.querySelector('dialog[open]')?.innerText ?? '' };
+      if (!svg) return { error: 'shared-svg-not-found', text: document.querySelector('dialog[open]')?.innerText ?? document.body.innerText };
       const clone = svg.cloneNode(true);
       const originals = [svg, ...svg.querySelectorAll('*')];
       const clones = [clone, ...clone.querySelectorAll('*')];
