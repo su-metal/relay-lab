@@ -16,10 +16,11 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("27 定義が登録されている", () => {
+  it("28 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
+      "power-ac100v-to-dc12v",
       "omron-s8vm-05024",
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
@@ -46,7 +47,7 @@ describe("部品定義レジストリ", () => {
       "terminal-block-12p",
       "terminal-block-20p",
     ]);
-    expect(componentRegistry.size).toBe(27);
+    expect(componentRegistry.size).toBe(28);
   });
 
   it("型番から定義を取得できる", () => {
@@ -109,7 +110,7 @@ describe("部品定義レジストリ", () => {
       "light-controller-4ch",
       "dimming-console",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(27);
+    expect(listComponentDefinitions()).toHaveLength(28);
   });
 
   it("全定義が端子データの出典を持つ", () => {
