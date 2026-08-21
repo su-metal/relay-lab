@@ -7,6 +7,58 @@
   height: 100dvh;
 }
 
+/*
+ * 左右パネル一括ボタンを Toolbar と同じ高さの中へ重ねる。
+ * Toolbar 本体の左 padding を広げてボタンの場所を予約するので、
+ * 1 段のままでも既存ボタンと重ならない。
+ */
+.toolbarHost {
+  position: relative;
+  min-width: 0;
+}
+
+.toolbarHost:not([data-compact]) > header {
+  padding-left: 50px;
+}
+
+.allPanelsToggle {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.allPanelsToggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg);
+}
+
+.allPanelsToggle[data-active] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.allPanelsToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .columns {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 280px;
@@ -38,10 +90,6 @@
   display: grid;
 }
 
-/*
- * 右カラム。プロパティが主で診断が従なので、診断は内容の高さに従わせ、
- * 増えすぎたときだけ上限（画面の 40%）で止める。
- */
 .inspector {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -72,10 +120,7 @@
   cursor: pointer;
 }
 
-.paletteToggle {
-  right: 6px;
-}
-
+.paletteToggle,
 .inspectorToggle {
   right: 6px;
 }
@@ -107,10 +152,7 @@
   border-left: 1px solid var(--border);
 }
 
-.paletteRail .paletteToggle {
-  right: 4px;
-}
-
+.paletteRail .paletteToggle,
 .inspectorRail .inspectorToggle {
   right: 4px;
 }
@@ -157,7 +199,6 @@
   padding-right: env(safe-area-inset-right, 0);
 }
 
-/* 両脇のカラムは畳み、キャンバス 1 枚にする。シートはこの上へ重ねる */
 .workspace[data-compact] .columns {
   position: relative;
   grid-template-columns: minmax(0, 1fr);
