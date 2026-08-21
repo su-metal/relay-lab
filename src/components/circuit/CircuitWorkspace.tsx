@@ -451,3 +451,33 @@ function SheetTabs({
     </nav>
   );
 }
+
+function LoadNotices({
+  notices,
+  onDismiss,
+}: {
+  notices: readonly string[];
+  onDismiss: () => void;
+}) {
+  const shown = notices.slice(0, 3);
+  const hidden = notices.length - shown.length;
+
+  return (
+    <div className={styles.notices} role="status">
+      <ul className={styles.noticeList}>
+        {shown.map((notice, index) => (
+          <li key={index}>{notice}</li>
+        ))}
+        {hidden > 0 && <li>他 {hidden} 件</li>}
+      </ul>
+      <button
+        type="button"
+        className={styles.noticeClose}
+        onClick={onDismiss}
+        aria-label="通知を閉じる"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
