@@ -30,18 +30,28 @@ export type {
 } from "./component";
 
 export type { CircuitConnection, TerminalRef } from "./connection";
-export { terminalKey,
+export {
+  terminalKey,
   operationKey,
   contactKey,
   analogInputKey,
-  fadeKey, terminalRefKey } from "./connection";
+  fadeKey,
+  terminalRefKey,
+} from "./connection";
 
 export type {
   CircuitComponentInstance,
   CircuitDocument,
+  ComponentSize,
   LampColor,
 } from "./circuit";
-export { DEFAULT_LAMP_COLOR, LAMP_COLORS, isLampColor } from "./circuit";
+export {
+  DEFAULT_LAMP_COLOR,
+  LAMP_COLORS,
+  componentSizeOf,
+  isLampColor,
+  normalizeComponentSize,
+} from "./circuit";
 
 export { EMPTY_ANALOG_RESULT } from "./simulation";
 
