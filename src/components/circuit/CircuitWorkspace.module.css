@@ -19,11 +19,17 @@
   grid-row: 3;
 }
 
+/* 右パネルを畳んだら、再表示ボタンぶんだけ残してキャンバスへ返す */
+.columns[data-inspector-collapsed] {
+  grid-template-columns: 240px minmax(0, 1fr) 32px;
+}
+
 /*
  * 右カラム。プロパティが主で診断が従なので、診断は内容の高さに従わせ、
  * 増えすぎたときだけ上限（画面の 40%）で止めて自身をスクロールさせる。
  */
 .inspector {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
@@ -31,6 +37,48 @@
 
 .inspector > :last-child {
   max-height: 40vh;
+}
+
+/* 広い画面の右パネル開閉。閉じても 32px のレールを残して復帰先を失わない */
+.inspectorToggle {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.inspectorToggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.inspectorToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.inspectorRail {
+  position: relative;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.inspectorRail .inspectorToggle {
+  right: 4px;
 }
 
 /* 読み込み時の通知（design.md §8.4）。一度読めば消せる */
