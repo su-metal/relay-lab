@@ -26,11 +26,12 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
+import { ac100vToDc12vPowerSupply } from "./ac-dc-12v";
 import { genericContactor } from "./contactors";
 import { dimmableLampAc100v, dimmerOutput0to10v } from "./dimming";
+import { dimmingConsole } from "./dimming-console";
 import { genericDiode } from "./diodes";
 import {
-  dimmingConsole,
   dimmingController16ch,
   lightController4ch,
   phaseControlDimmer,
@@ -60,6 +61,7 @@ import { offDelayTimer, onDelayTimer } from "./timers";
 export const componentDefinitions: readonly ComponentDefinition[] = [
   dc24vPowerSupply,
   ac100vPowerSupply,
+  ac100vToDc12vPowerSupply,
   omronS8vm05024,
   pushbuttonNo,
   pushbuttonNc,
@@ -132,20 +134,20 @@ export const listComponentDefinitions = (
 
 export {
   ac100vLamp,
-  dimmingConsole,
-  lightController4ch,
   ac100vPowerSupply,
-  dimmingController16ch,
-  phaseControlDimmer,
+  ac100vToDc12vPowerSupply,
   dc24vLamp,
   dc24vPowerSupply,
   dimmableLampAc100v,
   dimmerOutput0to10v,
+  dimmingConsole,
+  dimmingController16ch,
   genericContactor,
   genericDiode,
   genericTerminalBlock,
   genericTerminalBlock12P,
   genericTerminalBlock20P,
+  lightController4ch,
   offDelayTimer,
   omronG7l1aBDc24,
   omronG7l2aBDc24,
@@ -154,6 +156,7 @@ export {
   omronMy4nDc24,
   omronS8vm05024,
   onDelayTimer,
+  phaseControlDimmer,
   pushbuttonNc,
   pushbuttonNo,
   selectorSwitchNc,
