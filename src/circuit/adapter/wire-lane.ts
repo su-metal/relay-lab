@@ -48,6 +48,7 @@ import type {
   TerminalRef,
   TerminalSide,
 } from "@/circuit/types";
+import { componentSizeOf } from "@/circuit/types";
 
 import { layoutTerminals } from "./reactflow";
 import type { Point } from "./selection";
@@ -101,12 +102,11 @@ const SPAN_EPSILON = 0.5;
 export const STRAIGHT_LANE_STEP = 16;
 
 /**
- * 真っ直ぐな配線を逃がせる上限。
+ * 真っ直ぐな配線を重なり回避で逃がせる上限。
  *
- * 幹線をずらす場合と違って経路が破綻する限界は無いが、**離しすぎると
- * 線が部品の並びから浮いて、どの端子から出ているのか読めなくなる。**
- * ±2 レーン（±32px）まで＝ 5 本までは確実に離れる。
- * それ以上混んだ束では一部が同じ道に残る。
+ * これは「複数配線の見分け」のための上限で、**部品回避の上限ではない。**
+ * リサイズ後の部品は任意に大きくなり得るため、障害物を避ける処理では
+ * この値とは別に必要なだけ外へ逃がす。
  */
 const STRAIGHT_ROOM = STRAIGHT_LANE_STEP * 2;
 
@@ -122,13 +122,13 @@ const MIN_JOG_RUN = 24;
 const COMPONENT_CLEARANCE = 16;
 
 /**
- * 部品を避けるために動かせる上限（px）。
+ * 自前で組む迂回経路には幾何学的な上限が無い。
  *
- * いちばん大きい部品（MY4N は 260×240）を回り込めるだけの幅が要る。
- * これを超えるなら**避けずに諦める** —— それ以上引き回すと、線がどの端子から
- * 出ているのか追えなくなり、跨いでいるより読みにくい。
+ * 以前は最大 320px で諦めていたが、部品リサイズ導入後は 320px を超える箱も
+ * 正常な状態になった。そこで「大きいから突っ切る」という例外を作らず、
+ * `clearShift` が求めた最寄りの空き位置まで必ず逃がす。
  */
-const MAX_DETOUR = 320;
+const UNBOUNDED_DETOUR = Number.POSITIVE_INFINITY;
 
 /** 端子の辺 → 配線が出ていく向き（`getSmoothStepPath` の `handleDirections` と同じ） */
 const SIDE_DIRECTION: Record<TerminalSide, Point> = {
@@ -179,6 +179,7 @@ const anchorLookup = (
     if (!instance) return null;
     const definition = registry.get(instance.definitionId);
     if (!definition) return null;
+    const size = componentSizeOf(instance, definition);
     // 反転を必ず通す。座標だけでなく辺も鏡像になっており、
     // 辺を取り違えると幹線の向きの判定ごと裏返る（design.md §8.1）
     const terminals = layoutTerminals(definition, instance.flipped === true);
@@ -186,8 +187,8 @@ const anchorLookup = (
     if (!terminal) return null;
     return {
       point: {
-        x: instance.position.x + terminal.position.x * definition.visual.width,
-        y: instance.position.y + terminal.position.y * definition.visual.height,
+        x: instance.position.x + terminal.position.x * size.width,
+        y: instance.position.y + terminal.position.y * size.height,
       },
       side: terminal.side,
     };
@@ -277,7 +278,7 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
       step: STRAIGHT_LANE_STEP,
       // 迂回の折れ 2 つが収まらない短い走行は、そもそも曲げられない
-      detour: run >= MIN_JOG_RUN ? MAX_DETOUR : 0,
+      detour: run >= MIN_JOG_RUN ? UNBOUNDED_DETOUR : 0,
     };
   }
 
@@ -319,7 +320,7 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
           0,
           Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
         )
-      : MAX_DETOUR,
+      : UNBOUNDED_DETOUR,
   };
 };
 
@@ -548,8 +549,9 @@ const assignLanes = (
 /**
  * 部品 1 個が図面で占める矩形。
  *
- * 端子の丸は縁の上に乗るので、矩形そのものは `visual` の寸法どおりでよい
- * （避ける余白は `COMPONENT_CLEARANCE` で別に取る）。
+ * 端子の丸は縁の上に乗るので、矩形そのものは実際の表示寸法どおりでよい
+ * （避ける余白は `COMPONENT_CLEARANCE` で別に取る）。リサイズ後は
+ * `definition.visual` ではなくインスタンスの `size` を含む実寸を使う。
  */
 type Rect = { left: number; right: number; top: number; bottom: number };
 
@@ -565,11 +567,12 @@ const componentRects = (
     const definition = registry.get(instance.definitionId);
     // 定義が引けない部品は描画もされない（`toDeviceNodes`）。避ける対象にもしない
     if (!definition) continue;
+    const size = componentSizeOf(instance, definition);
     rects.push({
       left: instance.position.x,
-      right: instance.position.x + definition.visual.width,
+      right: instance.position.x + size.width,
       top: instance.position.y,
-      bottom: instance.position.y + definition.visual.height,
+      bottom: instance.position.y + size.height,
     });
   }
   return rects;
@@ -659,8 +662,9 @@ const escapeTo = (
  * 逃がしたあとに**レーン番号ぶん外へ積む。** 同じ部品を避ける配線が複数あると
  * 全部が本体のすぐ外の同じ位置へ寄ってしまい、せっかく解いた重なりが戻る。
  *
- * `detour` を超えないと抜けられないなら **`base` のまま諦める。** 無理に
- * 引き回した線は、跨いでいる線より読みにくい（design.md §8.7）。
+ * `detour` を超えないと抜けられないなら **`base` のまま諦める。** ただし自前で
+ * 組む走行・回り込みは `UNBOUNDED_DETOUR` なので、リサイズした大きな部品を理由に
+ * 諦めることはない。幾何学的に中点を動かせない形だけ `room` が上限になる。
  */
 const clearShift = (
   trunk: Trunk,
