@@ -6,6 +6,16 @@
  * 端子は絶対配置なので padding の影響を受けない。
  */
 
+/*
+ * 配線は通常ノードより後ろだが、選択・ホバー中は React Flow / CircuitCanvas が
+ * z-index を持ち上げる。その線が部品上を通った場合でも端子を掴めるよう、
+ * device ノード自体を配線の最大レイヤ（ホバー 2000 + 選択時の加算）より前に置く。
+ * 経路計算の取りこぼしがあっても操作不能にはしないための最後の防波堤。
+ */
+:global(.react-flow__node-device) {
+  z-index: 4000 !important;
+}
+
 .node {
   position: relative;
   width: 100%;

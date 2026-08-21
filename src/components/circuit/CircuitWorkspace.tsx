@@ -1,8 +1,8 @@
 "use client";
 
 import { ReactFlowProvider, useReactFlow, useStoreApi } from "@xyflow/react";
-import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
 
 import { getComponentDefinition } from "@/circuit/definitions";
 import type { ComponentDefinition } from "@/circuit/types";
@@ -12,9 +12,9 @@ import { useSimulationStore } from "@/store/simulationStore";
 
 import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
+import { DetailedPropertiesPanel } from "./DetailedPropertiesPanel";
 import { HelpDialog } from "./HelpDialog";
 import { LadderDialog } from "./LadderDialog";
-import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { PathPreviewList } from "./PathPreviewList";
 import { WarningList } from "./WarningList";
@@ -39,6 +39,28 @@ const SHEETS = [
 
 type SheetKey = (typeof SHEETS)[number]["key"];
 
+type TouchGestureMode = "idle" | "pane" | "element" | "viewport";
+
+/**
+ * 1 本指で直接操作したい対象。
+ *
+ * 部品・端子・配線はもちろん、React Flow 内のボタンや凡例を触ったときまで
+ * 「空きキャンバスのドラッグ」と誤認しないよう UI も含める。
+ */
+const TOUCH_ELEMENT_SELECTOR = [
+  ".react-flow__node",
+  ".react-flow__edge",
+  ".react-flow__handle",
+  ".react-flow__controls",
+  ".react-flow__panel",
+].join(",");
+
+const isCanvasTouch = (target: EventTarget | null): target is Element =>
+  target instanceof Element && target.closest(".react-flow") !== null;
+
+const isCanvasElementTouch = (target: EventTarget | null): boolean =>
+  isCanvasTouch(target) && target.closest(TOUCH_ELEMENT_SELECTOR) !== null;
+
 export function CircuitWorkspace() {
   return (
     <ReactFlowProvider>
@@ -62,6 +84,74 @@ function Workspace() {
 
   const compact = useCompactLayout();
   const coarse = useCoarsePointer();
+
+  /**
+   * タッチ操作の役割分担。
+   *
+   * React Flow / d3-zoom は `panOnDrag` が有効だと 1 本指でも Pane をパンする。
+   * ただし 2 本指のピンチ／パンも同じ touch gesture を使うため、単純に
+   * `panOnDrag={false}` にすると 2 本指まで殺してしまう。
+   *
+   * そこで touchstart は React Flow に通して gesture を登録させたまま、
+   * **空きキャンバスから始まった 1 本指の touchmove だけ** capture で止める。
+   * 2 本目が加わったら move を通すので、2 本指の中点移動＝画面パンと
+   * ピンチ＝拡大縮小はそのまま動く。部品・端子・配線から始まった 1 本指は
+   * `element` として一切止めず、ドラッグ／配線操作を優先する。
+   */
+  const touchGestureMode = useRef<TouchGestureMode>("idle");
+
+  const onTouchStartCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (!isCanvasTouch(event.target)) return;
+
+      if (event.touches.length === 1) {
+        touchGestureMode.current = isCanvasElementTouch(event.target)
+          ? "element"
+          : "pane";
+        return;
+      }
+
+      if (
+        event.touches.length >= 2 &&
+        (touchGestureMode.current === "pane" ||
+          touchGestureMode.current === "viewport")
+      ) {
+        touchGestureMode.current = "viewport";
+      }
+    },
+    [],
+  );
+
+  const onTouchMoveCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (!isCanvasTouch(event.target)) return;
+
+      const mode = touchGestureMode.current;
+      const blockSingleFingerPane = mode === "pane" && event.touches.length === 1;
+      const blockSingleFingerAfterViewport =
+        mode === "viewport" && event.touches.length < 2;
+
+      if (blockSingleFingerPane || blockSingleFingerAfterViewport) {
+        // React Flow の Pane へ届かせない。touchstart / touchend は通すことで
+        // d3-zoom 側の gesture の開始・終了状態は壊さない。
+        event.stopPropagation();
+      }
+    },
+    [],
+  );
+
+  const onTouchEndCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      // 2 本指から 1 本だけ離した直後も viewport のまま保持する。
+      // 残った 1 本の move は上で止め、最後の 1 本が離れたら完全にリセットする。
+      if (event.touches.length === 0) touchGestureMode.current = "idle";
+    },
+    [],
+  );
+
+  const onTouchCancelCapture = useCallback(() => {
+    touchGestureMode.current = "idle";
+  }, []);
 
   const [openSheet, setOpenSheet] = useState<SheetKey | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(true);
@@ -136,7 +226,7 @@ function Workspace() {
 
   const inspector = (
     <>
-      <PropertiesPanel />
+      <DetailedPropertiesPanel />
       <PathPreviewList />
       <WarningList />
     </>
@@ -191,6 +281,10 @@ function Workspace() {
         className={styles.columns}
         data-palette-collapsed={!compact && !paletteOpen ? true : undefined}
         data-inspector-collapsed={!compact && !inspectorOpen ? true : undefined}
+        onTouchStartCapture={onTouchStartCapture}
+        onTouchMoveCapture={onTouchMoveCapture}
+        onTouchEndCapture={onTouchEndCapture}
+        onTouchCancelCapture={onTouchCancelCapture}
       >
         {!compact && paletteOpen && (
           <div className={styles.paletteRegion}>
@@ -257,7 +351,7 @@ function Workspace() {
             {openSheet === "palette" && (
               <ComponentPalette onPick={placeFromPalette} />
             )}
-            {openSheet === "properties" && <PropertiesPanel />}
+            {openSheet === "properties" && <DetailedPropertiesPanel />}
             {openSheet === "diagnostics" && (
               <>
                 <PathPreviewList />
