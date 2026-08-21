@@ -8,8 +8,8 @@
  * 混ぜると保存 JSON に実行時状態が混入し、Undo 履歴も汚れる。
  *
  * Undo / Redo は `{ past, present, future }`（present = `document`）。
- * **スナップショットを取るのは 部品追加 / 削除 / 配線確定 / ドラッグ完了 の 4 点だけ。**
- * ドラッグ中の `moveComponent` とラベル編集は 1 操作で何十回も発火するので積まない。
+ * **スナップショットを取るのは 部品追加 / 削除 / 配線確定 / ドラッグ・リサイズ完了。**
+ * ドラッグ・リサイズ中の更新とラベル編集は何十回も発火するので、その都度は積まない。
  */
 
 import { create } from "zustand";
@@ -33,11 +33,16 @@ import type {
   ComponentDefinition,
   LampColor,
 } from "@/circuit/types";
-import { DEFAULT_LAMP_COLOR, isLampColor } from "@/circuit/types";
+import {
+  DEFAULT_LAMP_COLOR,
+  isLampColor,
+  normalizeComponentSize,
+} from "@/circuit/types";
 import type { Connection } from "@xyflow/react";
 
 type Point = { x: number; y: number };
 type Viewport = { x: number; y: number; zoom: number };
+type ResizeRect = Point & { width: number; height: number };
 
 /**
  * 履歴の上限。1 手あたりドキュメント 1 枚を丸ごと持つので、
@@ -67,9 +72,7 @@ const LABEL_PREFIX: Record<ComponentCategory, string> = {
   lamp: "L",
   diode: "D",
   terminal: "TB",
-  // 実務の図面ではタイマーは T / TR。リレーの RY と読み違えないよう分ける
   timer: "T",
-  // 調光は DIM。L（ランプ）とも D（ダイオード）とも読み違えない綴りにする
   dimmer: "DIM",
 };
 
@@ -90,168 +93,56 @@ const nextLabel = (
 
 export type CircuitStore = {
   document: CircuitDocument;
-  /** 直前までのドキュメント（古い順）。末尾が Undo で戻る先 */
   past: readonly CircuitDocument[];
-  /** Undo で押し出したドキュメント（新しい順）。先頭が Redo で進む先 */
   future: readonly CircuitDocument[];
 
   selectedComponentIds: readonly string[];
   selectedConnectionIds: readonly string[];
 
-  /** パレットからのドロップ。`position` はキャンバス座標系の左上 */
   addComponent: (definition: ComponentDefinition, position: Point) => string;
   moveComponent: (componentId: string, position: Point) => void;
-
   /**
-   * 複数の部品を一度に置き直す（配置の自動整理・design.md §8.9）。
-   *
-   * **`moveComponent` と違い履歴に 1 手だけ積む。** ドラッグ中の移動は
-   * `beginComponentDrag` / `endComponentDrag` の対が履歴を受け持つが、
-   * 自動整理は 1 回のボタン操作なので、部品 20 個が動いても Undo 1 回で戻る
-   * こと自体が要件になる。
-   *
-   * 実際に動く部品が無ければ（空の Map・存在しない ID だけ）履歴を汚さない。
-   * どこをどう整えるかは `adapter/auto-layout.ts` の純粋関数が決める。
-   * ストアは寸法もレジストリも知らない。
+   * NodeResizer から来る左上座標と寸法を反映する。
+   * 寸法は定義の既定値より小さくならないようストア側でも丸める。
    */
+  resizeComponent: (componentId: string, rect: ResizeRect) => void;
   applyLayout: (positions: ReadonlyMap<string, Point>) => void;
 
-  /**
-   * 部品と配線を **1 手として**消す。部品を消せばその端子に繋がる配線も道連れ。
-   *
-   * 削除の入口はこれ 1 本に絞る。要素ごとに呼べる API を残すと、範囲選択で
-   * 5 個消したときに履歴が 5 手積まれ、1 回の削除を戻すのに 5 回 Undo が要る。
-   */
   removeElements: (
     componentIds: readonly string[],
     connectionIds: readonly string[],
   ) => void;
 
-  /**
-   * インスタンスのラベル（"RY1"）を変更する。空文字は未設定（`undefined`）に戻す。
-   *
-   * 1 文字ごとに発火するので **Undo 履歴には積まない**（スナップショット地点は
-   * 部品追加 / 削除 / 配線確定 / ドラッグ完了 の 4 点。design.md §7）。
-   */
   setComponentLabel: (componentId: string, label: string) => void;
-
-  /**
-   * 部品を左右反転する（トグル）。複数渡せば **それぞれを個別に**反転する。
-   *
-   * 見た目だけの変更だが **履歴には積む。** 反転すると端子の出る辺が変わり、
-   * 配線の取り回しが大きく動くので、ラベル編集と違って「1 手戻したい操作」になる。
-   */
   flipComponents: (componentIds: readonly string[]) => void;
-
-  /**
-   * タイマーの設定時間を変える（design.md §5.13）。
-   *
-   * ラベルの変更（`setComponentLabel`）と違い **Undo の対象にする** ——
-   * 設定時間は回路の動きそのものを変えるので、間違えたときに戻せないと困る。
-   * 範囲外の値は定義の上下限へ丸める（判定はエンジンの `presetMsOf`）。
-   */
   setComponentPreset: (componentId: string, presetMs: number) => void;
-
-  /**
-   * 調光出力の電圧を変える（design.md §5.17）。
-   *
-   * `setComponentPreset` とまったく同じ扱い —— **Undo の対象**にし、
-   * 範囲外は定義の上下限へ丸め（判定はエンジンの `outputVoltsOf`）、
-   * 調光出力以外の部品には書き込まない。回路の動き（繋いだ負荷の明るさ）を
-   * 変える値なので、間違えたときに戻せないと困る。
-   */
   setComponentChannelVolts: (
     componentId: string,
     channelId: string,
     volts: number,
   ) => void;
-
-  /**
-   * 調光出力のフェード時間を変える（design.md §5.18）。
-   *
-   * `setComponentPreset` とまったく同じ扱い —— **Undo の対象**にし、
-   * 範囲外は定義の上下限へ丸め（判定はエンジンの `fadeMsOf`）、
-   * `fade` を持たない部品には書き込まない。
-   */
   setComponentFadeMs: (componentId: string, fadeMs: number) => void;
-
-  /**
-   * 調光器の盤ごとの設定を変える（design.md §4.15）。
-   *
-   * 渡した項目だけを差し替える —— 極性を切り替えるたびに上限や下限が
-   * 既定へ戻ると、実機の DIP を 1 つ倒す操作とかけ離れる。
-   * 調光入力を持たない部品には書き込まない。
-   */
   setComponentDimmerSettings: (
     componentId: string,
     patch: Partial<DimmerSettings>,
   ) => void;
-
-  /**
-   * アナログ量で動く接点の動作点を変える（実機の CUT ADJ.・design.md §4.16）。
-   *
-   * 接点ごとに持つ。4 回路のカットリレーはそれぞれ別の動作点に設定できる。
-   * 動作点を持たない接点には書き込まない。
-   */
   setComponentTriggerPercent: (
     componentId: string,
     contactId: string,
     percent: number,
   ) => void;
-
-  /**
-   * 表示ランプのレンズの色を変える（design.md §4.11）。
-   *
-   * **Undo の対象にする。** 盤面では色そのものが意味を持つ（赤＝異常・
-   * 緑＝運転）ので、押し間違いを戻せないと図の意味が変わったままになる。
-   * ランプ以外の部品には書き込まない —— 誰も読まない値を保存 JSON に残さない。
-   */
   setComponentLampColor: (componentId: string, color: LampColor) => void;
-
-  /**
-   * インスタンスの `definitionId` だけを差し替える（同じ ID・位置・ラベルは維持）。
-   *
-   * 接続 (`CircuitConnection`) は componentId + terminalId で端子を指すので、
-   * 差し替え後の定義に無い端子を指す配線だけを間引けば、他の配線は
-   * インスタンス ID が同じままつながり続ける。A 接点 → B 接点のようにラベルが
-   * 一致する差し替えでは配線は 1 本も切れない。MY4N → MY2N のように接点が
-   * 減る差し替えでは、無くなった端子への配線だけが黙って外れる（design.md §7）。
-   *
-   * 履歴は 1 手。差し替え先が無い ID・現在と同じ定義への差し替えは空振りとして
-   * 履歴を汚さない。
-   */
   replaceComponentDefinition: (
     componentId: string,
     definition: ComponentDefinition,
   ) => void;
 
-  /**
-   * React Flow の接続イベントから配線を足す。
-   * 端子以外への接続と重複配線はここで捨てる（adapter が判定する）。
-   */
   addConnection: (params: Connection) => void;
-
-  /**
-   * 既存の配線の端を掴み直して、別の端子へ繋ぎ替える（design.md §8.8）。
-   *
-   * **配線 ID を変えない。** 同じ 1 本を引き回しただけなので、消して張り直すのでは
-   * なく端子参照だけを差し替える。ID が変わると選択が外れ、レーン（§8.7）も
-   * 振り直しになり、「今掴んでいる線」が画面上で別物にすり替わる。
-   *
-   * 履歴は 1 手。空振り（存在しない ID・掴んで同じ端子へ戻した・既に同じ端子ペアの
-   * 配線がある）は履歴を汚さない。
-   */
   reconnectConnection: (connectionId: string, params: Connection) => void;
 
   setComponentSelected: (componentId: string, selected: boolean) => void;
   setConnectionSelected: (connectionId: string, selected: boolean) => void;
-  /**
-   * 選択中の配線を丸ごと差し替える。範囲選択中に「枠に触れた配線」を
-   * 毎フレーム組み立て直すための入口（design.md §8.6）。
-   * 1 本ずつのトグルでは、枠を縮めたときに外れた配線が選択に残る。
-   */
   setSelectedConnections: (connectionIds: readonly string[]) => void;
-  /** 同上、部品側 */
   setSelectedComponents: (componentIds: readonly string[]) => void;
   selectOnlyComponent: (componentId: string) => void;
   clearSelection: () => void;
@@ -259,22 +150,14 @@ export type CircuitStore = {
 
   setViewport: (viewport: Viewport) => void;
 
-  /**
-   * ノードのドラッグ開始 / 終了。**履歴に積むのは終了時の 1 回だけ。**
-   * 開始時点のドキュメントを控えておき、実際に位置が変わっていれば
-   * それを past へ積む。掴んだだけ（位置が変わらない）なら何もしない。
-   */
   beginComponentDrag: () => void;
   endComponentDrag: () => void;
+  /** リサイズ中は毎フレーム寸法が変わるため、履歴は開始/終了の対で 1 手にまとめる */
+  beginComponentResize: () => void;
+  endComponentResize: () => void;
 
   undo: () => void;
   redo: () => void;
-
-  /**
-   * 保存データの読み込みなど、ドキュメントを丸ごと差し替える。
-   * **履歴と選択はリセットする** — 読み込み前の回路へ Undo で戻れてしまうと、
-   * 「復元した」のか「壊した」のか分からなくなる。
-   */
   replaceDocument: (document: CircuitDocument) => void;
 };
 
@@ -288,18 +171,12 @@ const withSelected = (
   return selected ? [...ids, id] : ids.filter((current) => current !== id);
 };
 
-/**
- * 同じ ID 集合か（順序は問わない）。
- * 範囲選択中は毎フレーム選択を組み立て直すので、中身が同じなら
- * ここで弾いて再描画を止める（MY4N 1 個で端子 14 個ぶんの描画が走る）。
- */
 const sameIds = (a: readonly string[], b: readonly string[]): boolean => {
   if (a.length !== b.length) return false;
   const set = new Set(a);
   return b.every((id) => set.has(id));
 };
 
-/** 存在しなくなった ID を選択から外す。変化が無ければ同じ配列を返す */
 const retained = (
   ids: readonly string[],
   alive: ReadonlySet<string>,
@@ -313,7 +190,6 @@ const idsOf = (document: CircuitDocument) => ({
   connections: new Set(document.connections.map((connection) => connection.id)),
 });
 
-/** 部品と配線をまとめて落とす。部品を消したらその端子に繋がる配線も道連れにする */
 const removeFromDocument = (
   document: CircuitDocument,
   componentIds: ReadonlySet<string>,
@@ -331,7 +207,6 @@ const removeFromDocument = (
   ),
 });
 
-/** 部品の位置が 1 つでも動いたか（ドラッグ完了時に履歴を積むかの判定） */
 const positionsChanged = (
   before: CircuitDocument,
   after: CircuitDocument,
@@ -347,31 +222,39 @@ const positionsChanged = (
     );
   });
 
-/**
- * ドラッグ開始時のドキュメント。
- *
- * ストアの state に置かない。履歴でも保存対象でもない一時値であり、
- * `document` の購読者を毎ドラッグで起こす理由が無い。
- */
+/** リサイズは左/上のハンドルで座標も変わるため、位置と寸法をまとめて比較する */
+const geometryChanged = (
+  before: CircuitDocument,
+  after: CircuitDocument,
+): boolean =>
+  before.components.length !== after.components.length ||
+  before.components.some((component, index) => {
+    const current = after.components[index];
+    return (
+      current === undefined ||
+      current.id !== component.id ||
+      current.position.x !== component.position.x ||
+      current.position.y !== component.position.y ||
+      current.size?.width !== component.size?.width ||
+      current.size?.height !== component.size?.height
+    );
+  });
+
 let dragSnapshot: CircuitDocument | null = null;
+let resizeSnapshot: CircuitDocument | null = null;
 
 export const useCircuitStore = create<CircuitStore>()((set, get) => {
-  /** 履歴を 1 手進めて現在を差し替える */
   const commit = (state: CircuitStore, next: CircuitDocument) => ({
     document: next,
     past: [...state.past, state.document].slice(-HISTORY_LIMIT),
-    // 新しい操作をした時点で、やり直しの枝は捨てる
     future: [] as readonly CircuitDocument[],
   });
 
-  /** past / future を行き来する。**ビューポートは移動させない** */
   const travel = (state: CircuitStore, direction: "undo" | "redo") => {
     const target =
       direction === "undo" ? state.past.at(-1) : state.future.at(0);
     if (!target) return {};
 
-    // 戻した瞬間にキャンバスが飛ばないよう、表示位置は今のものを保つ。
-    // ビューポートは履歴の対象ではない（パン・ズームは操作の取り消し対象ではない）
     const document = { ...target, viewport: state.document.viewport };
     const alive = idsOf(document);
 
@@ -420,7 +303,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
       return id;
     },
 
-    // ドラッグ中は毎フレーム呼ばれる。履歴に積むのは endComponentDrag の 1 回だけ
     moveComponent: (componentId, position) =>
       set((state) => ({
         document: {
@@ -432,6 +314,47 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           ),
         },
       })),
+
+    resizeComponent: (componentId, rect) => {
+      if (
+        !Number.isFinite(rect.x) ||
+        !Number.isFinite(rect.y) ||
+        !Number.isFinite(rect.width) ||
+        !Number.isFinite(rect.height)
+      ) {
+        return;
+      }
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const definition = getComponentDefinition(component.definitionId);
+          if (!definition) return component;
+
+          const size = normalizeComponentSize(definition, {
+            width: rect.width,
+            height: rect.height,
+          });
+          const nextPosition = { x: rect.x, y: rect.y };
+          const sameSize =
+            component.size?.width === size?.width &&
+            component.size?.height === size?.height;
+          const samePosition =
+            component.position.x === nextPosition.x &&
+            component.position.y === nextPosition.y;
+          if (sameSize && samePosition) return component;
+
+          changed = true;
+          const { size: _oldSize, ...rest } = component;
+          return size
+            ? { ...rest, position: nextPosition, size }
+            : { ...rest, position: nextPosition };
+        });
+        return changed
+          ? { document: { ...state.document, components } }
+          : {};
+      });
+    },
 
     applyLayout: (positions) => {
       if (positions.size === 0) return;
@@ -449,16 +372,12 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           changed = true;
           return { ...component, position };
         });
-        // 空振り（存在しない ID・現在と同じ位置だけ）なら履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });
     },
 
     setComponentLabel: (componentId, label) => {
-      // 入力値をそのまま持つ。ここで trim すると「RY 1」の途中（"RY "）で
-      // 空白が消えてしまい、制御された input に文字が打てなくなる。
-      // 前後の空白落としは入力欄を離れたときに UI 側が行う
       const next = label.trim() === "" ? undefined : label;
       set((state) => ({
         document: {
@@ -481,7 +400,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           const electrical = getComponentDefinition(
             component.definitionId,
           )?.electrical;
-          // タイマー以外には設定時間が無い。書き込むと誰も読まない値が残る
           if (electrical?.kind !== "relay" || !electrical.delay) return component;
 
           const next = presetMsOf(electrical.delay, presetMs);
@@ -489,7 +407,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           changed = true;
           return { ...component, presetMs: next };
         });
-        // 同じ値への設定・タイマー以外への設定で履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });
@@ -504,9 +421,7 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           const electrical = getComponentDefinition(
             component.definitionId,
           )?.electrical;
-          // 調光出力以外には出力電圧が無い。書き込むと誰も読まない値が残る
           if (electrical?.kind !== "analog-source") return component;
-          // 定義に無いチャンネルへは書かない（保存 JSON に幽霊の回路を残さない）
           if (!electrical.channels.some((c) => c.id === channelId)) return component;
 
           const next = outputVoltsOf(electrical, volts);
@@ -517,7 +432,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
             channelVolts: { ...component.channelVolts, [channelId]: next },
           };
         });
-        // 同じ値への設定・調光出力以外への設定で履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });
@@ -532,7 +446,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           const electrical = getComponentDefinition(
             component.definitionId,
           )?.electrical;
-          // フェードを持たない部品には書き込まない。誰も読まない値が残る
           if (electrical?.kind !== "analog-source" || !electrical.fade) {
             return component;
           }
@@ -542,7 +455,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           changed = true;
           return { ...component, fadeMs: next };
         });
-        // 同じ値への設定・フェードを持たない部品への設定で履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });
@@ -561,7 +473,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           const contact = electrical.relay.contacts.find(
             (entry) => entry.id === contactId,
           );
-          // 動作点を持たない接点には書かない（誰も読まない値を残さない）
           if (!contact?.trigger) return component;
 
           const next = triggerPercentOf(contact.trigger, percent);
@@ -588,7 +499,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           const applies =
             electrical?.kind === "dimmer" ||
             (electrical?.kind === "lamp" && electrical.dimming !== undefined);
-          // 調光入力を持たない部品には書き込まない
           if (!applies) return component;
 
           const next: DimmerSettings = { ...component.dimmerSettings, ...patch };
@@ -615,18 +525,14 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           const electrical = getComponentDefinition(
             component.definitionId,
           )?.electrical;
-          // ランプ以外にレンズは無い
           if (electrical?.kind !== "lamp") return component;
 
-          // 既定色は持たない形に戻す（`flipped` と同じ）。保存 JSON に
-          // 「既定と同じ値」を書き残すと、既定を変えたときに古い回路だけ取り残される
           const next = color === DEFAULT_LAMP_COLOR ? undefined : color;
           if (component.lampColor === next) return component;
           changed = true;
           const { lampColor: _dropped, ...rest } = component;
           return next === undefined ? rest : { ...rest, lampColor: next };
         });
-        // 同じ色への設定・ランプ以外への設定で履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });
@@ -640,14 +546,11 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
         const components = state.document.components.map((component) => {
           if (!targets.has(component.id)) return component;
           changed = true;
-          // 反転していない状態は `flipped` を持たない形に戻す。
-          // false を書き込むと保存 JSON に意味の無いフィールドが増える
           const flipped = component.flipped === true;
           return flipped
             ? { ...component, flipped: undefined }
             : { ...component, flipped: true };
         });
-        // 選択が空振り（存在しない ID だけ）なら履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });
@@ -663,14 +566,16 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
         const terminalIds = new Set(
           definition.terminals.map((terminal) => terminal.id),
         );
-        const components = state.document.components.map((component) =>
-          component.id === componentId
-            ? { ...component, definitionId: definition.id }
-            : component,
-        );
-        // 差し替え後に存在しない端子を指す配線だけを間引く。両端とも残っている
-        // 配線には触れない — 接続はインスタンス ID を指すので、定義が変わっても
-        // 端子 ID さえ一致すればつながったままでよい
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          const nextSize = component.size
+            ? normalizeComponentSize(definition, component.size)
+            : undefined;
+          const { size: _oldSize, ...rest } = component;
+          return nextSize
+            ? { ...rest, definitionId: definition.id, size: nextSize }
+            : { ...rest, definitionId: definition.id };
+        });
         const connections = state.document.connections.filter((connection) => {
           if (
             connection.from.componentId === componentId &&
@@ -707,7 +612,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           new Set(componentIds),
           new Set(connectionIds),
         );
-        // 空振り（存在しない ID だけ）なら履歴を汚さない
         if (
           next.components.length === state.document.components.length &&
           next.connections.length === state.document.connections.length
@@ -731,7 +635,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
 
     addConnection: (params) => {
       const candidate = connectionFromReactFlow(params, createId("wire"));
-      // 端子 → 端子 でない接続は表現しない（要件 US-B）
       if (!candidate) return;
       if (hasTerminalPair(get().document, candidate)) return;
       set((state) =>
@@ -743,9 +646,7 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
     },
 
     reconnectConnection: (connectionId, params) => {
-      // 引き直した先の端子ペアを、**同じ ID の**接続として組み立てる
       const candidate = connectionFromReactFlow(params, connectionId);
-      // 端子 → 端子 でない落とし先（部品本体・自己接続）は無視して元のまま残す
       if (!candidate) return;
 
       set((state) => {
@@ -753,10 +654,7 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           (connection) => connection.id === connectionId,
         );
         if (!current) return {};
-        // 掴んで同じ端子へ戻しただけ。何も変わっていないので履歴を積まない
         if (isSameTerminalPair(current, candidate)) return {};
-        // 引き直した先に既に同じ 1 本がある。重ねて張るのではなく元のまま残す
-        // （自分自身は hasTerminalPair 側で除かれる）
         if (hasTerminalPair(state.document, candidate)) return {};
 
         return commit(state, {
@@ -806,7 +704,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
           : { selectedComponentIds: [...componentIds] },
       ),
 
-    // 警告一覧から該当部品へ飛ぶ操作。他の選択は解く（design.md §8.4）
     selectOnlyComponent: (componentId) =>
       set({
         selectedComponentIds: [componentId],
@@ -816,8 +713,6 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
     clearSelection: () =>
       set({ selectedComponentIds: [], selectedConnectionIds: [] }),
 
-    // 選択の削除も removeElements を通す。「配線を消してから部品を消す」と
-    // 順に呼ぶと Undo 2 手ぶんの履歴になり、1 回の削除が 2 手で戻ることになる
     removeSelected: () => {
       const { selectedComponentIds, selectedConnectionIds, removeElements } =
         get();
@@ -837,8 +732,25 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
       dragSnapshot = null;
       if (!snapshot) return;
       set((state) => {
-        // 掴んだだけで動かしていないなら履歴を汚さない
         if (!positionsChanged(snapshot, state.document)) return {};
+        return {
+          past: [...state.past, snapshot].slice(-HISTORY_LIMIT),
+          future: [],
+        };
+      });
+    },
+
+    beginComponentResize: () => {
+      if (resizeSnapshot) return;
+      resizeSnapshot = get().document;
+    },
+
+    endComponentResize: () => {
+      const snapshot = resizeSnapshot;
+      resizeSnapshot = null;
+      if (!snapshot) return;
+      set((state) => {
+        if (!geometryChanged(snapshot, state.document)) return {};
         return {
           past: [...state.past, snapshot].slice(-HISTORY_LIMIT),
           future: [],
@@ -851,6 +763,7 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
 
     replaceDocument: (document) => {
       dragSnapshot = null;
+      resizeSnapshot = null;
       set({
         document,
         past: [],

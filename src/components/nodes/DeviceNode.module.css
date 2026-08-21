@@ -1,6 +1,6 @@
 /*
- * 部品ノードの外枠。サイズは `ComponentDefinition.visual` が決めるので、
- * ここでは幅・高さを指定しない。
+ * 部品ノードの外枠。実寸法は React Flow ノードの style が決める。
+ * この要素は親ノードいっぱいに広がり、端子の相対配置もその寸法へ追従する。
  *
  * 内側の padding は端子ラベルの帯（辺から約 20px）を避けるためのもの。
  * 端子は絶対配置なので padding の影響を受けない。
@@ -8,6 +8,8 @@
 
 .node {
   position: relative;
+  width: 100%;
+  height: 100%;
   border: 1px solid var(--node-border);
   border-radius: 8px;
   background: var(--panel);
@@ -20,6 +22,30 @@
 .node[data-selected="true"] {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/*
+ * React Flow の NodeResizer。選択中だけ出る。
+ * 角と辺のハンドルを視認できる大きさにしつつ、端子の Handle と見分けられる
+ * 四角形にする。端子は丸なので、近接しても「配線」と「サイズ変更」を混同しにくい。
+ */
+.resizeLine {
+  border-color: var(--accent) !important;
+}
+
+.resizeHandle {
+  width: 9px !important;
+  height: 9px !important;
+  border: 1px solid var(--panel) !important;
+  border-radius: 2px !important;
+  background: var(--accent) !important;
+}
+
+@media (pointer: coarse) {
+  .resizeHandle {
+    width: 14px !important;
+    height: 14px !important;
+  }
 }
 
 .content {
@@ -85,9 +111,6 @@
  * 図記号（`.bodyArea`）へのホバーで出す主要ステータスの吹き出し（design.md §8.3）。
  * `DeviceTerminal.module.css` の `.tooltip` と同じ構造。z-index は端子
  * ツールチップより低くして、端子個別の情報が隠れないようにする。
- *
- * 見出し（`.heading`）へのホバーとは領域を分けてあるので、`.modelTooltip` と
- * 同時に出ることはない（同じ位置に重ねて置いても衝突しない）。
  */
 .statusTooltip {
   position: absolute;
@@ -131,11 +154,6 @@
   border-top-color: var(--wire-energized-text);
 }
 
-/*
- * 自己保持中（design.md §5.9）。配線・端子と同じ紫にして、
- * 「励磁中」と「自己保持中」を色でも読み分けられるようにする。
- * **必ず data-active の後ろに置くこと**（詳細度が同じため）。
- */
 .statusTooltip[data-self-hold="true"] {
   background: var(--wire-self-hold-text);
 }
@@ -149,11 +167,7 @@
   visibility: visible;
 }
 
-/*
- * 見出し（型番）へのホバーで出す詳細吹き出し。
- * `.model` はノード幅に収めるため補足を削った短縮表示なので、
- * 削った正式名称・端子数・検証状態をここで補う（見切れ対策）。
- */
+/* 見出し（型番）へのホバーで出す詳細吹き出し */
 .modelTooltip {
   position: absolute;
   z-index: 15;
@@ -207,7 +221,6 @@
   visibility: visible;
 }
 
-/* カテゴリごとの色味。実端子番号の可読性を落とさない程度に留める */
 .node[data-category="power"] {
   border-color: var(--node-border-power);
 }
@@ -216,31 +229,11 @@
   border-color: var(--node-border-relay);
 }
 
-/*
- * 自己保持中のリレー（design.md §5.9）。
- *
- * **カテゴリ色より後ろに置くこと**（詳細度が同じなので順序で勝敗が決まる）。
- * 配線の紫を目で追わなくても「今どれが自分で保持しているか」が分かるように、
- * ノードそのものを縁取る。
- *
- * 選択中は譲る。選択の枠（`--accent`）は今まさに操作している対象を指すもので、
- * 回路の状態表示に奪われると、何を掴んでいるのか分からなくなる。
- */
 .node[data-self-hold="true"]:not([data-selected="true"]) {
   border-color: var(--wire-self-hold);
   box-shadow: 0 0 0 2px var(--wire-self-hold-soft);
 }
 
-/*
- * 経路確認モードで電位が止まっている部品（design.md §8.14）。
- *
- * **枠線ではなく点線の輪郭にする。** 選択（`data-selected`）と実行中の
- * 励磁（`data-energized`）が既に実線の枠を使っており、3 つ目の実線を足すと
- * 「選んだのか / 動いているのか / 止まっているのか」が枠から読めなくなる。
- *
- * 色はアクセントを借りず注意色にする。配線ミスではないので警告色ほど強くはせず、
- * 「ここまでしか来ていない」という道標に留める。
- */
 .node[data-preview-blocked] {
   outline: 2px dashed var(--wire-control);
   outline-offset: 3px;
