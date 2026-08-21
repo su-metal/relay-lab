@@ -12,9 +12,9 @@ import { useSimulationStore } from "@/store/simulationStore";
 
 import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
+import { DetailedPropertiesPanel } from "./DetailedPropertiesPanel";
 import { HelpDialog } from "./HelpDialog";
 import { LadderDialog } from "./LadderDialog";
-import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { PathPreviewList } from "./PathPreviewList";
 import { WarningList } from "./WarningList";
@@ -226,7 +226,7 @@ function Workspace() {
 
   const inspector = (
     <>
-      <PropertiesPanel />
+      <DetailedPropertiesPanel />
       <PathPreviewList />
       <WarningList />
     </>
@@ -351,7 +351,7 @@ function Workspace() {
             {openSheet === "palette" && (
               <ComponentPalette onPick={placeFromPalette} />
             )}
-            {openSheet === "properties" && <PropertiesPanel />}
+            {openSheet === "properties" && <DetailedPropertiesPanel />}
             {openSheet === "diagnostics" && (
               <>
                 <PathPreviewList />
