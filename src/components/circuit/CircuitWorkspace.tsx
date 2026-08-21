@@ -6,10 +6,6 @@
  * `ReactFlowProvider` をここで張っているのは、Toolbar（`fitView`）と
  * CircuitCanvas（`screenToFlowPosition`）、保存の復元（`setViewport`）が
  * 同じ React Flow インスタンスを共有する必要があるため。
- *
- * **中身を `Workspace` に分けているのはそのため。** プロバイダーを張った
- * コンポーネント自身は `useReactFlow()` を呼べないので、フックを使う層を
- * 1 段内側へ落としている。
  */
 
 import { ReactFlowProvider, useReactFlow, useStoreApi } from "@xyflow/react";
@@ -18,6 +14,7 @@ import type { ReactNode } from "react";
 
 import { getComponentDefinition } from "@/circuit/definitions";
 import type { ComponentDefinition } from "@/circuit/types";
+import { componentSizeOf } from "@/circuit/types";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
@@ -41,13 +38,6 @@ import { useCoarsePointer, useCompactLayout } from "./useViewportMode";
 import { useWiringCheck } from "./useWiringCheck";
 import styles from "./CircuitWorkspace.module.css";
 
-/**
- * 狭い画面で下から出すパネル（design.md §8.12）。
- *
- * **並びは作業の順**（置く → 中身を見る → 指摘を読む）。左右のカラムを
- * そのまま横に並べ替えただけの順（部品・プロパティ・診断）と結果は同じだが、
- * 増やすときの基準はこちら。
- */
 const SHEETS = [
   { key: "palette", label: "部品", title: "部品パレット" },
   { key: "properties", label: "プロパティ", title: "プロパティ" },
@@ -65,51 +55,24 @@ export function CircuitWorkspace() {
 }
 
 function Workspace() {
-  // シミュレーションの再計算はここ 1 箇所からだけ駆動する（design.md §8.2）
   useSimulationSync();
-  // 保存・復元も同じく 1 箇所（design.md §8.4）
   const persistence = useDocumentPersistence();
   useHistoryShortcuts();
   useFlipShortcut();
-  // L キーで配置を整理する（design.md §8.9）。リスナーは 1 本だけ張る —
-  // 操作バーのボタンは同じ `runAutoArrange` を直接呼ぶ
   useArrangeShortcut();
-  // S キーでシミュレーションを開始・停止する（design.md §8.2）
   useSimulationShortcut();
 
-  // 範囲選択の設定は画面の操作モードで、保存対象でも履歴の対象でもない。
-  // circuitStore に混ぜず、操作バーとキャンバスがここで共有する（design.md §8.6）
   const [rangeSelectionTarget, setRangeSelectionTarget] =
     useState<RangeSelectionTarget>("both");
-
-  // ヘルプの開閉も画面の状態。保存対象でも履歴の対象でもない（design.md §8.10）
   const [helpOpen, setHelpOpen] = useState(false);
-
-  /*
-   * ラダー図の開閉（design.md §8.15）。ヘルプと同じく画面の状態で、
-   * **図そのものは保存しない** —— 配線から毎回組み直せる派生物なので、
-   * 持つと配線と食い違ったまま残る
-   */
   const [ladderOpen, setLadderOpen] = useState(false);
 
-  /**
-   * 画面モード（design.md §8.12）。**幅と入力は別々に見る。**
-   * 狭さはレイアウトを、指かどうかは置き方（D&D かタップか）を決める。
-   */
   const compact = useCompactLayout();
   const coarse = useCoarsePointer();
 
-  /** 狭い画面で開いているパネル。閉じているときは `null`（キャンバス全面） */
   const [openSheet, setOpenSheet] = useState<SheetKey | null>(null);
-
-  /**
-   * 広い画面の右プロパティ領域。閉じたときは細い再表示レールだけ残し、
-   * そのぶんキャンバスを広げる。画面状態なので保存・Undo の対象にはしない。
-   */
   const [inspectorOpen, setInspectorOpen] = useState(true);
 
-  // 窓を広げて 3 カラムへ戻ったらシートは畳む。開いたままにすると、
-  // 次に狭くしたときに前回のパネルが勝手に開いて出てくる
   useEffect(() => {
     if (!compact) setOpenSheet(null);
   }, [compact]);
@@ -121,45 +84,30 @@ function Workspace() {
     (state) => state.selectOnlyComponent,
   );
 
-  /**
-   * パレットのタップで部品を置く（design.md §8.12）。
-   *
-   * 指の端末には HTML5 の D&D が無いので、**タップだけで置ける経路**が要る。
-   * 置き場所は「いま見えている範囲の真ん中」。座標の計算そのものは
-   * `placeAtViewportCenter()`（純粋関数）が持つ。
-   *
-   * 置いたら選択してシートを閉じる。閉じないと、置いた部品がシートの裏に
-   * 隠れて「タップしても何も起きない」ように見える。
-   */
   const placeFromPalette = useCallback(
     (definition: ComponentDefinition) => {
       const { transform, width, height } = flowStore.getState();
       const [x, y, zoom] = transform;
       const { components } = useCircuitStore.getState().document;
 
+      const occupied = components.map((component) => {
+        const componentDefinition = getComponentDefinition(component.definitionId);
+        const size = componentDefinition
+          ? componentSizeOf(component, componentDefinition)
+          : { width: 0, height: 0 };
+        return { ...component.position, ...size };
+      });
+
       const position = placeAtViewportCenter(
         { x, y, zoom },
         { width, height },
         definition.visual,
-        // 重なりは矩形で見る（左上だけ比べるとリレーの上に電源が乗る）
-        components.map((component) => ({
-          ...component.position,
-          ...(getComponentDefinition(component.definitionId)?.visual ?? {
-            width: 0,
-            height: 0,
-          }),
-        })),
+        occupied,
       );
 
       selectOnlyComponent(addComponent(definition, position));
       setOpenSheet(null);
 
-      /*
-       * 重なりを避けて右下へ流した部品は、携帯の幅ではすぐ画面の外に出る。
-       * はみ出したぶんだけ画面を寄せる（倍率は変えない）。収まっていれば
-       * `panToInclude` は同じ変換を返すので、そのときは動かさない ——
-       * 置くたびに図面がわずかに揺れると、どこを見ていたのか見失う
-       */
       const panned = panToInclude({ x, y, zoom }, { width, height }, {
         ...position,
         ...definition.visual,
@@ -174,10 +122,6 @@ function Workspace() {
   const inspector = (
     <>
       <PropertiesPanel />
-      {/*
-        経路確認の一覧はモードに入っている間だけ現れる（design.md §8.14）。
-        モード外では `null` を返すので、ここに条件を書き写さない
-      */}
       <PathPreviewList />
       <WarningList />
     </>
@@ -207,11 +151,6 @@ function Workspace() {
         className={styles.columns}
         data-inspector-collapsed={!compact && !inspectorOpen ? true : undefined}
       >
-        {/*
-          狭い画面ではキャンバスだけを残し、両脇のカラムはシートへ畳む
-          （design.md §8.12）。**畳んだパネルは描かない** —— 表示だけ消して
-          残すと、プロパティと診断がキャンバスの裏で解き続ける
-        */}
         {!compact && (
           <ComponentPalette
             onPick={coarse ? placeFromPalette : undefined}
@@ -257,8 +196,6 @@ function Workspace() {
             {openSheet === "properties" && <PropertiesPanel />}
             {openSheet === "diagnostics" && (
               <>
-                {/* 狭い画面では診断と同じシートに入れる。どちらも
-                    「回路を読む」ための一覧で、タブを増やすほどの別物ではない */}
                 <PathPreviewList />
                 <WarningList />
               </>
@@ -277,19 +214,11 @@ function Workspace() {
       )}
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
-
       <LadderDialog open={ladderOpen} onClose={() => setLadderOpen(false)} />
     </div>
   );
 }
 
-/**
- * 下から出すパネル（design.md §8.12）。
- *
- * 中身（パレット / プロパティ / 診断）は 3 カラムのときと同じものをそのまま
- * 入れる。**モバイル用に別のパネルを作らない** —— 2 つに分けると、片方だけ
- * 直す事故が起きる。見出しも中身が持っているので、ここでは付けない。
- */
 function Sheet({
   sheet,
   onClose,
@@ -303,12 +232,6 @@ function Sheet({
 
   return (
     <section className={styles.sheet} aria-label={meta?.title}>
-      {/*
-        閉じるボタンは**見出しの帯を作らずに右上へ重ねる**（design.md §8.12）。
-        横向きの携帯ではシートに使える高さが 200px を切り、帯 1 本（28px）が
-        部品 1 件ぶんに相当する。中身のパネルは自分の見出しを持っているので、
-        シート側で見出しを繰り返す理由も無い
-      */}
       <button
         type="button"
         className={styles.sheetClose}
@@ -322,17 +245,6 @@ function Sheet({
   );
 }
 
-/**
- * 画面下のタブ（design.md §8.12）。
- *
- * **畳んだパネルの中身を数で見せる。** 3 カラムなら常に目に入っている
- * 「選択中の部品」と「指摘の件数」が、シートを閉じている間はまったく
- * 見えなくなる。短絡を出したまま気付かずに配線を続ける状態を作らない。
- *
- * 診断の件数を取るためにここでも `useWiringCheck()` を呼ぶ（`WarningList` と
- * 二重に解く）。**狭い画面でシートを開けている間だけ**の重複で、`inspectWiring`
- * は端子数に線形なので許容する。
- */
 function SheetTabs({
   open,
   onToggle,
@@ -382,12 +294,6 @@ function SheetTabs({
   );
 }
 
-/**
- * 読み込み時に捨てた要素の通知。
- *
- * **黙って捨てない。** 未知の型番の部品を落とせば回路は静かに欠けるので、
- * 何が読めなかったのかを一度だけ知らせる（要件 US-E）。
- */
 function LoadNotices({
   notices,
   onDismiss,
