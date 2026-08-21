@@ -1,13 +1,5 @@
 "use client";
 
-/**
- * 3 カラムレイアウト（design.md §8）と、狭い画面のシート切り替え（§8.12）。
- *
- * `ReactFlowProvider` をここで張っているのは、Toolbar（`fitView`）と
- * CircuitCanvas（`screenToFlowPosition`）、保存の復元（`setViewport`）が
- * 同じ React Flow インスタンスを共有する必要があるため。
- */
-
 import { ReactFlowProvider, useReactFlow, useStoreApi } from "@xyflow/react";
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -83,11 +75,6 @@ function Workspace() {
     setInspectorOpen((current) => !current);
   }, []);
 
-  /**
-   * M / 上部ボタンの一括切り替え。
-   * どちらか一方でも開いていれば両方閉じ、両方閉じているときだけ両方戻す。
-   * これなら「片側だけ閉じた状態 → M」で確実にメインだけになる。
-   */
   const toggleAllPanels = useCallback(() => {
     const open = !paletteOpen && !inspectorOpen;
     setPaletteOpen(open);
@@ -159,18 +146,39 @@ function Workspace() {
 
   return (
     <div className={styles.workspace} data-compact={compact || undefined}>
-      <Toolbar
-        compact={compact}
-        saveStatus={persistence.status}
-        rangeSelectionTarget={rangeSelectionTarget}
-        onRangeSelectionTargetChange={setRangeSelectionTarget}
-        onExportFile={persistence.exportToFile}
-        onImportFile={persistence.importFromFile}
-        onOpenHelp={() => setHelpOpen(true)}
-        onOpenLadder={() => setLadderOpen(true)}
-        sidePanelsHidden={sidePanelsHidden}
-        onToggleSidePanels={toggleAllPanels}
-      />
+      <div className={styles.toolbarHost} data-compact={compact || undefined}>
+        {!compact && (
+          <button
+            type="button"
+            className={styles.allPanelsToggle}
+            data-active={sidePanelsHidden ? true : undefined}
+            onClick={toggleAllPanels}
+            aria-pressed={sidePanelsHidden}
+            aria-label={
+              sidePanelsHidden
+                ? "部品パネルとプロパティパネルを開く"
+                : "部品パネルとプロパティパネルを閉じる"
+            }
+            title={
+              sidePanelsHidden
+                ? "左右のパネルを開く（M）"
+                : "左右のパネルを閉じてメインだけ表示（M）"
+            }
+          >
+            ▣
+          </button>
+        )}
+        <Toolbar
+          compact={compact}
+          saveStatus={persistence.status}
+          rangeSelectionTarget={rangeSelectionTarget}
+          onRangeSelectionTargetChange={setRangeSelectionTarget}
+          onExportFile={persistence.exportToFile}
+          onImportFile={persistence.importFromFile}
+          onOpenHelp={() => setHelpOpen(true)}
+          onOpenLadder={() => setLadderOpen(true)}
+        />
+      </div>
 
       {persistence.notices.length > 0 && (
         <LoadNotices
