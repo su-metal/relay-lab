@@ -32,6 +32,7 @@ import { useArrangeShortcut } from "./useArrangeShortcut";
 import { useDocumentPersistence } from "./useDocumentPersistence";
 import { useFlipShortcut } from "./useFlipShortcut";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
+import { usePanelShortcuts } from "./usePanelShortcuts";
 import { useSimulationShortcut } from "./useSimulationShortcut";
 import { useSimulationSync } from "./useSimulationSync";
 import { useCoarsePointer, useCompactLayout } from "./useViewportMode";
@@ -71,7 +72,34 @@ function Workspace() {
   const coarse = useCoarsePointer();
 
   const [openSheet, setOpenSheet] = useState<SheetKey | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+
+  const toggleComponentPanel = useCallback(() => {
+    setPaletteOpen((current) => !current);
+  }, []);
+
+  const togglePropertiesPanel = useCallback(() => {
+    setInspectorOpen((current) => !current);
+  }, []);
+
+  /**
+   * M / 上部ボタンの一括切り替え。
+   * どちらか一方でも開いていれば両方閉じ、両方閉じているときだけ両方戻す。
+   * これなら「片側だけ閉じた状態 → M」で確実にメインだけになる。
+   */
+  const toggleAllPanels = useCallback(() => {
+    const open = !paletteOpen && !inspectorOpen;
+    setPaletteOpen(open);
+    setInspectorOpen(open);
+  }, [inspectorOpen, paletteOpen]);
+
+  usePanelShortcuts({
+    compact,
+    onToggleComponentPanel: toggleComponentPanel,
+    onTogglePropertiesPanel: togglePropertiesPanel,
+    onToggleAllPanels: toggleAllPanels,
+  });
 
   useEffect(() => {
     if (!compact) setOpenSheet(null);
@@ -127,6 +155,8 @@ function Workspace() {
     </>
   );
 
+  const sidePanelsHidden = !paletteOpen && !inspectorOpen;
+
   return (
     <div className={styles.workspace} data-compact={compact || undefined}>
       <Toolbar
@@ -138,6 +168,8 @@ function Workspace() {
         onImportFile={persistence.importFromFile}
         onOpenHelp={() => setHelpOpen(true)}
         onOpenLadder={() => setLadderOpen(true)}
+        sidePanelsHidden={sidePanelsHidden}
+        onToggleSidePanels={toggleAllPanels}
       />
 
       {persistence.notices.length > 0 && (
@@ -149,12 +181,36 @@ function Workspace() {
 
       <div
         className={styles.columns}
+        data-palette-collapsed={!compact && !paletteOpen ? true : undefined}
         data-inspector-collapsed={!compact && !inspectorOpen ? true : undefined}
       >
-        {!compact && (
-          <ComponentPalette
-            onPick={coarse ? placeFromPalette : undefined}
-          />
+        {!compact && paletteOpen && (
+          <div className={styles.paletteRegion}>
+            <button
+              type="button"
+              className={styles.paletteToggle}
+              onClick={toggleComponentPanel}
+              aria-label="部品パネルを閉じる"
+              title="部品パネルを閉じる（C）"
+            >
+              ‹
+            </button>
+            <ComponentPalette onPick={coarse ? placeFromPalette : undefined} />
+          </div>
+        )}
+
+        {!compact && !paletteOpen && inspectorOpen && (
+          <aside className={styles.paletteRail} aria-label="部品パネル">
+            <button
+              type="button"
+              className={styles.paletteToggle}
+              onClick={toggleComponentPanel}
+              aria-label="部品パネルを開く"
+              title="部品パネルを開く（C）"
+            >
+              ›
+            </button>
+          </aside>
         )}
 
         <CircuitCanvas rangeSelectionTarget={rangeSelectionTarget} />
@@ -164,9 +220,9 @@ function Workspace() {
             <button
               type="button"
               className={styles.inspectorToggle}
-              onClick={() => setInspectorOpen(false)}
+              onClick={togglePropertiesPanel}
               aria-label="プロパティパネルを閉じる"
-              title="プロパティパネルを閉じる"
+              title="プロパティパネルを閉じる（P）"
             >
               ›
             </button>
@@ -174,14 +230,14 @@ function Workspace() {
           </div>
         )}
 
-        {!compact && !inspectorOpen && (
+        {!compact && !inspectorOpen && paletteOpen && (
           <aside className={styles.inspectorRail} aria-label="プロパティパネル">
             <button
               type="button"
               className={styles.inspectorToggle}
-              onClick={() => setInspectorOpen(true)}
+              onClick={togglePropertiesPanel}
               aria-label="プロパティパネルを開く"
-              title="プロパティパネルを開く"
+              title="プロパティパネルを開く（P）"
             >
               ‹
             </button>
