@@ -102,6 +102,12 @@ function Workspace() {
   /** 狭い画面で開いているパネル。閉じているときは `null`（キャンバス全面） */
   const [openSheet, setOpenSheet] = useState<SheetKey | null>(null);
 
+  /**
+   * 広い画面の右プロパティ領域。閉じたときは細い再表示レールだけ残し、
+   * そのぶんキャンバスを広げる。画面状態なので保存・Undo の対象にはしない。
+   */
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+
   // 窓を広げて 3 カラムへ戻ったらシートは畳む。開いたままにすると、
   // 次に狭くしたときに前回のパネルが勝手に開いて出てくる
   useEffect(() => {
@@ -197,7 +203,10 @@ function Workspace() {
         />
       )}
 
-      <div className={styles.columns}>
+      <div
+        className={styles.columns}
+        data-inspector-collapsed={!compact && !inspectorOpen ? true : undefined}
+      >
         {/*
           狭い画面ではキャンバスだけを残し、両脇のカラムはシートへ畳む
           （design.md §8.12）。**畳んだパネルは描かない** —— 表示だけ消して
@@ -211,7 +220,34 @@ function Workspace() {
 
         <CircuitCanvas rangeSelectionTarget={rangeSelectionTarget} />
 
-        {!compact && <div className={styles.inspector}>{inspector}</div>}
+        {!compact && inspectorOpen && (
+          <div className={styles.inspector}>
+            <button
+              type="button"
+              className={styles.inspectorToggle}
+              onClick={() => setInspectorOpen(false)}
+              aria-label="プロパティパネルを閉じる"
+              title="プロパティパネルを閉じる"
+            >
+              ›
+            </button>
+            {inspector}
+          </div>
+        )}
+
+        {!compact && !inspectorOpen && (
+          <aside className={styles.inspectorRail} aria-label="プロパティパネル">
+            <button
+              type="button"
+              className={styles.inspectorToggle}
+              onClick={() => setInspectorOpen(true)}
+              aria-label="プロパティパネルを開く"
+              title="プロパティパネルを開く"
+            >
+              ‹
+            </button>
+          </aside>
+        )}
 
         {compact && openSheet && (
           <Sheet sheet={openSheet} onClose={() => setOpenSheet(null)}>
