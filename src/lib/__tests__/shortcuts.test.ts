@@ -1,18 +1,17 @@
 /**
  * ヘルプの表が実際のキー割り当てとずれていないことを押さえる（design.md §8.10）。
- *
- * ヘルプは「書き写した瞬間から古くなる」種類のドキュメントで、しかも
- * **間違ったヘルプは無いヘルプより悪い。** 表を定数から組み立てているという
- * 前提が崩れたらここで落ちる。
  */
 
 import { describe, expect, it } from "vitest";
 
 import {
   ARRANGE_KEYS,
+  COMPONENT_PANEL_KEYS,
   DELETE_KEYS,
   FLIP_KEYS,
+  MAIN_VIEW_KEYS,
   PAN_ACTIVATION_KEY,
+  PROPERTIES_PANEL_KEYS,
   SHORTCUT_GROUPS,
   SIMULATION_KEYS,
   displayKeys,
@@ -62,25 +61,31 @@ describe("ヘルプの操作一覧", () => {
     );
   });
 
-  /**
-   * **修飾キー無しの単独キーどうしが衝突していないこと。** D / F / L / S は
-   * どれも `window` に別々のリスナーを張っており、同じキーを 2 つに割り当てると
-   * 1 打鍵で 2 つの動作が走る。表に載る前にここで落とす。
-   */
+  it("左右パネルのショートカットがヘルプと一致する", () => {
+    expect(rowFor("部品パネルを開閉").keys).toEqual(
+      displayKeys(COMPONENT_PANEL_KEYS),
+    );
+    expect(rowFor("プロパティパネルを開閉").keys).toEqual(
+      displayKeys(PROPERTIES_PANEL_KEYS),
+    );
+    expect(rowFor("左右パネルをまとめて開閉").keys).toEqual(
+      displayKeys(MAIN_VIEW_KEYS),
+    );
+  });
+
   it("単独キーの割り当てが互いに衝突しない", () => {
     const singles = [
       ...DELETE_KEYS,
       ...FLIP_KEYS,
       ...ARRANGE_KEYS,
       ...SIMULATION_KEYS,
+      ...COMPONENT_PANEL_KEYS,
+      ...PROPERTIES_PANEL_KEYS,
+      ...MAIN_VIEW_KEYS,
     ].filter((key) => key.length === 1);
     expect(new Set(singles).size).toBe(singles.length);
   });
 
-  /**
-   * 初見でいちばん困るのが「画面が動かせない」なので、
-   * パンの同時押しキーがヘルプに載っていることは特に落としたくない。
-   */
   it("画面移動の行が panActivationKeyCode を含む", () => {
     expect(
       rowFor("画面を動かす").keys.some((key) =>
