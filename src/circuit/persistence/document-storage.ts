@@ -1,19 +1,8 @@
 /**
  * 回路ドキュメントの永続化（design.md §7）。
  *
- * **読み書きの規則はここに閉じ、React も LocalStorage の実体も混ぜない。**
- * `parseDocument()` / `serializeDocument()` は文字列 ⇄ `CircuitDocument` の
- * 純粋関数なので、ブラウザを起動せずに「壊れた保存データを弾けるか」を
- * Vitest で検証できる。実体の `localStorage` を触るのは末尾の 3 関数だけ。
- *
- * 保存対象は `CircuitDocument` のみ。`running` / `pressedSwitches` /
- * `SimulationResult` は保存しない（`simulationStore` 側に分けてある）。
- *
- * **読み込みは常に「壊れているかもしれないデータ」として扱う。**
- * 保存後に定義 ID を変えた／端子を減らしたといった事情で、実在しない部品や
- * 端子を指す JSON はいくらでも生まれる。そのままドキュメントへ通すと
- * エンジンが存在しない端子のネットを引いて静かに壊れるので、
- * **読めない要素は捨てて、捨てた理由を日本語で返す。**
+ * 読み書きの規則はここに閉じ、保存データは常に壊れている可能性があるものとして
+ * 検証する。読めない部品・配線は理由を添えて落とす。
  */
 
 import {
@@ -30,28 +19,22 @@ import type {
   ComponentDefinitionRegistry,
   TerminalRef,
 } from "@/circuit/types";
-import { isLampColor, terminalRefKey } from "@/circuit/types";
+import {
+  isLampColor,
+  normalizeComponentSize,
+  terminalRefKey,
+} from "@/circuit/types";
 
-/**
- * LocalStorage のキー。
- *
- * 末尾の `v1` は `CircuitDocument.version` と対応する。保存書式を変えたら
- * ここを上げる。旧キーは読まずに放置され、古いデータが新しいコードへ
- * 流れ込むことがない。
- */
 export const STORAGE_KEY = "relay-lab:circuit:v1";
 
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 };
 
-/** 読み込み結果。**「空」と「壊れている」を同じ扱いにしない** */
 export type LoadResult =
   | { status: "empty" }
-  /** 全体として読めなかった。`reason` はそのまま UI に出せる日本語 */
   | { status: "invalid"; reason: string }
   | {
       status: "loaded";
       document: CircuitDocument;
-      /** 捨てた要素の理由。そのまま UI に出せる日本語 */
       dropped: readonly string[];
     };
 
@@ -74,7 +57,6 @@ const isPoint = (value: unknown): value is { x: number; y: number } =>
 
 const invalid = (reason: string): LoadResult => ({ status: "invalid", reason });
 
-/** 部品の呼び名。ラベルが無ければ ID で出す（メッセージ用） */
 const displayName = (label: unknown, id: string): string =>
   typeof label === "string" && label.trim() !== "" ? label.trim() : id;
 
@@ -84,11 +66,24 @@ const readTerminalRef = (value: unknown): TerminalRef | null =>
     : null;
 
 /**
- * タイマーの設定時間を読む（design.md §5.13）。
- *
- * `delay` を持たない部品では `undefined`（保存 JSON に無意味な値を残さない）。
- * 数値でなければ `undefined` にして定義の既定値へ倒し、範囲外は上下限へ丸める。
+ * 部品の表示寸法を読む。既定寸法未満は安全な最小値へ丸め、既定寸法と同じなら
+ * `undefined` に戻す。壊れた値は部品ごと捨てず、既定寸法へフォールバックする。
  */
+const readComponentSize = (
+  definition: ComponentDefinition,
+  value: unknown,
+): CircuitComponentInstance["size"] => {
+  if (!isRecord(value)) return undefined;
+  if (!isFiniteNumber(value.width) || !isFiniteNumber(value.height)) {
+    return undefined;
+  }
+  if (value.width <= 0 || value.height <= 0) return undefined;
+  return normalizeComponentSize(definition, {
+    width: value.width,
+    height: value.height,
+  });
+};
+
 const readPresetMs = (
   definition: ComponentDefinition,
   value: unknown,
@@ -99,13 +94,6 @@ const readPresetMs = (
   return presetMsOf(electrical.delay, value);
 };
 
-/**
- * 調光出力のフェード時間を読む（design.md §5.18）。
- *
- * `readPresetMs` とまったく同じ扱い —— `fade` を持たない部品では `undefined`
- * （保存 JSON に無意味な値を残さない）、数値でなければ定義の既定値へ倒し、
- * 範囲外は上下限へ丸める。
- */
 const readFadeMs = (
   definition: ComponentDefinition,
   value: unknown,
@@ -116,13 +104,6 @@ const readFadeMs = (
   return fadeMsOf(electrical.fade, value);
 };
 
-/**
- * 調光出力の電圧を読む（design.md §5.17）。
- *
- * `readPresetMs` とまったく同じ扱い —— 調光出力以外では `undefined`
- * （保存 JSON に無意味な値を残さない）、数値でなければ定義の既定値へ倒し、
- * 範囲外は上下限へ丸める。
- */
 const readChannelVolts = (
   definition: ComponentDefinition,
   value: unknown,
@@ -132,13 +113,6 @@ const readChannelVolts = (
   if (electrical.kind !== "analog-source") return undefined;
 
   const volts: Record<string, number> = {};
-
-  /*
-   * 1 回路だけだった頃の保存 JSON は `outputVolts` という 1 個の数値で
-   * 持っていた（Step 20）。**捨てずに第 1 チャンネルへ移す** ——
-   * 保存済みの回路を開いたときに、設定した明るさだけが黙って既定値へ
-   * 戻るのが一番たちが悪い。
-   */
   const first = electrical.channels[0];
   if (first && isFiniteNumber(legacy)) {
     volts[first.id] = outputVoltsOf(electrical, legacy);
@@ -147,7 +121,6 @@ const readChannelVolts = (
   if (value && typeof value === "object" && !Array.isArray(value)) {
     for (const channel of electrical.channels) {
       const raw = (value as Record<string, unknown>)[channel.id];
-      // 定義に無いチャンネルの値は捨てる（端子を減らした定義への対応）
       if (isFiniteNumber(raw)) volts[channel.id] = outputVoltsOf(electrical, raw);
     }
   }
@@ -155,19 +128,9 @@ const readChannelVolts = (
   return Object.keys(volts).length === 0 ? undefined : volts;
 };
 
-/** 0〜100 に収まる数値だけを通す。実機のつまみの目盛りに相当する */
 const readPercent = (value: unknown): number | undefined =>
   isFiniteNumber(value) ? Math.min(Math.max(value, 0), 100) : undefined;
 
-/**
- * アナログ量で動く接点の動作点を読む（design.md §4.16）。
- *
- * `readChannelVolts` と同じ扱い —— **定義に無い接点の値は捨てる**
- * （端子を減らした定義への対応）。範囲外は定義の上下限へ丸める。
- *
- * 動作点を持つ接点が 1 つも無い部品では `undefined`（保存 JSON に
- * 誰も読まない値を残さない）。
- */
 const readTriggerPercents = (
   definition: ComponentDefinition,
   value: unknown,
@@ -189,12 +152,6 @@ const readTriggerPercents = (
   return Object.keys(percents).length === 0 ? undefined : percents;
 };
 
-/**
- * 調光器の盤ごとの設定を読む（design.md §4.15）。
- *
- * 調光入力を持たない部品では `undefined`。壊れた値は**その項目だけ**
- * 落とす —— 極性が読めなかったからといって上限まで捨てる理由が無い。
- */
 const readDimmerSettings = (
   definition: ComponentDefinition,
   value: unknown,
@@ -223,12 +180,6 @@ const readDimmerSettings = (
   return Object.keys(settings).length === 0 ? undefined : settings;
 };
 
-/**
- * 表示ランプのレンズの色を読む（design.md §4.11）。
- *
- * ランプ以外では `undefined`（保存 JSON に無意味な値を残さない）。
- * 未知の色名は既定へ倒す —— 見た目だけの属性なので、壊れていても部品ごと捨てない。
- */
 const readLampColor = (
   definition: ComponentDefinition,
   value: unknown,
@@ -237,7 +188,6 @@ const readLampColor = (
   return isLampColor(value) ? value : undefined;
 };
 
-/** ズームは 0 や負値を通すとキャンバスが描画できなくなるので既定へ戻す */
 const readViewport = (value: unknown): CircuitDocument["viewport"] => {
   if (!isRecord(value)) return DEFAULT_VIEWPORT;
   const { x, y, zoom } = value;
@@ -249,14 +199,6 @@ const readViewport = (value: unknown): CircuitDocument["viewport"] => {
 export const serializeDocument = (document: CircuitDocument): string =>
   JSON.stringify(document);
 
-/**
- * 保存文字列を `CircuitDocument` へ戻す。
- *
- * 部品は **レジストリに存在する `definitionId` だけ**を通す（要件 US-E）。
- * 配線は両端の部品と端子が実在するものだけを通す。判定にレジストリが要るので
- * 引数で受け取る — ここで `componentRegistry` を直接 import すると
- * テストが本番の部品一覧に縛られる。
- */
 export const parseDocument = (
   raw: string | null,
   registry: ComponentDefinitionRegistry,
@@ -284,7 +226,6 @@ export const parseDocument = (
 
   const dropped: string[] = [];
   const components: CircuitComponentInstance[] = [];
-  /** 通した部品の ID → その定義が持つ端子 ID。配線の検証に使う */
   const terminalsOf = new Map<string, Set<string>>();
 
   for (const entry of parsed.components) {
@@ -322,39 +263,17 @@ export const parseDocument = (
           ? entry.label
           : undefined,
       position: { x: entry.position.x, y: entry.position.y },
-      // 見た目だけの属性なので、値が壊れていても部品ごと捨てずに
-      // 「反転なし」へ倒す。true 以外はすべて未反転として読む
+      size: readComponentSize(definition, entry.size),
       flipped: entry.flipped === true ? true : undefined,
-      /*
-       * タイマーの設定時間（design.md §5.13）。**壊れていても部品ごと捨てない。**
-       * 範囲外は上下限へ丸め、数値でなければ持たない（＝定義の既定値になる）。
-       * `delay` を持たない部品では意味が無いので落とす —— 保存 JSON に
-       * 誰も読まないフィールドを残さない。
-       */
       presetMs: readPresetMs(definition, entry.presetMs),
-      /*
-       * レンズの色（design.md §4.11）。`flipped` と同じく**見た目だけの属性**
-       * なので、壊れていても部品ごと捨てずに既定色へ倒す。ランプ以外では落とす。
-       */
       lampColor: readLampColor(definition, entry.lampColor),
-      /*
-       * 調光出力の電圧（design.md §5.17）。設定時間と同じ扱いで、
-       * 壊れていても部品ごと捨てず定義の既定値へ倒す。
-       * 旧書式（1 回路ぶんの `outputVolts`）は第 1 チャンネルへ移す。
-       */
       channelVolts: readChannelVolts(
         definition,
         entry.channelVolts,
         entry.outputVolts,
       ),
-      /*
-       * 調光出力のフェード時間（design.md §5.18）。設定時間と同じ扱いで、
-       * 壊れていても部品ごと捨てず定義の既定値へ倒す。
-       */
       fadeMs: readFadeMs(definition, entry.fadeMs),
-      /* 調光器の盤ごとの設定（極性・上下限・カーブ・DIRECT）（§4.15） */
       dimmerSettings: readDimmerSettings(definition, entry.dimmerSettings),
-      /* アナログ量で動く接点の動作点（実機の CUT ADJ.）（§4.16） */
       triggerPercents: readTriggerPercents(definition, entry.triggerPercents),
     });
     terminalsOf.set(
@@ -381,7 +300,6 @@ export const parseDocument = (
       dropped.push(`配線 ${entry.id} を読み込めませんでした（端子の指定が不正です）。`);
       continue;
     }
-    // 部品が捨てられていれば、その端子を指す配線も必ず道連れにする
     if (!exists(from) || !exists(to)) {
       dropped.push(
         `配線 ${entry.id} を読み込めませんでした（接続先の端子が存在しません）。`,
@@ -392,7 +310,6 @@ export const parseDocument = (
       dropped.push(`配線 ${entry.id} を読み込めませんでした（ID が重複しています）。`);
       continue;
     }
-    // 同じ端子どうしの二重配線は電気的に無意味（adapter の hasTerminalPair と同じ規則）
     const pair = [terminalRefKey(from), terminalRefKey(to)].sort().join("|");
     if (seenPairs.has(pair)) {
       dropped.push(`配線 ${entry.id} を読み込めませんでした（同じ端子間の重複配線です）。`);
@@ -416,13 +333,6 @@ export const parseDocument = (
   };
 };
 
-/**
- * ブラウザの `localStorage`。取得できなければ `null`。
- *
- * SSR（`window` が無い）に加えて、プライベートモードや設定でストレージが
- * 禁止されている場合は **参照した時点で例外が飛ぶ。** ここで握って
- * 「保存できない環境」として扱い、回路そのものは触れるようにする。
- */
 export const getDocumentStorage = (): DocumentStorage | null => {
   if (typeof window === "undefined") return null;
   try {
@@ -443,7 +353,6 @@ export const readStoredDocument = (
   }
 };
 
-/** 書き込めれば `true`。容量超過などで失敗したら `false` */
 export const writeStoredDocument = (
   storage: DocumentStorage,
   document: CircuitDocument,
