@@ -1,224 +1,211 @@
 .toolbar {
+  container-name: toolbar;
+  container-type: inline-size;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   height: 48px;
-  padding: 0 16px;
+  min-width: 0;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
+  overflow: visible;
 }
 
 .brand {
+  flex: 0 0 auto;
+  margin-right: 2px;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-.group {
+.group,
+.metaGroup {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metaGroup {
+  margin-left: auto;
+  gap: 8px;
 }
 
 .button,
-.run {
+.run,
+.iconButton,
+.menuTrigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   height: 30px;
-  padding: 0 12px;
+  min-width: max-content;
+  padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
+  font: inherit;
   font-size: 12px;
-  font-family: inherit;
+  line-height: 1;
   color: var(--text);
   background: var(--panel);
   cursor: pointer;
-  transition:
-    border-color 0.12s ease-out,
-    background 0.12s ease-out;
+  white-space: nowrap;
+  transition: border-color .12s ease-out, color .12s ease-out, background .12s ease-out;
 }
 
 .button:hover:not(:disabled),
-.run:hover:not(:disabled) {
+.run:hover:not(:disabled),
+.iconButton:hover:not(:disabled),
+.menuTrigger:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--bg);
 }
 
 .run {
+  padding-inline: 10px;
   color: #fff;
   background: var(--run);
   border-color: var(--run);
 }
 
+.iconButton {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  font-size: 14px;
+}
+
 .button:disabled,
-.run:disabled {
-  opacity: 0.45;
+.run:disabled,
+.iconButton:disabled,
+.menuTrigger:disabled,
+.menuItem:disabled {
+  opacity: .45;
   cursor: not-allowed;
 }
 
-/* 入っているモードを塗りで示す */
-.button[data-active] {
+.button[data-active],
+.iconButton[data-active],
+.menuTrigger[data-active] {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-tint);
 }
 
-/* セグメントが何の設定なのかを示す見出し（範囲選択の対象） */
-.groupLabel {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  cursor: default;
-}
-
-/*
- * 範囲選択の対象（部品＋配線 / 部品 / 配線）。
- * 3 つのうち必ず 1 つが入っている排他選択なので、独立したボタンではなく
- * 連結したセグメントで「どれか 1 つ」であることを見せる。
- */
-.segmented {
-  display: flex;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.segment {
-  padding: 0 10px;
-  border: none;
-  border-left: 1px solid var(--border);
-  font-size: 11px;
-  font-family: inherit;
-  color: var(--text-muted);
-  background: var(--panel);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    color 0.12s ease-out,
-    background 0.12s ease-out;
-}
-
-.segment:first-child {
-  border-left: none;
-}
-
-.segment:hover {
-  background: var(--bg);
-}
-
-.segment[data-active] {
-  color: var(--accent);
-  background: var(--accent-tint);
-}
-
-/*
- * 「揃える」のメニュー（design.md §8.13）。
- *
- * 8 種類を操作バーへ直接並べると、狭い画面で折り返しが増えてキャンバスが
- * 削られる（§8.12）。ボタン 1 個に畳み、押したときだけ下に開く。
- */
 .menuWrap {
   position: relative;
   display: flex;
+  flex: 0 0 auto;
 }
 
 .menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 5px);
   left: 0;
-  /*
-   * 2 列 × 4 行を**列方向に流し込む** —— 左列が左右方向（左 / 中央 / 右 / 均等）、
-   * 右列が上下方向。行方向に流すと「左揃え」の隣に「上揃え」が並び、
-   * どの軸の操作なのかが読み取れなくなる。
-   */
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(4, auto);
-  gap: 2px;
-  /*
-   * **中身に合わせて広げる。** 絶対配置の既定の幅は「入る幅」＝トリガーの
-   * ボタン 1 個ぶんしかないので、指定しないと 2 列が重なって潰れる。
-   */
+  z-index: 30;
   width: max-content;
-  padding: 4px;
+  min-width: 180px;
+  padding: 5px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: 0 4px 16px rgb(15 23 42 / 14%);
-  /* キャンバス（React Flow）より前面へ。操作バーは DOM 上ではキャンバスの前 */
-  z-index: 20;
+  box-shadow: 0 6px 22px rgb(15 23 42 / 16%);
   white-space: nowrap;
+}
+
+.menuEnd { right: 0; left: auto; }
+.smallMenu { min-width: 150px; }
+.selectionMenu { min-width: 220px; }
+.arrangeMenu { min-width: 280px; }
+
+.moreMenu {
+  right: 0;
+  left: auto;
+  width: min(360px, calc(100vw - 12px));
+  max-height: min(72dvh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .menuItem {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
-  padding: 0 10px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 9px;
   border: none;
   border-radius: 5px;
+  font: inherit;
   font-size: 12px;
-  font-family: inherit;
+  line-height: 1.25;
   text-align: left;
   color: var(--text);
   background: transparent;
   cursor: pointer;
-  transition: background 0.12s ease-out;
+  white-space: nowrap;
 }
 
 .menuItem:hover:not(:disabled) {
-  background: var(--accent-tint);
   color: var(--accent);
+  background: var(--accent-tint);
 }
 
-/* 均等は 3 個から。押せないことを見せたうえで、理由は title で伝える */
-.menuItem:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.menuIcon {
-  width: 14px;
-  font-size: 13px;
+.menuIcon,
+.radioMark {
+  flex: 0 0 16px;
+  width: 16px;
   color: var(--text-muted);
   text-align: center;
 }
 
-.menuItem:hover:not(:disabled) .menuIcon {
-  color: inherit;
+.menuHeading {
+  padding: 5px 9px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--text-muted);
 }
 
-/*
- * 読み込み用の <input type="file">。ボタンから click() で開くだけなので隠す。
- * `display: none` で消すのは意図的 —— 見えない入力欄が Tab 順に残ると、
- * キーボード操作で「押しても何も起きない場所」を通ることになる。
- */
-.fileInput {
-  display: none;
+.menuHint {
+  max-width: 260px;
+  padding: 5px 9px 4px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  white-space: normal;
 }
 
-/* 収束結果。発振はエラーではないので赤にしない（design.md §5.5） */
+.menuDivider {
+  height: 1px;
+  margin: 4px 5px;
+  background: var(--border);
+}
+
+.alignGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.alignGrid .menuItem { min-width: 124px; }
+.fileInput { display: none; }
+.adaptiveLabel { display: inline; }
+
 .status {
-  padding: 2px 10px;
+  flex: 0 0 auto;
+  padding: 2px 8px;
   border: 1px solid var(--wire-energized);
   border-radius: 999px;
   font-size: 11px;
   color: var(--wire-energized-text);
   background: #f0fdf4;
-  white-space: nowrap;
-}
-
-/*
- * 経過時間（design.md §5.13）。タイマーを置いた回路でだけ出る。
- * **`tabular-nums` は必須** —— 50ms ごとに書き換わるので、字幅が揃っていないと
- * 数字が横に踊って読めない。収束状態のバッジとは違い枠は付けない
- * （状態の判定ではなく、ただの目盛りなので目立たせない）。
- */
-.elapsed {
-  padding: 2px 4px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -234,22 +221,30 @@
   background: #fef2f2;
 }
 
-/*
- * 使い方（design.md §8.10）。右端の情報群の先頭に置き、ここから右を
- * 「回路そのものではなく、アプリの状態を見る場所」にまとめる。
- */
+.elapsed,
+.counts,
+.save {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.elapsed,
+.counts { font-variant-numeric: tabular-nums; }
+
 .help {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
-  margin-left: auto;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 999px;
+  font: inherit;
   font-size: 13px;
-  font-family: inherit;
   font-weight: 700;
   color: var(--text-muted);
   background: var(--panel);
@@ -262,19 +257,6 @@
   background: var(--accent-tint);
 }
 
-.counts {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 自動保存の状態（design.md §8.4）。保存できていない状況だけ色を付ける */
-.save {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 .save[data-status="unavailable"],
 .save[data-status="error"] {
   padding: 2px 8px;
@@ -284,55 +266,56 @@
   background: var(--warn-bg);
 }
 
-/* 狭い画面（design.md §8.12）------------------------------------------- */
+@container toolbar (max-width: 1500px) {
+  .counts { display: none; }
+}
 
-/*
- * **横スクロールにはしない。折り返す。** 1 行に押し込んで横へ流すと、
- * はみ出した書き出し・読み込みが「無い機能」になる。高さを 1 行ぶん
- * 譲ってでも、置いてある操作は全部見えているほうがよい。
- */
+@container toolbar (max-width: 1320px) {
+  .brand { display: none; }
+  .save[data-status="saved"],
+  .save[data-status="pending"] { display: none; }
+}
+
+@container toolbar (max-width: 1160px) {
+  .adaptiveLabel { display: none; }
+  .adaptiveButton {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+  }
+}
+
 .toolbar[data-compact] {
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  height: auto;
-  min-height: 44px;
-  padding: 6px 8px;
-}
-
-.toolbar[data-compact] .group {
   gap: 4px;
+  height: 44px;
+  padding: 0 6px;
+  flex-wrap: nowrap;
 }
 
-/* 折り返した 2 行目の先頭に来ることがあるので、右端固定を解く */
-.toolbar[data-compact] .help {
-  margin-left: auto;
+.toolbar[data-compact] .group { gap: 3px; }
+.toolbar[data-compact] .button,
+.toolbar[data-compact] .run,
+.toolbar[data-compact] .menuTrigger { padding-inline: 7px; }
+.toolbar[data-compact] .adaptiveButton {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+}
+.toolbar[data-compact] .metaGroup { gap: 4px; }
+.toolbar[data-compact] .save {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/*
- * 狭い画面では、メニューが操作バーの右端からはみ出しやすい。
- * 開く向きを右寄せに変え、画面幅を超えないように上限を切る（§8.12）。
- */
-.toolbar[data-compact] .menu {
-  left: auto;
-  right: 0;
-  max-width: calc(100vw - 16px);
-}
-
-/*
- * 指で押す当たり判定（design.md §8.12）。狭さではなく**入力の粗さ**で決まるので、
- * `data-compact` ではなくメディアクエリで持つ。1 辺 36px は
- * 「44px の指の当たり判定」を隣接ボタンとの間隔込みで満たす下限。
- */
 @media (pointer: coarse) {
+  .toolbar,
+  .toolbar[data-compact] { min-height: 52px; height: 52px; }
   .button,
   .run,
-  .segment,
-  .menuItem {
-    min-height: 36px;
-  }
-
-  .help {
-    width: 36px;
-    height: 36px;
-  }
+  .iconButton,
+  .menuTrigger,
+  .menuItem { min-height: 36px; }
+  .iconButton { width: 36px; min-width: 36px; }
+  .help { width: 36px; height: 36px; }
 }
