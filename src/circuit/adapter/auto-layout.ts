@@ -20,6 +20,7 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
+import { visualSizeOf } from "./reactflow";
 import type { Point } from "./selection";
 
 /**
@@ -120,11 +121,12 @@ export const arrangeComponents = (
   for (const instance of document.components) {
     const definition = registry.get(instance.definitionId);
     if (!definition) continue;
+    const { width, height } = visualSizeOf(instance, definition);
     const rect: Rect = {
       x: instance.position.x,
       y: instance.position.y,
-      width: definition.visual.width,
-      height: definition.visual.height,
+      width,
+      height,
     };
     if (scope && !scope.has(instance.id)) {
       fixed.push(rect);

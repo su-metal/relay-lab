@@ -15,6 +15,14 @@
   transition:
     border-color 0.12s ease-out,
     box-shadow 0.12s ease-out;
+  /*
+   * リサイズしたときにフェーダー・ボタンのサイズが連動するための基準
+   * （design.md §8.16）。ノードの実寸に対する `cqw`/`cqh` を
+   * `bodies.module.css` 側で使えるようにする —— CSS のコンテナクエリは
+   * CSS Modules のスコープと無関係に DOM の祖先で解決されるので、
+   * 別モジュールからでもこれで効く。
+   */
+  container-type: size;
 }
 
 .node[data-selected="true"] {

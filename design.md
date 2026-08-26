@@ -98,8 +98,10 @@ src/
         types.ts                 # BodyProps
         bodies.module.css
         RelayBody.tsx
+        DimmerBody.tsx           # 調光出力 / 位相制御調光器 / カットリレー・操作卓（`kind: "relay"`・§4.17）
+        RelayControls.tsx        # 接点・フェーダー・ボタン・キャプション。RelayBody / DimmerBody で共有（§8.16）
         TimerBody.tsx            # タイマー（限時接点＋残り時間・§5.13）
-        ContactDiagram.tsx       # 接点の図記号。RelayBody / TimerBody で共有（§8.11）
+        ContactDiagram.tsx       # 接点の図記号。RelayControls / TimerBody で共有（§8.11）
         SwitchBody.tsx
         PowerSupplyBody.tsx
         LampBody.tsx
@@ -482,6 +484,7 @@ type CircuitDocument = {
     lampColor?: LampColor      // 表示ランプのレンズの色（省略 = DEFAULT_LAMP_COLOR・§4.11）
     outputVolts?: number       // 調光出力の電圧（省略 = defaultVolts・§5.17）
     fadeMs?: number            // 調光出力のフェード時間（省略 = defaultFadeMs・§5.18）
+    size?: { width: number; height: number }  // ノードの表示サイズ（省略 = ComponentDefinition.visual・§8.16）
   }[]
   connections: CircuitConnection[]
   viewport: { x: number; y: number; zoom: number }
@@ -499,6 +502,8 @@ type CircuitDocument = {
 **`fadeMs` も定義ではなくインスタンスに持つ**（§5.18）。実機のフェード時間は盤ごとに設定するもので、`presetMs` とまったく同じ扱い（`version: 1` のまま・有限数の検証と min/max クランプ・`fade` を持たない部品に付いていたら落とす）。**チャンネルごとに分けない** —— 実機のフェードはシーン全体にかかる設定で、回路ごとの値ではない（電圧は回路ごと・フェードは機器ごと）。`outputVolts` と同じく電気的な意味を持つ。
 
 **`flipped` は見た目だけの属性で、電気的な意味を一切持たない。** 反転しても端子 ID・端子番号・役割は変わらず、`CircuitConnection` も `ElectricalDefinition` もまったく同じものを指す。**エンジンはこのフィールドを読まない**（§8.1）。`ComponentDefinition` 側ではなくインスタンス側に置いてあるのは、同じ型番を反転して並べられる必要があるため。定義は全インスタンスで共有する不変データなので、そこに向きを持たせると 1 個の反転が全部に波及する。
+
+**`size` も `flipped` と同じく見た目だけの属性。** ノードをリサイズしたインスタンスだけが持ち、省略時は `ComponentDefinition.visual`（§8.16）。端子の相対座標（0〜1）はサイズに依存しないので、リサイズしても端子番号・配線・選択枠・自動整理・整列ガイドはどれも実寸を読み直すだけで追従する（`adapter/reactflow.ts` の `visualSizeOf()` に集約）。0 以下・非数は読み込み時に捨てて既定サイズへ倒す。
 
 ### 3.4 シミュレーション入出力
 
@@ -3435,6 +3440,38 @@ D / F / L は**修飾キー無しの 1 打鍵で回路を変える**（削除・
 #### 図を保存しない
 
 ラダー図は配線から毎回組み直せる派生物なので、`CircuitDocument` にも履歴にも持たない。持つと配線と食い違ったまま残る。読むためのものであり、ここを編集しても配線は変わらないことを本文で断る。
+
+---
+
+### 8.16 部品ノードのリサイズ（`NodeResizer` + `DeviceNode.tsx`・調光操作卓の縦フェーダー化に伴い追加）
+
+調光操作卓（§4.17）はフェーダー 8 本・スイッチ 9 個を 1 枚のノードに収める。フェーダーは実機と同じ縦スライドにした（`.faderRange` に `writing-mode: vertical-lr`）。縦スライドはトラックの長さで分解能が決まるので、既定サイズのままでは窮屈になりやすい（既定サイズも 320×600 へ広げてある）。
+
+#### 接点・操作子は `RelayControls` に集約（`RelayBody` / `DimmerBody` 共有）
+
+調光操作卓・ライトコントローラ・カットリレーは電気的にリレー（`kind: "relay"`）だが、探す場所は調光なので `category: "dimmer"` を持つ（§4.17）。**カテゴリで描き分ける唯一の層**（`bodies/index.ts`）である以上、これらは `RelayBody` ではなく `DimmerBody` が描く。ここに接点・フェーダー・ボタンの描画が無いと、`electrical.kind === "relay"` でも画面には調光の図記号しか出ず、操作卓を置いても何も操作できない。
+
+接点の図記号（`ContactDiagram`）・フェーダー・ボタン・キャプションは `RelayControls.tsx` に 1 つだけ置き、`RelayBody`（コイル付きの図記号の後ろ）と `DimmerBody` の `kind: "relay"` 側（調光の図記号の後ろ）の両方から呼ぶ。**コイルの図記号は `RelayControls` に含めない** —— カットリレー・操作卓のボタンには実機にコイルが無く（CLAUDE.md 設計原則 6）、共有すると無いコイルを描いてしまう。コイル付きの図記号は `RelayBody` だけが持つ。
+
+#### リサイズできるのはフェーダーを持つ部品だけ
+
+`lib/component-display.ts` の `hasLevelOperations()` が `ComponentDefinition.electrical` を見て機械的に判定する。**型番名では分岐しない**（設計原則 2）。今リサイズできるのは調光操作卓だけだが、将来フェーダーを持つ型番が増えても、この関数を触らずに自動でリサイズ対象へ入る。スイッチ 1 個だけの部品（押しボタン等）は今のサイズで足りるので対象にしない。
+
+選択中（`selected`）だけ `@xyflow/react` の `NodeResizer` を出す。`minWidth` / `minHeight` は `ComponentDefinition.visual`（検証済みレイアウトより縮められない）、`maxWidth` / `maxHeight` はその 3 倍。
+
+#### `instance.size` は見た目だけの属性
+
+`CircuitComponentInstance.size?: { width, height }`（§3.3）はリサイズした部品だけが持ち、省略時は `definition.visual`。**`flipped` と同じく電気的な意味を一切持たない** —— エンジンはこのフィールドを読まない。
+
+端子の相対座標（0〜1・`TerminalDefinition.position`）はノードの実寸に対する割合なので、リサイズしても割合そのものは変わらない。ただし端子・配線・選択枠・自動整理・整列ガイドはどれも「割合 × 実寸」で絶対座標へ戻す計算をしており、そこで `definition.visual` を直読みしていると、リサイズした部品だけ配線が古い端子位置に貼り付いたまま残る。これを避けるため `adapter/reactflow.ts` に `visualSizeOf(instance, definition)`（`instance.size ?? definition.visual`）を 1 つ置き、`adapter/selection.ts` / `wire-lane.ts` / `align.ts` / `auto-layout.ts` はすべてこれ経由で寸法を読む。
+
+`toDeviceNode()` は React Flow の Node へ `measured` だけでなく `width` / `height` も明示する。`measured` は React Flow が初期化前かどうかの判定にしか使わず、ノードの実際の描画サイズは `width` / `height` が決めるため —— ここを省くと、リサイズしたノードが次にドキュメントから組み直されたときに `definition.visual` の大きさへ戻ってしまう。
+
+リサイズのドラッグ中は React Flow の内部ストアが見た目だけ先行させる（`NodeResizeControl` の実装）ので、`moveComponent` のような毎フレームの書き込みは要らない。`onResizeEnd` で 1 回だけ `resizeComponent()` を呼び、履歴にも 1 手だけ積む（`flipComponents` と同じ扱い）。
+
+#### フェーダー・ボタンのサイズは CSS コンテナクエリで決める
+
+JS でスケール係数を計算しない。`DeviceNode.module.css` の `.node` に `container-type: size` を立て、`bodies.module.css` 側は `cqw` / `cqh`（コンテナの幅 / 高さの 1%）でフェーダーの太さ・トラックの長さ・ボタンの余白とフォントサイズを表す。**すべて `max(現在の px, Ncqw/cqh)` の形にしてあり、現在の px を下限にする** —— これにより、リサイズしていない部品（大半の型番は既定サイズのまま）は今までと同じ見た目のまま、ノードを大きくリサイズした部品だけ比例して操作子が大きくなる。エンジン・adapter 層のどちらにも触れない、純粋に見た目の話（設計原則 1）。
 
 ---
 

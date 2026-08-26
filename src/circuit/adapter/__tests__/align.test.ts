@@ -63,6 +63,34 @@ describe("alignComponents — 端に揃える", () => {
     expect(moved.get("narrow")).toEqual({ x: 260, y: 200 });
   });
 
+  it("リサイズ済みの部品は instance.size を寸法に使う（design.md §8.16）", () => {
+    // 電源 150 幅を size で 300 幅に拡げてある。右端は 50+300=350 になり、
+    // definition.visual をそのまま使うと右端 200 になって結果が変わる
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "wide", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        {
+          id: "narrow",
+          definitionId: "power-dc24v",
+          position: { x: 50, y: 0 },
+          size: { width: 300, height: 130 },
+        },
+      ],
+      connections: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    const moved = alignComponents(
+      document,
+      componentRegistry,
+      ["wide", "narrow"],
+      "right",
+    );
+
+    expect(moved.has("narrow")).toBe(false);
+    expect(moved.get("wide")).toEqual({ x: 200, y: 0 });
+  });
+
   it("上揃えは y だけを動かし、x は触らない", () => {
     const moved = align(staircase, "top");
     expect(moved.get("b")).toEqual({ x: 300, y: 100 });

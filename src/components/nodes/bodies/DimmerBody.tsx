@@ -1,21 +1,31 @@
 import { channelVoltsOf } from "@/circuit/engine";
 
+import { RelayControls } from "./RelayControls";
 import styles from "./bodies.module.css";
 import type { BodyProps } from "./types";
 
 /**
- * 調光の機器（design.md §5.17・§4.15）。
+ * 調光の機器（design.md §5.17・§4.15・§4.17）。
  *
  * 図記号は**斜めの傾き**（レベルが連続して変わることの目印）。接点の開閉でも
  * コイルの励磁でもない、この盤で唯一の「値を出す部品」であることが
  * 一目で分かる絵にする。
  *
- * **1 枚で 2 種類を描く。** 調光出力（`analog-source`）は出す電圧を、
- * 位相制御調光器（`dimmer`）は通した先の明るさを出す。図記号は同じで
- * よく、分けると斜線の角度や配色が片方だけずれる。
+ * **1 枚で 3 種類を描く。** 調光出力（`analog-source`）は出す電圧を、
+ * 位相制御調光器（`dimmer`）は通した先の明るさを出す。カットリレー・
+ * ライトコントローラ・調光操作卓（`kind: "relay"`）は接点そのものと、
+ * 操作卓だけが持つフェーダー・ボタンを出す —— 電気的にはリレーでも、
+ * 探す場所は調光なので `category: "dimmer"` のままここで描く
+ * （design.md 4.17 の「どちらも category は dimmer」）。図記号は 3 つとも同じで
+ * よく、分けると斜線の角度や配色がどれか 1 つだけずれる。
+ *
+ * **コイルの図記号は描かない。** カットリレー・操作卓のボタンには実機に
+ * コイルが無い（CLAUDE.md 設計原則 6）。`RelayBody` と同じ `RelayControls`
+ * を使いつつ、コイル付きの図記号だけはここで持たない。
  */
 export function DimmerBody({
   definition,
+  componentId,
   simulation,
   channelVolts,
 }: BodyProps) {
@@ -44,6 +54,14 @@ export function DimmerBody({
       )}
 
       {electrical.kind === "dimmer" && <DimmerReadout simulation={simulation} />}
+
+      {electrical.kind === "relay" && (
+        <RelayControls
+          relay={electrical.relay}
+          componentId={componentId}
+          simulation={simulation}
+        />
+      )}
     </div>
   );
 }

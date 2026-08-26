@@ -144,6 +144,19 @@ export type CircuitStore = {
   flipComponents: (componentIds: readonly string[]) => void;
 
   /**
+   * ノードの表示サイズを変える（design.md §8.16）。`flipComponents` と同じく
+   * **見た目だけの変更だが履歴には積む** —— リサイズはドラッグの完了時に
+   * 1 回だけ呼ばれる想定（毎フレームの更新は React Flow 側の内部状態が
+   * 引き受ける）ので、`moveComponent` のような開始 / 終了の対は要らない。
+   *
+   * 有限な正の値以外・現在と同じ値では履歴を汚さない。
+   */
+  resizeComponent: (
+    componentId: string,
+    size: { width: number; height: number },
+  ) => void;
+
+  /**
    * タイマーの設定時間を変える（design.md §5.13）。
    *
    * ラベルの変更（`setComponentLabel`）と違い **Undo の対象にする** ——
@@ -648,6 +661,28 @@ export const useCircuitStore = create<CircuitStore>()((set, get) => {
             : { ...component, flipped: true };
         });
         // 選択が空振り（存在しない ID だけ）なら履歴を汚さない
+        if (!changed) return {};
+        return commit(state, { ...state.document, components });
+      });
+    },
+
+    resizeComponent: (componentId, size) => {
+      if (!Number.isFinite(size.width) || !Number.isFinite(size.height)) return;
+      if (size.width <= 0 || size.height <= 0) return;
+      set((state) => {
+        let changed = false;
+        const components = state.document.components.map((component) => {
+          if (component.id !== componentId) return component;
+          if (
+            component.size?.width === size.width &&
+            component.size?.height === size.height
+          ) {
+            return component;
+          }
+          changed = true;
+          return { ...component, size: { ...size } };
+        });
+        // 空振り（存在しない ID・現在と同じサイズ）なら履歴を汚さない
         if (!changed) return {};
         return commit(state, { ...state.document, components });
       });

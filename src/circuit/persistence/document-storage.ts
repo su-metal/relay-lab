@@ -72,6 +72,17 @@ const isFiniteNumber = (value: unknown): value is number =>
 const isPoint = (value: unknown): value is { x: number; y: number } =>
   isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y);
 
+/**
+ * ノードの表示サイズ（design.md §8.16）。**見た目だけの属性**なので
+ * `flipped` と同じく部品種別を問わず読む。0 以下は描画できないので弾く。
+ */
+const isSize = (value: unknown): value is { width: number; height: number } =>
+  isRecord(value) &&
+  isFiniteNumber(value.width) &&
+  isFiniteNumber(value.height) &&
+  value.width > 0 &&
+  value.height > 0;
+
 const invalid = (reason: string): LoadResult => ({ status: "invalid", reason });
 
 /** 部品の呼び名。ラベルが無ければ ID で出す（メッセージ用） */
@@ -325,6 +336,11 @@ export const parseDocument = (
       // 見た目だけの属性なので、値が壊れていても部品ごと捨てずに
       // 「反転なし」へ倒す。true 以外はすべて未反転として読む
       flipped: entry.flipped === true ? true : undefined,
+      /*
+       * ノードの表示サイズ（design.md §8.16）。`flipped` と同じく見た目だけの
+       * 属性なので、壊れていても部品ごと捨てず「定義の既定サイズ」へ倒す。
+       */
+      size: isSize(entry.size) ? entry.size : undefined,
       /*
        * タイマーの設定時間（design.md §5.13）。**壊れていても部品ごと捨てない。**
        * 範囲外は上下限へ丸め、数値でなければ持たない（＝定義の既定値になる）。

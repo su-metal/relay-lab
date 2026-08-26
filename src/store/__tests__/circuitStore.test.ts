@@ -451,6 +451,46 @@ describe("左右反転", () => {
   });
 });
 
+describe("ノードのリサイズ（design.md §8.16）", () => {
+  it("1 手で commit し、Undo で元のサイズへ戻る", () => {
+    const id = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const before = store().past.length;
+
+    store().resizeComponent(id, { width: 400, height: 300 });
+    expect(store().document.components[0]?.size).toEqual({
+      width: 400,
+      height: 300,
+    });
+    expect(store().past).toHaveLength(before + 1);
+
+    store().undo();
+    expect(store().document.components[0]?.size).toBeUndefined();
+  });
+
+  it("非有限・0 以下の値は無視して履歴を汚さない", () => {
+    const id = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    const before = store().past.length;
+
+    store().resizeComponent(id, { width: Number.NaN, height: 300 });
+    store().resizeComponent(id, { width: 0, height: 300 });
+    store().resizeComponent(id, { width: 100, height: -1 });
+
+    expect(store().document.components[0]?.size).toBeUndefined();
+    expect(store().past).toHaveLength(before);
+  });
+
+  it("現在と同じサイズへの設定・存在しない ID では履歴を汚さない", () => {
+    const id = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });
+    store().resizeComponent(id, { width: 400, height: 300 });
+    const before = store().past.length;
+
+    store().resizeComponent(id, { width: 400, height: 300 });
+    store().resizeComponent("cmp-missing", { width: 400, height: 300 });
+
+    expect(store().past).toHaveLength(before);
+  });
+});
+
 describe("部品の交換（接続を維持したまま定義を差し替える）", () => {
   it("端子 ID が一致する交換（A接点→B接点）では配線が 1 本も切れない", () => {
     const power = store().addComponent(dc24vPowerSupply, { x: 0, y: 0 });

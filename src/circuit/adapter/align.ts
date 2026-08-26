@@ -15,6 +15,7 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
+import { visualSizeOf } from "./reactflow";
 import type { Point } from "./selection";
 
 /**
@@ -152,12 +153,11 @@ export const alignComponents = (
     if (!scope.has(instance.id)) continue;
     const definition = registry.get(instance.definitionId);
     if (!definition) continue;
+    const { width, height } = visualSizeOf(instance, definition);
     spans.push({
       id: instance.id,
       start: horizontal ? instance.position.x : instance.position.y,
-      size: horizontal
-        ? definition.visual.width
-        : definition.visual.height,
+      size: horizontal ? width : height,
       origin: instance.position,
     });
   }

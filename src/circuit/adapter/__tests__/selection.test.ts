@@ -78,6 +78,21 @@ describe("terminalPoint", () => {
     ).toEqual({ x: 150, y: 39 });
   });
 
+  it("リサイズ済みの部品は instance.size で実寸を戻す（design.md §8.16）", () => {
+    expect(
+      terminalPoint(
+        {
+          id: "cmp-power",
+          definitionId: "power-dc24v",
+          position: { x: 0, y: 0 },
+          size: { width: 300, height: 220 },
+        },
+        dc24vPowerSupply,
+        "plus",
+      ),
+    ).toEqual({ x: 300, y: 66 });
+  });
+
   it("左右反転した部品では鏡像の位置を返す", () => {
     expect(
       terminalPoint(
@@ -127,6 +142,34 @@ describe("componentsInRect", () => {
         height: 200,
       }),
     ).toEqual([]);
+  });
+
+  it("リサイズ済みの部品は instance.size を矩形に使う（design.md §8.16）", () => {
+    // 電源を 400×300 へリサイズ。既定の 150×110 の枠には収まらなくなる
+    const resized: CircuitDocument = {
+      ...document,
+      components: document.components.map((component) =>
+        component.id === "cmp-power"
+          ? { ...component, size: { width: 400, height: 300 } }
+          : component,
+      ),
+    };
+    expect(
+      componentsInRect(resized, componentRegistry, {
+        x: -20,
+        y: -20,
+        width: 200,
+        height: 200,
+      }),
+    ).toEqual([]);
+    expect(
+      componentsInRect(resized, componentRegistry, {
+        x: -20,
+        y: -20,
+        width: 500,
+        height: 400,
+      }),
+    ).toEqual(["cmp-power"]);
   });
 
   it("定義が引けない部品は選ばない（描画もされていない）", () => {

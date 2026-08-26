@@ -68,6 +68,18 @@ export type CircuitComponentInstance = {
    */
   lampColor?: LampColor;
   /**
+   * ノードの表示サイズ（px）。省略時は `ComponentDefinition.visual`。
+   *
+   * **見た目だけの属性で、電気的な意味は一切持たない**（`flipped` と同じ）。
+   * エンジンはこのフィールドを読まない。
+   *
+   * リサイズできるのは連続量の操作子（フェーダー）を持つ部品だけ
+   * （UI 側で `hasLevelOperations()` により判定・design.md §8.16）。
+   * それ以外の部品では書き込まれない想定だが、値そのものはどの部品にも
+   * 意味的には持たせられるので、型としては全部品に許す（`flipped` と同じ扱い）。
+   */
+  size?: { width: number; height: number };
+  /**
    * 調光出力の電圧（V）を**チャンネル ID ごとに**持つ（design.md §5.17）。
    * 省略したチャンネルは定義の `defaultVolts`。
    *

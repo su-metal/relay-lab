@@ -22,7 +22,7 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
-import { layoutTerminals } from "./reactflow";
+import { layoutTerminals, visualSizeOf } from "./reactflow";
 
 export type Point = { x: number; y: number };
 
@@ -50,9 +50,10 @@ export const terminalPoint = (
   const terminals = layoutTerminals(definition, instance.flipped === true);
   const terminal = terminals.find((current) => current.id === terminalId);
   if (!terminal) return null;
+  const { width, height } = visualSizeOf(instance, definition);
   return {
-    x: instance.position.x + terminal.position.x * definition.visual.width,
-    y: instance.position.y + terminal.position.y * definition.visual.height,
+    x: instance.position.x + terminal.position.x * width,
+    y: instance.position.y + terminal.position.y * height,
   };
 };
 
@@ -130,7 +131,7 @@ export const componentsInRect = (
     const definition = registry.get(instance.definitionId);
     if (!definition) continue;
     const { x, y } = instance.position;
-    const { width, height } = definition.visual;
+    const { width, height } = visualSizeOf(instance, definition);
     if (
       x >= rect.x &&
       y >= rect.y &&

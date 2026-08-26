@@ -51,6 +51,23 @@ export const hasRealTerminalNumbers = (
   definition.terminals.some((terminal) => terminal.number !== undefined);
 
 /**
+ * 連続量の操作子（フェーダー）を持つ部品か（design.md §4.17・§8.16）。
+ *
+ * **ノードのリサイズを出してよい部品の判定に使う。** 型番名では判定しない
+ * （CLAUDE.md 設計原則 2）。現状は調光操作卓だけが該当するが、将来フェーダーを
+ * 持つ型番が増えても、ここは触らずに自動でリサイズ対象へ入る。
+ *
+ * フェーダー 1 本 1 本は狭いと操作しづらく、ノードを広げて初めて使いやすくなる
+ * —— スイッチ 1 個だけの部品（押しボタン等）は今のサイズで足りるので対象にしない。
+ */
+export const hasLevelOperations = (definition: ComponentDefinition): boolean =>
+  definition.electrical.kind === "relay" &&
+  (definition.electrical.relay.operations?.some(
+    (operation) => operation.kind === "level",
+  ) ??
+    false);
+
+/**
  * 接点構成の呼び名（"4c" / "2a" / "4a1b"）。
  *
  * 現場の呼び方は接点の**数**だけでは決まらない。c 接点（切替・SPDT）の
@@ -161,6 +178,18 @@ export const WIRE_STATE_LABELS: Record<WireState, string> = {
  */
 export const shortModelLabel = (model: string): string =>
   model.replace(/（[^（）]*）$/u, "");
+
+/**
+ * 縦フェーダー 1 本の見出し（design.md §4.17・§8.16）。
+ *
+ * "フェーダー 8" のような操作子ラベルは、縦に並ぶ細いチャンネルの上に
+ * 収まる幅が無い。**末尾の番号だけを表示用に取り出す** —— `shortModelLabel`
+ * と同じく見た目だけの短縮で、操作子 ID・ラベルそのものは変えない
+ * （読み上げ用の `aria-label` には元のラベルをそのまま使う）。
+ * 番号が無いラベルはそのまま返す。
+ */
+export const shortOperationLabel = (label: string): string =>
+  label.match(/(\d+)\s*$/u)?.[1] ?? label;
 
 /** ホバーで出す型番詳細（`modelSummaryOf` の戻り値） */
 export type ModelSummary = {

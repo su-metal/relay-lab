@@ -132,6 +132,29 @@ describe("arrangeComponents — 重なりの解消", () => {
     ]);
     expect(moved.size).toBe(0);
   });
+
+  it("リサイズ済みの部品は instance.size で矩形を判定する（design.md §8.16）", () => {
+    // 電源 150 幅を size で 400 幅に拡げてある。既定の 150 幅なら
+    // b（x: 320）とは重ならないが、400 幅では重なって b が下へ逃げる
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        {
+          id: "a",
+          definitionId: "power-dc24v",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 130 },
+        },
+        { id: "b", definitionId: "power-dc24v", position: { x: 320, y: 0 } },
+      ],
+      connections: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    const moved = arrangeComponents(document, componentRegistry);
+
+    expect(moved.has("a")).toBe(false);
+    expect(moved.get("b")?.y).toBeGreaterThanOrEqual(130 + LAYOUT_GAP);
+  });
 });
 
 describe("arrangeComponents — 対象の絞り込み", () => {

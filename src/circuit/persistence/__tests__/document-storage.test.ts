@@ -200,6 +200,47 @@ describe("parseDocument の要素検証", () => {
     expect(result.dropped).toEqual([]);
   });
 
+  it("リサイズしたノードのサイズを保存して読み戻す（design.md §8.16）", () => {
+    const resized: CircuitDocument = {
+      ...document,
+      components: document.components.map((component) =>
+        component.id === "cmp-power"
+          ? { ...component, size: { width: 400, height: 320 } }
+          : component,
+      ),
+    };
+    const result = parseDocument(serializeDocument(resized), componentRegistry);
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components[0]?.size).toEqual({
+      width: 400,
+      height: 320,
+    });
+    expect(result.document.components[1]?.size).toBeUndefined();
+  });
+
+  it.each([
+    "big",
+    { width: 0, height: 100 },
+    { width: 100, height: -1 },
+    { width: "100", height: 100 },
+  ])("size が壊れていても部品ごと捨てず、既定サイズとして読む（%j）", (size) => {
+    const result = roundTrip({
+      ...document,
+      components: document.components.map((component) => ({
+        ...component,
+        size,
+      })),
+    });
+
+    expect(result.status).toBe("loaded");
+    if (result.status !== "loaded") return;
+    expect(result.document.components).toHaveLength(2);
+    expect(result.document.components[0]?.size).toBeUndefined();
+    expect(result.dropped).toEqual([]);
+  });
+
   it("ズーム 0 のような描画不能なビューポートは既定へ戻す", () => {
     const result = roundTrip({
       ...document,

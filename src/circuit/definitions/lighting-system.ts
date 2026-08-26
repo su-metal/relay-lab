@@ -742,8 +742,13 @@ export const dimmingConsole: ComponentDefinition = {
       ...Array.from({ length: 8 }, (_, i) => `light${i + 1}`),
     ],
   },
-  // フェーダー 8 本とスイッチ 8 個が入る箱。横はボタンが 2 個並ぶ幅
-  visual: { width: 320, height: 520 },
+  /*
+   * フェーダー 8 本とスイッチ 8 個が入る箱。横はボタンが 2 個並ぶ幅。
+   * フェーダーは縦スライド（design.md §8.16）なのでトラックの長さぶん
+   * 高さが要る —— 横スライドだった頃（520px）より高くしてある。
+   * 窮屈なときはノードをリサイズできる（`hasLevelOperations()` で対象判定）。
+   */
+  visual: { width: 320, height: 600 },
   source: IN_HOUSE_SPEC_SOURCE,
   verified: true,
 };

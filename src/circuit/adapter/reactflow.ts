@@ -169,6 +169,20 @@ export const mirrorTerminal = (
 });
 
 /**
+ * 部品 1 個の表示サイズ。**リサイズしていればそちらを、なければ定義の既定値を。**
+ *
+ * `instance.size`（design.md §8.16）は見た目だけの属性で、電気的な意味は持たない
+ * （`flipped` と同じ）。端子座標・配線・選択枠・自動整理・整列ガイドはどれも
+ * 「部品の寸法」を必要とするので、**この関数を経由させて `definition.visual` を
+ * 直接読ませない。** 直接読ませると、リサイズした部品だけ配線が古い端子位置に
+ * 貼り付いたまま残る。
+ */
+export const visualSizeOf = (
+  instance: Pick<CircuitDocument["components"][number], "size">,
+  definition: ComponentDefinition,
+): { width: number; height: number } => instance.size ?? definition.visual;
+
+/**
  * 部品 1 個ぶんの端子配置。
  *
  * 反転していなければ **定義の配列をそのまま返す**（新しい配列を作らない）。
@@ -211,7 +225,14 @@ const connectionsForComponent = (
  * 端子の実測値（handleBounds）を捨て、ノードを `visibility: hidden` に戻す。
  * こうなると **配線が消え、以後つなげなくなる。**
  *
- * 幸い部品の寸法は `visual` で確定しているので、実測を待たずにそのまま渡せる。
+ * 幸い部品の寸法は `visual`（またはリサイズ済みなら `instance.size`）で
+ * 確定しているので、実測を待たずにそのまま渡せる。
+ *
+ * **`width` / `height` も併せて明示すること。** `measured` は React Flow が
+ * 初期化前かどうかの判定に使うだけで、ノードの実際の描画サイズは
+ * `width` / `height`（無ければ auto）が決める。ここを省くと `NodeResizer`
+ * でリサイズしたノードが、次にドキュメントから組み直されたときに
+ * 元の `definition.visual` の大きさへ戻ってしまう。
  */
 export const toDeviceNode = (
   instance: CircuitDocument["components"][number],
@@ -223,45 +244,47 @@ export const toDeviceNode = (
     readonly ConnectedTerminalInfo[]
   > = new Map(),
   preview?: PreviewDeviceState,
-): DeviceNode => ({
-  id: instance.id,
-  type: DEVICE_NODE_TYPE,
-  position: instance.position,
-  data: {
-    definition,
-    terminals: layoutTerminals(definition, instance.flipped === true),
-    flipped: instance.flipped === true,
-    label: instance.label,
-    presetMs: instance.presetMs,
-    lampColor: instance.lampColor,
-    channelVolts: instance.channelVolts,
-    simulation: view.deviceOf.get(instance.id),
-    terminalStates: terminalStatesOf(
-      view,
-      instance.id,
-      definition.terminals.map((terminal) => terminal.id),
-    ),
-    terminalVolts: terminalVoltsFor(
-      view,
-      instance.id,
-      definition.terminals.map((terminal) => terminal.id),
-    ),
-    preview,
-    terminalConnections: connectionsForComponent(
-      terminalConnections,
-      instance.id,
-      definition.terminals.map((terminal) => terminal.id),
-    ),
-  },
-  selected,
-  measured: {
-    width: definition.visual.width,
-    height: definition.visual.height,
-  },
-  // 部品本体ではなく端子だけを接続点にする（要件 US-B）。
-  // Handle を持たない本体は connectable でも接続先にならないが、明示しておく。
-  connectable: true,
-});
+): DeviceNode => {
+  const { width, height } = visualSizeOf(instance, definition);
+  return {
+    id: instance.id,
+    type: DEVICE_NODE_TYPE,
+    position: instance.position,
+    width,
+    height,
+    data: {
+      definition,
+      terminals: layoutTerminals(definition, instance.flipped === true),
+      flipped: instance.flipped === true,
+      label: instance.label,
+      presetMs: instance.presetMs,
+      lampColor: instance.lampColor,
+      channelVolts: instance.channelVolts,
+      simulation: view.deviceOf.get(instance.id),
+      terminalStates: terminalStatesOf(
+        view,
+        instance.id,
+        definition.terminals.map((terminal) => terminal.id),
+      ),
+      terminalVolts: terminalVoltsFor(
+        view,
+        instance.id,
+        definition.terminals.map((terminal) => terminal.id),
+      ),
+      preview,
+      terminalConnections: connectionsForComponent(
+        terminalConnections,
+        instance.id,
+        definition.terminals.map((terminal) => terminal.id),
+      ),
+    },
+    selected,
+    measured: { width, height },
+    // 部品本体ではなく端子だけを接続点にする（要件 US-B）。
+    // Handle を持たない本体は connectable でも接続先にならないが、明示しておく。
+    connectable: true,
+  };
+};
 
 /**
  * ドキュメント全体をノード配列へ。

@@ -41,7 +41,7 @@ import type {
   TerminalSide,
 } from "@/circuit/types";
 
-import { layoutTerminals } from "./reactflow";
+import { layoutTerminals, visualSizeOf } from "./reactflow";
 import type { Point } from "./selection";
 
 /** レーン 1 本ぶんの間隔（キャンバス座標 px） */
@@ -173,10 +173,11 @@ const anchorLookup = (
     const terminals = layoutTerminals(definition, instance.flipped === true);
     const terminal = terminals.find((current) => current.id === ref.terminalId);
     if (!terminal) return null;
+    const { width, height } = visualSizeOf(instance, definition);
     return {
       point: {
-        x: instance.position.x + terminal.position.x * definition.visual.width,
-        y: instance.position.y + terminal.position.y * definition.visual.height,
+        x: instance.position.x + terminal.position.x * width,
+        y: instance.position.y + terminal.position.y * height,
       },
       side: terminal.side,
     };
@@ -525,11 +526,12 @@ const componentRects = (
     const definition = registry.get(instance.definitionId);
     // 定義が引けない部品は描画もされない（`toDeviceNodes`）。避ける対象にもしない
     if (!definition) continue;
+    const { width, height } = visualSizeOf(instance, definition);
     rects.push({
       left: instance.position.x,
-      right: instance.position.x + definition.visual.width,
+      right: instance.position.x + width,
       top: instance.position.y,
-      bottom: instance.position.y + definition.visual.height,
+      bottom: instance.position.y + height,
     });
   }
   return rects;

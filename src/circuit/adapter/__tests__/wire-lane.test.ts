@@ -511,6 +511,37 @@ describe("buildWireLanes — 部品を避ける", () => {
     expect(insideBody(runY + shift, 0, relay.visual.height)).toBe(false);
   });
 
+  it("リサイズ済みの部品は instance.size で避ける矩形を決める（design.md §8.16）", () => {
+    /*
+     * 電源 → ランプの直接向かい合う配線（間に何も無ければ 1px も動かない・
+     * 上の「横切っていない配線は 1px も動かさない」と同じ形）の間に、
+     * MY4N を挟む。既定サイズ（260×240）なら本体を横切るので避けるが、
+     * `size` で高さ 5 まで縮めると走行の高さの外に出るので、もう避けない。
+     */
+    const withDefaultSize: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "ps", definitionId: "power-dc24v", position: { x: 0, y: 0 } },
+        { id: "ry", definitionId: "omron-my4n-dc24", position: { x: 300, y: 0 } },
+        { id: "l1", definitionId: "lamp-dc24v", position: { x: 800, y: 0 } },
+      ],
+      connections: [wire("w1", ["ps", "plus"], ["l1", "1"])],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    // 前提: 既定サイズのままなら避けて 1px 以上動く
+    expect(buildWireLanes(withDefaultSize, componentRegistry).get("w1") ?? 0).not.toBe(0);
+
+    const shrunk: CircuitDocument = {
+      ...withDefaultSize,
+      components: withDefaultSize.components.map((component) =>
+        component.id === "ry"
+          ? { ...component, size: { width: 260, height: 5 } }
+          : component,
+      ),
+    };
+    expect(buildWireLanes(shrunk, componentRegistry).get("w1") ?? 0).toBe(0);
+  });
+
   it("同じ部品を避ける配線どうしは、避けたあとも離れている", () => {
     /*
      * 3 台のランプから電源の 0V へ引き戻す。走行は 3 本とも 0V の高さに立ち、

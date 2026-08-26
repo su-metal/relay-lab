@@ -8,23 +8,31 @@
  * **新型番の追加が定義ファイル 1 枚で完結する**ことを UI 側で保証しているのがここ。
  */
 
-import { useUpdateNodeInternals } from "@xyflow/react";
+import { NodeResizer, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { memo, useEffect } from "react";
 
 import type { DeviceNode as DeviceNodeType } from "@/circuit/adapter/reactflow";
 import {
   deviceStatusOf,
+  hasLevelOperations,
   hasRealTerminalNumbers,
   modelSummaryOf,
   shortModelLabel,
 } from "@/lib/component-display";
+import { useCircuitStore } from "@/store/circuitStore";
 
 import { DeviceTerminal } from "./DeviceTerminal";
 import styles from "./DeviceNode.module.css";
 import { bodyForCategory } from "./bodies";
 
-function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) {
+function DeviceNodeComponent({
+  id,
+  data,
+  selected,
+  width,
+  height,
+}: NodeProps<DeviceNodeType>) {
   const {
     definition,
     terminals,
@@ -40,6 +48,13 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
     preview,
   } = data;
   const Body = bodyForCategory(definition.category);
+  const resizeComponent = useCircuitStore((state) => state.resizeComponent);
+  /*
+   * リサイズできるのはフェーダーを持つ部品だけ（design.md §8.16）。
+   * フェーダー 1 本 1 本が狭いと操作しづらく、ノードを広げて初めて
+   * 使いやすくなる部品なので、他の部品には出さない。
+   */
+  const resizable = hasLevelOperations(definition);
   // 実端子番号を持つ型番だけがバッジの対象。汎用部品には検証すべき番号が無い
   const showUnverified = !definition.verified && hasRealTerminalNumbers(definition);
   // シミュレーション中の主要ステータス（励磁 / 点灯 / 押下）。図記号へのホバーで出す
@@ -96,10 +111,25 @@ function DeviceNodeComponent({ id, data, selected }: NodeProps<DeviceNodeType>) 
       data-self-hold={simulation?.selfHeld ? "true" : undefined}
       data-lit={simulation?.lit ? "true" : undefined}
       style={{
-        width: definition.visual.width,
-        height: definition.visual.height,
+        width: width ?? definition.visual.width,
+        height: height ?? definition.visual.height,
       }}
     >
+      {resizable && (
+        <NodeResizer
+          isVisible={selected}
+          minWidth={definition.visual.width}
+          minHeight={definition.visual.height}
+          maxWidth={definition.visual.width * 3}
+          maxHeight={definition.visual.height * 3}
+          onResizeEnd={(_event, params) =>
+            resizeComponent(id, {
+              width: params.width,
+              height: params.height,
+            })
+          }
+        />
+      )}
       <div className={styles.content}>
         <div className={styles.heading}>
           {label && <span className={styles.instanceLabel}>{label}</span>}

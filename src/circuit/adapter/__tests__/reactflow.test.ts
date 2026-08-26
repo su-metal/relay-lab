@@ -77,6 +77,29 @@ describe("toDeviceNodes", () => {
     });
   });
 
+  it("リサイズ済みの部品は instance.size を幅・高さ・measured へ使う（design.md §8.16）", () => {
+    const resized: CircuitDocument = {
+      ...document,
+      components: document.components.map((component) =>
+        component.id === "cmp-relay"
+          ? { ...component, size: { width: 400, height: 300 } }
+          : component,
+      ),
+    };
+    const nodes = toDeviceNodes(resized, componentRegistry);
+    const relay = nodes.find((node) => node.id === "cmp-relay");
+
+    expect(relay?.width).toBe(400);
+    expect(relay?.height).toBe(300);
+    expect(relay?.measured).toEqual({ width: 400, height: 300 });
+
+    // リサイズしていない部品は今までどおり definition.visual のまま
+    const power = nodes.find((node) => node.id === "cmp-power");
+    const powerDefinition = componentRegistry.get("power-dc24v");
+    expect(power?.width).toBe(powerDefinition?.visual.width);
+    expect(power?.height).toBe(powerDefinition?.visual.height);
+  });
+
   it("定義が見つからない部品は落とす（例外にしない）", () => {
     const nodes = toDeviceNodes(document, componentRegistry);
     expect(nodes.map((node) => node.id)).toEqual(["cmp-power", "cmp-relay"]);
