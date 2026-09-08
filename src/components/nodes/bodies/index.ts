@@ -10,6 +10,7 @@ import type { ComponentType } from "react";
 
 import type { ComponentCategory } from "@/circuit/types";
 
+import { AvBody } from "./AvBody";
 import { DimmerBody } from "./DimmerBody";
 import { DiodeBody } from "./DiodeBody";
 import { GenericBody } from "./GenericBody";
@@ -32,12 +33,11 @@ const BODIES: Record<ComponentCategory, ComponentType<BodyProps>> = {
   dimmer: DimmerBody,
   /*
    * AV 機器（design.md §4.19）は `kind: "lamp"`（プロジェクター・モニター）と
-   * `kind: "relay"`（VP コントローラー・スクリーン）が混在するカテゴリで、
-   * どちらか一方の専用ボディを当てはめると片方の見た目が壊れる。
-   * `GenericBody` は元々この用途（専用ボディの無いカテゴリの受け皿）で
-   * 用意されている。
+   * `kind: "relay"`（VP コントローラー・スクリーン）が混在するカテゴリ。
+   * `AvBody` が `DimmerBody` と同じやり方（electrical の形で分岐）で
+   * モニター・スクリーンだけ専用の絵を出し、それ以外は `GenericBody` に委ねる。
    */
-  av: GenericBody,
+  av: AvBody,
 };
 
 export const bodyForCategory = (

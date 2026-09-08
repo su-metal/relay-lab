@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { componentRegistry } from "@/circuit/definitions";
+import { componentRegistry, dimmingConsole } from "@/circuit/definitions";
 import { inspectWiring, simulate } from "@/circuit/engine";
 import type {
   CircuitConnection,
   CircuitDocument,
+  ComponentDefinition,
   SimulationResult,
 } from "@/circuit/types";
 import { operationKey } from "@/circuit/types";
@@ -174,6 +175,168 @@ describe("US-AW 通信線の配線ミスが分かる", () => {
     ]);
     expect(codesOf(document)).toEqual([]);
     expect(voltsAt(step(document, { fader1: 100 }), "1")).toBe(0);
+  });
+});
+
+describe("VP電源・スクリーン上昇/停止/下降のボタンが通信で送られる", () => {
+  /**
+   * 実機のコントローラは端子 33〜36 でこれを受けるが、`analog-source` に
+   * 接点を持たせる構造判断がまだ無く（design.md §6・次スコープ）、今回は
+   * 「コンソールのボタンが `communication.transmits` に正しく載っている
+   * こと」を、`analog-source` の受け口だけ持つ最小の合成受信機で確かめる。
+   */
+  const receiver: ComponentDefinition = {
+    id: "test-vp-screen-receiver",
+    model: "テスト用受信機",
+    category: "dimmer",
+    terminals: [
+      {
+        id: "OUT",
+        label: "OUT",
+        role: "analog_signal",
+        position: { x: 1, y: 0.15 },
+        side: "right",
+      },
+      {
+        id: "OUT2",
+        label: "OUT2",
+        role: "analog_signal",
+        position: { x: 1, y: 0.3 },
+        side: "right",
+      },
+      {
+        id: "COM",
+        label: "COM",
+        role: "analog_common",
+        position: { x: 1, y: 0.5 },
+        side: "right",
+      },
+      {
+        id: "PLUS",
+        label: "+",
+        role: "generic",
+        position: { x: 0, y: 0.3 },
+        side: "left",
+      },
+      {
+        id: "MINUS",
+        label: "-",
+        role: "generic",
+        position: { x: 0, y: 0.6 },
+        side: "left",
+      },
+      {
+        id: "GND",
+        label: "GND",
+        role: "generic",
+        position: { x: 0, y: 0.9 },
+        side: "left",
+      },
+      // 未使用端子。OUT / OUT2 を自分自身へ配線して netOf に載せるためだけに使う
+      {
+        id: "NC",
+        label: "NC",
+        role: "generic",
+        position: { x: 1, y: 0.7 },
+        side: "right",
+        optional: true,
+      },
+      {
+        id: "NC2",
+        label: "NC2",
+        role: "generic",
+        position: { x: 1, y: 0.85 },
+        side: "right",
+        optional: true,
+      },
+    ],
+    electrical: {
+      kind: "analog-source",
+      channels: [
+        { id: "vp", signalTerminal: "OUT", label: "VP電源" },
+        { id: "screen", signalTerminal: "OUT2", label: "スクリーン上昇" },
+      ],
+      commonTerminals: ["COM"],
+      // 通信で受けた % を V へ直す規則。操作していれば 100% → 0V
+      outputCurve: { minVolts: 0, maxVolts: 10, percentAtMin: 100, percentAtMax: 0 },
+      minVolts: 0,
+      maxVolts: 10,
+      defaultVolts: 10,
+    },
+    communication: {
+      port: { plusTerminal: "PLUS", minusTerminal: "MINUS", commonTerminals: ["GND"] },
+      receives: [
+        { signalId: "vpPower", channelId: "vp" },
+        { signalId: "screenUp", channelId: "screen" },
+      ],
+    },
+    visual: { width: 160, height: 140 },
+    source: "テスト用の合成定義",
+    verified: false,
+  };
+  const registry = new Map(componentRegistry).set(receiver.id, receiver);
+
+  const document: CircuitDocument = {
+    version: 1,
+    components: [
+      { id: "CP", definitionId: dimmingConsole.id, label: "操作卓", position: { x: 0, y: 0 } },
+      { id: "R1", definitionId: receiver.id, label: "R1", position: { x: 400, y: 0 } },
+    ],
+    connections: [
+      wire("CP:7", "R1:PLUS"),
+      wire("CP:8", "R1:MINUS"),
+      wire("CP:9", "R1:GND"),
+      // OUT / OUT2 を未使用端子(NC/NC2)へ配線し、netOf にネットを持たせる
+      // （既存の `communication.test.ts` の `voltsAt` と同じ手法）
+      wire("R1:OUT", "R1:NC"),
+      wire("R1:OUT2", "R1:NC2"),
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+
+  const voltsOfSignal = (
+    result: SimulationResult,
+    terminal: "OUT" | "OUT2" = "OUT",
+  ): number | undefined => {
+    const net = result.netOf.get(`R1:${terminal}`);
+    return net === undefined ? undefined : result.analog.signalOf.get(net)?.volts;
+  };
+
+  it("操作していないときは既定値のまま（10V）", () => {
+    const result = simulate(document, registry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set(),
+    });
+    expect(voltsOfSignal(result)).toBe(10);
+  });
+
+  it("VP電源ボタンを倒すと通信で送られ、受け手の出力が変わる", () => {
+    const result = simulate(document, registry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CP", "vpPower")]),
+    });
+    expect(voltsOfSignal(result, "OUT")).toBe(0);
+  });
+
+  it("スクリーン上昇ボタンを倒しても同じ経路で送られる", () => {
+    const result = simulate(document, registry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CP", "screenUp")]),
+    });
+    expect(voltsOfSignal(result, "OUT2")).toBe(0);
+  });
+
+  it("スクリーン停止・下降ボタンも操作子として存在する", () => {
+    const ids = new Set(
+      dimmingConsole.electrical.kind === "relay"
+        ? (dimmingConsole.electrical.relay.operations ?? []).map((op) => op.id)
+        : [],
+    );
+    expect(ids.has("screenStop")).toBe(true);
+    expect(ids.has("screenDown")).toBe(true);
+    expect(dimmingConsole.communication?.transmits).toEqual(
+      expect.arrayContaining(["vpPower", "screenUp", "screenStop", "screenDown"]),
+    );
   });
 });
 

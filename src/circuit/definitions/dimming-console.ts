@@ -170,6 +170,21 @@ export const dimmingConsole: ComponentDefinition = {
     relay: {
       operations: [
         { id: "power", label: "電源" },
+        /*
+         * VP電源・スクリーン上昇/停止/下降（社内仕様書 3〜6 項）。
+         *
+         * **コンソール自身に端子は無い。** 電源ボタン（4-5-6）と違い、
+         * この 4 つは前面パネルのボタンではあるがコンソールパネル接続端子
+         * （端子表 1〜15）には現れず、通信（RS485）でコントローラへ送られ、
+         * コントローラの端子 33・34・35・36（VPランプ / スクリーン上昇/
+         * 停止/下降 の ON/OFF信号出力）として出てくる。だから
+         * `contacts` には入れず、`communication.transmits` にだけ載せる
+         * —— 照明スイッチ 1–8 とまったく同じ扱い。
+         */
+        { id: "vpPower", label: "VP電源" },
+        { id: "screenUp", label: "スクリーン上昇" },
+        { id: "screenStop", label: "スクリーン停止" },
+        { id: "screenDown", label: "スクリーン下降" },
         ...Array.from({ length: 8 }, (_, i) => ({
           id: `fader${i + 1}`,
           label: `フェーダー ${i + 1}`,
@@ -201,6 +216,16 @@ export const dimmingConsole: ComponentDefinition = {
       ],
     },
   },
+  /**
+   * 通信（design.md §4.17）。VP電源・スクリーン上昇/停止/下降・フェーダー・
+   * 照明スイッチをコントローラへ送る。
+   *
+   * **電源ボタンは送らない。** こちらは自分の無電圧接点（4-5-6）を
+   * 動かすもので、コントローラ側の割り当て（端子 32・38・39）は
+   * 今回のスコープ外（requirements.md 含まないもの）。VP電源・スクリーン
+   * 上昇/停止/下降はコンソール自身に端子を持たないボタンなので、
+   * 電源ボタンと違って送るしかない（上の `operations` の doc comment 参照）。
+   */
   communication: {
     port: {
       plusTerminal: "7",
@@ -208,11 +233,17 @@ export const dimmingConsole: ComponentDefinition = {
       commonTerminals: ["9", "12"],
     },
     transmits: [
+      "vpPower",
+      "screenUp",
+      "screenStop",
+      "screenDown",
       ...Array.from({ length: 8 }, (_, i) => `fader${i + 1}`),
       ...Array.from({ length: 8 }, (_, i) => `light${i + 1}`),
     ],
   },
-  visual: { width: 320, height: 520 },
+  // フェーダー 8 本・スイッチ 8 個・VP電源とスクリーン 3 個が入る箱。
+  // 横はボタンが 2 個並ぶ幅
+  visual: { width: 320, height: 600 },
   source: DIMMING_CONSOLE_SPEC_SOURCE,
   verified: true,
 };
