@@ -26,6 +26,12 @@ import type {
   ComponentDefinitionRegistry,
 } from "@/circuit/types";
 
+import {
+  monitorGeneric,
+  projectorPtVx430j,
+  screenElectric,
+  vpController,
+} from "./av-equipment";
 import { genericContactor } from "./contactors";
 import { dimmableLampAc100v, dimmerOutput0to10v } from "./dimming";
 import { genericDiode } from "./diodes";
@@ -77,6 +83,10 @@ export const componentDefinitions: readonly ComponentDefinition[] = [
   phaseControlDimmer,
   lightController4ch,
   dimmingConsole,
+  projectorPtVx430j,
+  vpController,
+  monitorGeneric,
+  screenElectric,
   genericDiode,
   genericTerminalBlock,
 ];
@@ -138,6 +148,7 @@ export {
   genericContactor,
   genericDiode,
   genericTerminalBlock,
+  monitorGeneric,
   offDelayTimer,
   omronG7l1aBDc24,
   omronG7l2aBDc24,
@@ -146,8 +157,11 @@ export {
   omronMy4nDc24,
   omronS8vm05024,
   onDelayTimer,
+  projectorPtVx430j,
   pushbuttonNc,
   pushbuttonNo,
+  screenElectric,
   selectorSwitchNc,
   selectorSwitchNo,
+  vpController,
 };

@@ -146,6 +146,12 @@ export type DeviceSimulationState = {
    */
   operatedContacts?: ReadonlySet<string>;
   /**
+   * 励磁している補助コイルの ID（`RelayDefinition.auxCoils`・design.md §5.21）。
+   * 昇降スクリーンの上昇・停止・下降のように、1 台が持つ複数の独立した
+   * 入力それぞれの通電を見る。補助コイルを持たない機器は `undefined`。
+   */
+  auxCoilsEnergized?: ReadonlySet<string>;
+  /**
    * 調光出力が出している電圧（V）を**チャンネルごとに**（design.md §5.17）。
    * `kind: "analog-source"` 以外は持たない。
    *
@@ -402,6 +408,7 @@ export const buildSimulationView = (
       timer: timerDisplayOf(instance, definition, result, nowMs),
       dimming: result.analog.levelOf.get(instance.id),
       operatedContacts: result.operatedContacts.get(instance.id),
+      auxCoilsEnergized: result.auxCoilsEnergized.get(instance.id),
       /*
        * **今この瞬間に出している電圧。目標値ではない**（design.md §5.18）。
        *

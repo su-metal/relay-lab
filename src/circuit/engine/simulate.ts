@@ -93,6 +93,12 @@ type RelayEvaluation = {
    * タイマーは限時のぶんずれる（design.md §5.13）。`buildNets()` が見るのはこちら
    */
   energized: Set<string>;
+  /**
+   * 補助コイル（design.md §5.21）の励磁状態。componentId → 励磁している
+   * 補助コイル ID の集合。主コイルの `energized` とは別軸で持つ ——
+   * 1 台が複数の独立した入力を持つ機器（昇降スクリーン等）のため。
+   */
+  auxCoilsEnergized: Map<string, Set<string>>;
   /** タイマーの実行時状態。次回の `previousTimers` になる */
   timers: Map<string, TimerState>;
   warnings: Warning[];
@@ -113,6 +119,7 @@ const evaluateRelays = (
   previousTimers: ReadonlyMap<string, TimerState>,
 ): RelayEvaluation => {
   const energized = new Set<string>();
+  const auxCoilsEnergized = new Map<string, Set<string>>();
   const timers = new Map<string, TimerState>();
   const warnings: Warning[] = [];
 
@@ -122,7 +129,7 @@ const evaluateRelays = (
     const { electrical } = definition;
     if (electrical.kind !== "relay") continue;
 
-    const { coil } = electrical.relay;
+    const { coil, auxCoils } = electrical.relay;
     const evaluation = evaluateCoil(
       coil,
       coil && stateAt(lookup, instance.id, coil.positiveTerminal),
@@ -157,9 +164,41 @@ const evaluateRelays = (
         terminalId: coil.positiveTerminal,
       });
     }
+
+    /*
+     * 補助コイル（design.md §5.21）。主コイルとは独立に、それぞれの
+     * 2 端子間の電位だけで励磁を判定する。接点は動かさない —— 見たいのは
+     * 「この入力が今通電しているか」そのもの（`AuxCoil` の doc comment）。
+     */
+    for (const auxCoil of auxCoils ?? []) {
+      const auxEvaluation = evaluateCoil(
+        auxCoil,
+        stateAt(lookup, instance.id, auxCoil.positiveTerminal),
+        stateAt(lookup, instance.id, auxCoil.negativeTerminal),
+      );
+      if (auxEvaluation.energized) {
+        const set = auxCoilsEnergized.get(instance.id) ?? new Set<string>();
+        set.add(auxCoil.id);
+        auxCoilsEnergized.set(instance.id, set);
+      }
+      if (auxEvaluation.reversed) {
+        const name = describeComponent(instance, definition);
+        const label = auxCoil.label ?? auxCoil.id;
+        warnings.push({
+          code: "coil-polarity-reversed",
+          severity: auxCoil.polarity === "strict" ? "error" : "warning",
+          message:
+            auxCoil.polarity === "strict"
+              ? `${name} の${label}の極性が逆です。内蔵ダイオードが順方向になるため励磁しません。`
+              : `${name} の${label}の極性が逆です（励磁はしますが表示灯が点灯しません）。`,
+          componentId: instance.id,
+          terminalId: auxCoil.positiveTerminal,
+        });
+      }
+    }
   }
 
-  return { energized, timers, warnings };
+  return { energized, auxCoilsEnergized, timers, warnings };
 };
 
 /**
@@ -206,6 +245,8 @@ type Iteration = {
   energized: ReadonlySet<string>;
   /** 同じく、コイル以外の駆動源で動いていた接点（design.md §4.16） */
   operatedContacts: OperatedContacts;
+  /** 補助コイルの励磁状態（design.md §5.21） */
+  auxCoilsEnergized: ReadonlyMap<string, ReadonlySet<string>>;
   nets: NetAssignment;
   /** このネットに対応するアナログ層の解（design.md §5.17） */
   analog: AnalogResult;
@@ -461,6 +502,7 @@ export const simulate = (
     last = {
       energized,
       operatedContacts,
+      auxCoilsEnergized: relays.auxCoilsEnergized,
       nets,
       netState,
       analog,
@@ -521,6 +563,7 @@ export const simulate = (
   return {
     energizedRelays: last.energized,
     operatedContacts: last.operatedContacts,
+    auxCoilsEnergized: last.auxCoilsEnergized,
     timers: last.timers,
     fades,
     nextEventAtMs: nextEventOf(

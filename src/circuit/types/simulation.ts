@@ -319,6 +319,15 @@ export type SimulationResult = {
    */
   operatedContacts: ReadonlyMap<string, ReadonlySet<string>>;
   /**
+   * 補助コイル（`RelayDefinition.auxCoils`）が励磁しているか（design.md §5.21）。
+   * componentId → 励磁している補助コイル ID の集合。
+   *
+   * **`energizedRelays` とは別軸。** あちらは主コイル 1 つ（またはコイルで
+   * 動く接点）の話で、こちらは 1 台が持つ複数の独立した入力それぞれの通電
+   * を見る。昇降スクリーンの上昇・停止・下降がこれにあたる。
+   */
+  auxCoilsEnergized: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
    * アナログ層の解（design.md §5.17）。
    * 調光を使っていない回路では空（`EMPTY_ANALOG_RESULT`）。
    */
