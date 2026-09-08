@@ -156,6 +156,18 @@ export type DeviceSimulationState = {
    * どの回路がどの明るさなのかが本体から読めなくなる。
    */
   channelVolts?: readonly { id: string; label?: string; volts: number }[];
+  /**
+   * 一次側（AC）が来ていて、二次側の DC 出力が実際に成立しているか
+   * （design.md §5.20）。`kind: "ac-dc-power-supply"` 以外は持たない。
+   *
+   * **投影の ON/OFF ではない。** プロジェクター（§4.19）はこの kind を
+   * 「USB 給電」のために再利用しているだけで、この値が示すのは
+   * 「機器に電源が来ているか」という一次側の事実だけ。投影そのものの
+   * ON/OFF は電気的に持たないため、シリアルコマンドを模す VP コントローラー
+   * のコイル（`energized`）の方を見る（CLAUDE.md 設計原則 9 と同じ理由 ——
+   * 一次側の事実と、その先の機器が何をするかは別の軸）。
+   */
+  powered?: boolean;
 };
 
 export type SimulationView = {
@@ -316,6 +328,28 @@ export const wireStateOfNet = (
 };
 
 /**
+ * AC-DC 電源（design.md §5.20）の二次側 DC 出力が実際に成立しているかを見る。
+ * `kind: "ac-dc-power-supply"` 以外は `undefined`。
+ *
+ * **`+V` 側の到達だけを見る。** `computeNetStates()`（§5.20）は一次側の両極が
+ * 同じ AC 電源へ届いたときだけ、この機器自身を +V/-V 双方の `plusFrom` /
+ * `zeroFrom` に足す。したがって +V 側が `reachesPlus` なら、-V 側も必ず
+ * `reachesZero` になっており、片方だけを見れば足りる。
+ */
+const acDcPoweredOf = (
+  instance: CircuitComponentInstance,
+  definition: ComponentDefinition,
+  result: SimulationResult,
+): boolean | undefined => {
+  const { electrical } = definition;
+  if (electrical.kind !== "ac-dc-power-supply") return undefined;
+
+  const netId = result.netOf.get(terminalKey(instance.id, electrical.positiveTerminal));
+  const state = netId === undefined ? undefined : result.netState.get(netId);
+  return state !== undefined && reachesPlus(state);
+};
+
+/**
  * 表示状態をまとめて組み立てる。
  *
  * @param result シミュレーション結果。停止中は `null`
@@ -430,6 +464,7 @@ export const buildSimulationView = (
                 ) ?? 0,
             }))
           : undefined,
+      powered: acDcPoweredOf(instance, definition, result),
     });
   }
 

@@ -19,9 +19,12 @@ import type { BodyProps } from "./types";
  *   **投影の ON/OFF そのものは電気的に持たない**（プロジェクターは
  *   シリアルコマンドで動くため）ので、コイルの励磁（＝プロジェクターへ
  *   ON コマンド送信中・design.md §4.19）を見せることで代える
- * - それ以外（プロジェクター＝`ac-dc-power-supply`）は専用の絵を持たない。
- *   **実機の投影面は見えるものではなく**、電気的には AC 受電と USB 給電
- *   しか表さないので、他のカテゴリと同じ既定の箱（`GenericBody`）に委ねる
+ * - `kind: "ac-dc-power-supply"` → プロジェクター。**投影の ON/OFF は
+ *   ここでも持たない**が、一次側（AC100V）が来ていて USB 出力が実際に
+ *   成立しているかどうかは持つ（`simulation.powered`・design.md §5.20）。
+ *   実機の電源ランプに相当する表示灯として見せる
+ * - それ以外は専用の絵を持たない。未知の `electrical.kind` でも画面が
+ *   壊れないよう、他のカテゴリと同じ既定の箱（`GenericBody`）に委ねる
  */
 export function AvBody(props: BodyProps) {
   const { electrical } = props.definition;
@@ -36,6 +39,10 @@ export function AvBody(props: BodyProps) {
 
   if (electrical.kind === "relay" && electrical.relay.coil) {
     return <VpControllerVisual simulation={props.simulation} />;
+  }
+
+  if (electrical.kind === "ac-dc-power-supply") {
+    return <ProjectorVisual simulation={props.simulation} />;
   }
 
   return <GenericBody {...props} />;
@@ -127,6 +134,47 @@ function VpControllerVisual({ simulation }: Pick<BodyProps, "simulation">) {
       </svg>
       <span className={energized ? styles.energizedCaption : styles.caption}>
         {energized ? "プロジェクターへ ON コマンド送信中" : "ON コマンド未送信"}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * プロジェクター。**投影の ON/OFF は電気的に持たない**（design.md §4.19）
+ * ので、`lit`（ランプ）や `energized`（コイル）のような、それを主張する
+ * 値は読まない。代わりに `simulation.powered`（design.md §5.20）——
+ * 一次側の AC100V が来ていて USB 出力が実際に成立しているか——を、
+ * 実機の電源ランプに相当する表示灯として見せる。
+ *
+ * `LampBody` の `.lampGlass` をそのまま流用する。**新しい色や図記号を
+ * 増やさない** —— 「電源が来ている」という同じ意味を、既存の点灯表現の
+ * 語彙で示すだけで足りる。
+ */
+function ProjectorVisual({ simulation }: Pick<BodyProps, "simulation">) {
+  const powered = simulation?.powered ?? false;
+
+  return (
+    <div className={styles.stack}>
+      <svg
+        className={styles.symbol}
+        width="72"
+        height="40"
+        viewBox="0 0 72 40"
+        aria-hidden
+      >
+        <rect x="4" y="8" width="52" height="24" rx="3" />
+        <circle cx="62" cy="20" r="7" />
+        <circle
+          className={styles.lampGlass}
+          data-lit={powered ? "true" : undefined}
+          data-color="green"
+          cx="12"
+          cy="28"
+          r="3"
+        />
+      </svg>
+      <span className={powered ? styles.energizedCaption : styles.caption}>
+        電源{powered ? " ON" : " OFF"}
       </span>
     </div>
   );

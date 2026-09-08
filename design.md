@@ -106,7 +106,7 @@ src/
         PowerSupplyBody.tsx
         LampBody.tsx
         DimmerBody.tsx           # 調光出力・位相制御調光器・調光操作卓／ライトコントローラ（`kind: "relay"`）
-        AvBody.tsx               # AV機器。モニター（`kind: "lamp"`）・電動スクリーン（`auxCoils`）・VPコントローラー（コイルのみの`relay`）に専用の絵（§4.19）
+        AvBody.tsx               # AV機器。モニター（`kind: "lamp"`）・電動スクリーン（`auxCoils`）・VPコントローラー（コイルのみの`relay`）・プロジェクター（`ac-dc-power-supply`）に専用の絵（§4.19）
         GenericBody.tsx          # 専用ボディが無いカテゴリのフォールバック
         DiodeBody.tsx
         TerminalBlockBody.tsx
@@ -1263,6 +1263,8 @@ OMRON 公式 S8VM 資料で照合した実型番。50W / DC24V 2.2A、定格入�
 
 これは「AC を受けて絶縁 DC を生成する」OMRON S8VM（§4.18）と物理的に同じ振る舞いなので、プロジェクター本体も `kind: "ac-dc-power-supply"` として表す —— AC100V が L/N の両方に届いたときだけ、USB 出力端子（`VBUS` / `GND`）に別の DC 電位（5V・USB 規格からの推定）を生成する。**電源 ON/OFF の概念そのものは持たせない** —— 実際の投影 ON/OFF はシリアルコマンドで行うもので、本アプリは通信の中身を扱わない（§6）。シリアル入力端子は物理的な実在を示すためだけの端子として持たせるが、ピン配列（TX/RX/GND）は仕様書に無く、接続の中身も判定しない。
 
+**実機の電源ランプ相当の表示は持たせる。** 投影の ON/OFF ではなく「AC100V が来て USB 出力が実際に成立しているか」という一次側の事実は電気的に持っているので、`AvBody.tsx` の `ProjectorVisual` がこれを表示灯（`DeviceSimulationState.powered`・§5.20）として見せる。ユーザーからの要望（「プロジェクター自体の電源ランプを点灯させてほしい」）に応えたもので、VP コントローラーのコイル（投影 ON コマンド送信中・本節後述）とは別の軸であることに注意 —— 一次側の給電が無ければ VP コントローラーもそもそも動かないので、電源ランプが消えていれば VP コントローラー側の表示も自動的に非励磁になる。
+
 AC100V 電源・シリアル入力端子・USB 端子はどれもプラグ／コネクタ接続で、ねじ端子のような印字された番号・記号を持たない。したがって確認できたのは「端子構成の事実」であって「実端子番号」ではなく、**検証対象そのものが無いため `verified: false`**（§4.4 の考え方と同じ）。USB の出力電圧（5V）は USB 規格の一般値からの推定で、PT-VX430J 固有の記載ではないことも `source` に明記する。
 
 #### VP コントローラー（実機を持たない仮の中継機器）
@@ -2341,6 +2343,8 @@ simulate()
 `computeNetStates()` は従来の `kind: "power"` と有向伝搬を解いたあと、`kind: "ac-dc-power-supply"` の L/N を確認する。同じ AC 電源 ID の両極が届いていれば、その AC-DC 電源自身の component ID を +V 側の `plusFrom` と -V 側の `zeroFrom` に追加する。一次側と二次側は union しないため絶縁は保つ。
 
 経路グラフはエンジンが解いた `NetState` を読み、実際に二次出力が成立しているときだけ +V/-V を仮想電源ノードへ接続する。ラダー図は瞬時状態ではなく配線トポロジーを表すため、S8VM の +V/-V を DC 側の母線として扱う。
+
+**この「二次出力が成立しているか」を、表示側にも `DeviceSimulationState.powered` として持たせる**（`adapter/simulation-view.ts` の `acDcPoweredOf()`）。`kind: "ac-dc-power-supply"` の `positiveTerminal` が乗るネットの `reachesPlus()` を見るだけで済む —— この kind は「両極が届いたときだけ自分自身を +V/-V 双方の `plusFrom`/`zeroFrom` に足す」という 1 箇所の規則（本節冒頭）に従うので、+V 側の到達を見れば -V 側も必ず揃っている。プロジェクター（§4.19）の電源ランプはこの値をそのまま表示灯にする —— **投影の ON/OFF ではない**（それは電気的に持たない）ことに注意。「一次側の事実」と「その先の機器が何をするか」を混同しない、CLAUDE.md 設計原則 9 と同じ切り分け。
 
 ### 5.21 補助コイル（`RelayDefinition.auxCoils`・Step 25 で追加）
 
