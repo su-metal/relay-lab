@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   componentRegistry,
+  dimmingConsole,
   monitorGeneric,
   projectorPtVx430j,
   screenElectric,
@@ -29,6 +30,7 @@ import type {
   CircuitDocument,
   ComponentDefinition,
 } from "@/circuit/types";
+import { operationKey } from "@/circuit/types";
 
 const wire = (from: string, to: string): CircuitConnection => {
   const [fc, ft] = from.split(":");
@@ -147,19 +149,98 @@ describe("電動スクリーン（design.md §5.21）", () => {
   });
 });
 
-describe("VP コントローラー", () => {
-  it("A1-A2 に電圧がかかるとコイルが励磁する（接点を持たなくても動く）", () => {
-    const document = circuit(
+describe("プロジェクター（Panasonic PT-VX430J）の USB 給電（design.md §4.19・§5.20）", () => {
+  /**
+   * `kind: "ac-dc-power-supply"` を再利用しているので、判定は S8VM と同じ
+   * 「AC100V が L/N の両方に届いたときだけ、自分の VBUS/GND に別の DC 電位
+   * を生成する」というもの（design.md §5.20）。
+   */
+  const withAc = (acConnected: boolean) =>
+    circuit(
       [
-        ["PS", DC],
-        ["VP", vpController.id],
+        ...(acConnected
+          ? [["PS", "power-ac100v"] as [string, string]]
+          : []),
+        ["PJ", projectorPtVx430j.id],
       ],
-      [wire("PS:plus", "VP:A1"), wire("PS:zero", "VP:A2")],
+      acConnected ? [wire("PS:L", "PJ:L"), wire("PS:N", "PJ:N")] : [],
     );
-    const result = simulate(document, componentRegistry, {
+
+  const reachesUsbPower = (result: ReturnType<typeof simulate>): boolean => {
+    const vbusNet = result.netOf.get("PJ:VBUS");
+    const gndNet = result.netOf.get("PJ:GND");
+    if (vbusNet === undefined || gndNet === undefined) return false;
+    return (
+      (result.netState.get(vbusNet)?.plusFrom.has("PJ") ?? false) &&
+      (result.netState.get(gndNet)?.zeroFrom.has("PJ") ?? false)
+    );
+  };
+
+  it("AC100V が来ていれば USB VBUS/GND に別の DC 電位が立つ", () => {
+    const result = simulate(withAc(true), componentRegistry, {
       pressedSwitches: new Set(),
     });
+    expect(reachesUsbPower(result)).toBe(true);
+  });
+
+  it("AC100V が来ていなければ USB 電位は立たない", () => {
+    const result = simulate(withAc(false), componentRegistry, {
+      pressedSwitches: new Set(),
+    });
+    expect(reachesUsbPower(result)).toBe(false);
+  });
+});
+
+describe("VP コントローラー（プロジェクターの USB 給電＋操作卓の電源ボタン・design.md §4.19）", () => {
+  /**
+   * VP:VBUS/GND をプロジェクターの USB 出力へ、VP:CTRL を調光操作卓の
+   * 電源ボタンの無電圧接点（端子 5=COM・6=NO）を経由して VP:GND へ配線する。
+   * 「プロジェクターが給電されていて、かつ操作卓の電源ボタンが ON」の
+   * ときだけ VP コントローラーのコイルが励磁する、というのが押さえたい形。
+   */
+  const panel = (acConnected: boolean) =>
+    circuit(
+      [
+        ...(acConnected
+          ? [["PS", "power-ac100v"] as [string, string]]
+          : []),
+        ["PJ", projectorPtVx430j.id],
+        ["VP", vpController.id],
+        ["CONSOLE", dimmingConsole.id],
+      ],
+      [
+        ...(acConnected
+          ? [wire("PS:L", "PJ:L"), wire("PS:N", "PJ:N")]
+          : []),
+        wire("PJ:VBUS", "VP:VBUS"),
+        wire("PJ:GND", "VP:GND"),
+        wire("VP:CTRL", "CONSOLE:6"),
+        wire("CONSOLE:5", "VP:GND"),
+      ],
+    );
+
+  it("プロジェクターが給電されていて操作卓の電源ボタンが ON なら励磁する", () => {
+    const result = simulate(panel(true), componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "power")]),
+    });
     expect(result.energizedRelays.has("VP")).toBe(true);
+  });
+
+  it("操作卓の電源ボタンが OFF なら励磁しない", () => {
+    const result = simulate(panel(true), componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set(),
+    });
+    expect(result.energizedRelays.has("VP")).toBe(false);
+  });
+
+  it("電源ボタンが ON でも、プロジェクターに AC100V が来ていなければ励磁しない（USB 給電が無いため）", () => {
+    const result = simulate(panel(false), componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "power")]),
+    });
+    expect(result.energizedRelays.has("VP")).toBe(false);
   });
 
   it("何も繋がなければ励磁しない", () => {
@@ -171,28 +252,23 @@ describe("VP コントローラー", () => {
   });
 });
 
-describe("プロジェクター（Panasonic PT-VX430J）とモニター（汎用）", () => {
-  it("AC100V が両端に来ていれば負荷として成立する（実際の投影/表示 ON-OFF はシリアル制御・design.md §4.19）", () => {
+describe("モニター（汎用）", () => {
+  it("AC100V が両端に来ていれば負荷として成立する（design.md §4.19）", () => {
     const document = circuit(
       [
         ["PS", "power-ac100v"],
-        ["VP", projectorPtVx430j.id],
         ["MON", monitorGeneric.id],
       ],
-      [
-        wire("PS:L", "VP:L"),
-        wire("PS:N", "VP:N"),
-        wire("PS:L", "MON:L"),
-        wire("PS:N", "MON:N"),
-      ],
+      [wire("PS:L", "MON:L"), wire("PS:N", "MON:N")],
     );
     const result = simulate(document, componentRegistry, {
       pressedSwitches: new Set(),
     });
-    expect(result.litLamps.has("VP")).toBe(true);
     expect(result.litLamps.has("MON")).toBe(true);
   });
+});
 
+describe("AV機器の端子データ", () => {
   it("実端子番号を持たないので verified を名乗らない", () => {
     for (const definition of [
       projectorPtVx430j,

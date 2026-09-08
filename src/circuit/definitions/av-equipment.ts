@@ -25,22 +25,34 @@ import type { ComponentDefinition } from "@/circuit/types";
  * 実機は持たないため、電源 ON/OFF は VP コントローラー（本ファイル）を介して
  * シリアルコマンドで行う（ユーザー判断）。
  *
- * AC100V 電源とシリアル入力端子はどちらもねじ端子ではなくプラグ／コネクタで、
- * 端子に印字された番号や記号は無い。したがって `verified` は立てない ——
- * ここで検証したのは「端子構成の事実」であって「実端子番号」ではなく、
- * 検証対象そのものが無い（CLAUDE.md 設計原則 5・design.md §4.4 の考え方）。
+ * **USB A 端子（タイプA）は実機に実在する**（仕様書「■接続端子」・
+ * 「USB メモリービューワー機能用／無線モジュール WML100J、AJ-WM50GT 用」）。
+ * 無線モジュールのような周辺機器へ給電する端子であることから、
+ * **VP コントローラーはこの USB 給電で動作する**（ユーザー判断）。
+ * ただし USB の電源電圧（5V）・供給電流は仕様書に記載が無く、USB の
+ * 規格値からの推定であって PT-VX430J 固有の実測・仕様確認ではない。
+ *
+ * AC100V 電源・シリアル入力端子・USB 端子はどれもねじ端子ではなくプラグ／
+ * コネクタで、端子に印字された番号や記号は無い。したがって `verified` は
+ * 立てない —— ここで検証したのは「端子構成の事実」であって「実端子番号」
+ * ではなく、検証対象そのものが無い（CLAUDE.md 設計原則 5・design.md §4.4 の考え方）。
  */
 const PT_VX430J_SOURCE =
-  "Panasonic『液晶プロジェクター PT-VX430J』仕様書（VX430J_STM_01・2021/01/14 作成・1/8〜8/8）の「■機器仕様」「■接続端子リスト」（2/8ページ）と照合済み。AC100V 電源入力とシリアル入力端子（D-Sub 9P・メス型・RS-232C準拠）のみを持ち、無電圧接点の外部制御端子は無いことを確認。プラグ／コネクタ接続でねじ端子の印字が無いため、端子の呼称は本アプリの便宜的なもので実端子番号ではない";
+  "Panasonic『液晶プロジェクター PT-VX430J』仕様書（VX430J_STM_01・2021/01/14 作成・1/8〜8/8）の「■機器仕様」「■接続端子リスト」（2/8ページ）と照合済み。AC100V 電源入力・シリアル入力端子（D-Sub 9P・メス型・RS-232C準拠）・USB A端子（無線モジュール用給電あり）を持ち、無電圧接点の外部制御端子は無いことを確認。USB の電源電圧（5V）は USB 規格からの推定でPT-VX430J固有の記載ではない。プラグ／コネクタ接続でねじ端子の印字が無いため、端子の呼称は本アプリの便宜的なもので実端子番号ではない";
 
 /**
  * プロジェクター（Panasonic PT-VX430J）。
  *
- * **電気的には AC100V を受けるだけの負荷。** 実機の電源 ON/OFF は
- * シリアルコマンド（RS-232C）で行うもので、このシミュレーターは
- * 通信の中身を扱わない（design.md §6・CLAUDE.md「プロトコルは扱わない」）。
- * だから `electrical` に「電源 ON/OFF」の概念は無く、`kind: "lamp"` で
- * AC100V が来ているかだけを表す。**投影の ON/OFF が見たいときは、
+ * **電気的には 2 つの顔を持つ。** AC100V を受ける入力側と、USB 経由で
+ * VP コントローラーへ 5V を供給する出力側。これは AC を受けて絶縁 DC を
+ * 生成する OMRON S8VM（`kind: "ac-dc-power-supply"`・design.md §4.18・§5.20）と
+ * **まったく同じ物理的な振る舞い**なので、同じ kind を再利用する ——
+ * 「AC が来ている間だけ、別の DC 電位を生成する」という判定はここでも
+ * S8VM と同じ 1 つの実装で効く（CLAUDE.md 設計原則 2）。
+ *
+ * 実機の電源 ON/OFF はシリアルコマンド（RS-232C）で行うもので、
+ * このシミュレーターは通信の中身を扱わない（design.md §6・CLAUDE.md
+ * 「プロトコルは扱わない」）。**投影の ON/OFF が見たいときは、
  * VP コントローラーのコイル（励磁 = ON コマンド送信中）の方を見る。**
  *
  * シリアル入力端子は物理的な実在を示すためだけに置く。ピン配列（TX/RX/GND）
@@ -57,7 +69,7 @@ export const projectorPtVx430j: ComponentDefinition = {
       label: "L",
       role: "power_line",
       description: "AC100V 電源入力（非接地側）。実機はプラグ接続",
-      position: { x: 0, y: 0.35 },
+      position: { x: 0, y: 0.25 },
       side: "left",
     },
     {
@@ -65,7 +77,7 @@ export const projectorPtVx430j: ComponentDefinition = {
       label: "N",
       role: "power_neutral",
       description: "AC100V 電源入力（接地側）。実機はプラグ接続",
-      position: { x: 0, y: 0.65 },
+      position: { x: 0, y: 0.48 },
       side: "left",
     },
     {
@@ -80,15 +92,41 @@ export const projectorPtVx430j: ComponentDefinition = {
       side: "right",
       optional: true,
     },
+    {
+      id: "VBUS",
+      label: "VBUS",
+      role: "power_positive",
+      description:
+        "USB A 端子 VBUS / 周辺機器給電用（無線モジュール等）。" +
+        "電圧は USB 規格からの推定（実機の記載なし）",
+      position: { x: 1, y: 0.75 },
+      side: "right",
+    },
+    {
+      id: "GND",
+      label: "GND",
+      role: "power_zero",
+      description: "USB A 端子 GND",
+      position: { x: 1, y: 0.9 },
+      side: "right",
+    },
   ],
   electrical: {
-    kind: "lamp",
-    voltage: 100,
-    currentType: "AC",
-    terminalA: "L",
-    terminalB: "N",
+    kind: "ac-dc-power-supply",
+    // 仕様書は「AC100V 50Hz/60Hz」の単一値のみで、S8VM のような
+    // 定格/使用可能範囲の幅は記載が無い。範囲を持たせず単一値で置く
+    ratedInputVoltageMin: 100,
+    ratedInputVoltageMax: 100,
+    allowableInputVoltageMin: 100,
+    allowableInputVoltageMax: 100,
+    lineTerminal: "L",
+    neutralTerminal: "N",
+    // USB の規格値（実機の記載なし・上記コメント参照）
+    outputVoltage: 5,
+    positiveTerminal: "VBUS",
+    zeroTerminal: "GND",
   },
-  visual: { width: 220, height: 160 },
+  visual: { width: 240, height: 200 },
   source: PT_VX430J_SOURCE,
   verified: false,
 };
@@ -97,19 +135,25 @@ export const projectorPtVx430j: ComponentDefinition = {
  * VP コントローラー端子の出典（design.md §4.19）。
  *
  * **実機は無い、本アプリのための仮の中継機器。** PT-VX430J のように
- * 無電圧接点の制御端子を持たないプロジェクターへ、調光コントローラ等の
- * 開放コレクタ出力（無電圧接点相当）からの ON/OFF をシリアルコマンドへ
- * 変換して送る市販の RS-232C 接続ボックス相当を想定している。
+ * 無電圧接点の制御端子を持たないプロジェクターへ、調光操作卓等の無電圧
+ * 接点からの ON/OFF をシリアルコマンドへ変換して送る市販の RS-232C 接続
+ * ボックス相当を想定している。
  *
- * コイル入力端子は IEC 60947-1 / EN 50005 の A1 / A2（電磁接触器・
- * 制御リレーのコイル記号として広く使われる）を借りる。
+ * **自分の動作用電源はプロジェクター自身の USB A 端子から取る**
+ * （ユーザー判断）。外部に別の電源を必要としない —— コイルの正側
+ * （`VBUS`）をプロジェクターの USB 出力へ、負側（`CTRL`）を「操作卓等の
+ * 無電圧接点を経由して」プロジェクターの USB GND へ配線する形にすることで、
+ * **プロジェクターが給電されていて、かつ操作卓の接点が閉じている**ときだけ
+ * コイルが励磁する（`engine/graph.ts` の `ac-dc-power-supply` 判定がそのまま
+ * 効く・design.md §5.20）。
+ *
  * 特定製品と照合していないので `verified: false`。
  */
 const VP_CONTROLLER_SOURCE =
   "実機を持たない仮の中継機器（本アプリのための一般化）。無電圧接点の制御端子を" +
   "持たないプロジェクターへ ON/OFF をシリアルコマンドへ変換して送る市販の" +
-  "RS-232C 接続ボックス相当を想定。コイル端子記号は IEC 60947-1 / EN 50005 の" +
-  "A1・A2 を借りているが、特定製品のカタログとは未照合";
+  "RS-232C 接続ボックス相当を想定。自分の動作用電源はプロジェクターの USB A" +
+  "端子から取る構成（ユーザー判断）。特定製品のカタログとは未照合";
 
 /**
  * VP コントローラー（プロジェクター用シリアル電源制御ボックス）。
@@ -119,9 +163,14 @@ const VP_CONTROLLER_SOURCE =
  * （design.md §6）ので、接点は持たない —— コイルの励磁状態そのものが
  * 唯一の観測対象になる（プロパティパネルの「コイル」節に表示される）。
  *
- * コイル電圧は調光コントローラの開放コレクタ出力の想定電圧
- * （DC12〜24V・`lighting-system.ts` のフォトカプラ入力の記述を参照）に
- * 合わせて DC24V とした。
+ * **コイルは 2 端子だけで「給電」と「操作卓の接点が閉じているか」の
+ * 両方を表す。** `VBUS` はプロジェクターの USB 出力へ直結し、`CTRL` は
+ * 操作卓（や調光コントローラ）の無電圧接点を経由してプロジェクターの
+ * USB GND（本コンポーネントの `GND` 端子経由でもよい）へ繋ぐ。
+ * 実機なら電源系統と制御系統を分けて持つところを 2 端子に畳んでいるが、
+ * このシミュレーターが見せたい「プロジェクターの給電が無ければそもそも
+ * 動かず、操作卓の接点が開いていれば ON コマンドは送らない」という
+ * 2 条件は、この形で過不足なく表せる。
  */
 export const vpController: ComponentDefinition = {
   id: "av-controller-vp",
@@ -129,19 +178,30 @@ export const vpController: ComponentDefinition = {
   category: "av",
   terminals: [
     {
-      id: "A1",
-      label: "A1",
-      role: "coil",
-      description: "コイル / 無電圧接点入力（極性なし・DC24V 電源側）",
-      position: { x: 0, y: 0.35 },
+      id: "VBUS",
+      label: "VBUS",
+      role: "power_positive",
+      description:
+        "動作用電源 + / プロジェクターの USB A 端子 VBUS へ（ユーザー判断）",
+      position: { x: 0, y: 0.25 },
       side: "left",
     },
     {
-      id: "A2",
-      label: "A2",
+      id: "GND",
+      label: "GND",
+      role: "power_zero",
+      description: "動作用電源 − / プロジェクターの USB A 端子 GND へ",
+      position: { x: 0, y: 0.48 },
+      side: "left",
+    },
+    {
+      id: "CTRL",
+      label: "CTRL",
       role: "coil",
-      description: "コイル / 無電圧接点入力（極性なし・コントローラの開放コレクタ出力へ）",
-      position: { x: 0, y: 0.65 },
+      description:
+        "制御入力（無電圧接点）/ 操作卓・調光コントローラ等の接点を経由して" +
+        "GND（プロジェクターの USB GND）へ。閉じている間だけ ON コマンドを送る",
+      position: { x: 0, y: 0.75 },
       side: "left",
     },
     {
@@ -160,10 +220,11 @@ export const vpController: ComponentDefinition = {
     kind: "relay",
     relay: {
       coil: {
-        voltage: 24,
+        // プロジェクターの USB 出力の想定電圧（実機の記載なし・USB 規格からの推定）
+        voltage: 5,
         currentType: "DC",
-        positiveTerminal: "A1",
-        negativeTerminal: "A2",
+        positiveTerminal: "VBUS",
+        negativeTerminal: "CTRL",
         polarity: "none",
       },
       // 実機の出力はシリアルコマンドで、接点として持たない
@@ -171,7 +232,7 @@ export const vpController: ComponentDefinition = {
       contacts: [],
     },
   },
-  visual: { width: 200, height: 160 },
+  visual: { width: 220, height: 180 },
   source: VP_CONTROLLER_SOURCE,
   verified: false,
 };
