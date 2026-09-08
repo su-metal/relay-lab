@@ -16,10 +16,11 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("29 定義が登録されている", () => {
+  it("32 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
+      "power-ac100v-to-dc12v",
       "omron-s8vm-05024",
       "switch-pushbutton-no",
       "switch-pushbutton-nc",
@@ -47,8 +48,10 @@ describe("部品定義レジストリ", () => {
       "screen-electric-generic",
       "diode-generic",
       "terminal-block-6p",
+      "terminal-block-12p",
+      "terminal-block-20p",
     ]);
-    expect(componentRegistry.size).toBe(29);
+    expect(componentRegistry.size).toBe(32);
   });
 
   it("型番から定義を取得できる", () => {
@@ -122,7 +125,7 @@ describe("部品定義レジストリ", () => {
       "monitor-generic-ac100v",
       "screen-electric-generic",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(29);
+    expect(listComponentDefinitions()).toHaveLength(32);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -214,6 +217,17 @@ describe("部品定義レジストリ", () => {
                         ...(electrical.relay.analogInputs ?? []).flatMap(
                           (input) => [input.signalTerminal, input.commonTerminal],
                         ),
+                        // アナログ入力を読む内部回路の電源（§5.17）
+                        ...(electrical.relay.power
+                          ? [
+                              electrical.relay.power.positiveTerminal,
+                              electrical.relay.power.negativeTerminal,
+                            ]
+                          : []),
+                        // analogInputs を変換して出す調光出力（§5.17）
+                        ...(electrical.relay.analogOutputs ?? []).map(
+                          (output) => output.signalTerminal,
+                        ),
                         // NC 端子は a 接点のみのリレーには存在しない。
                         // 未定義を混ぜると「実在しない端子を参照している」判定になる
                         ...electrical.relay.contacts.flatMap((c) =>
@@ -225,6 +239,36 @@ describe("部品定義レジストリ", () => {
 
       for (const terminalId of referenced) {
         expect(ids.has(terminalId), `${definition.id}:${terminalId}`).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * `analogOutputs` は「電源が来ているときだけ signals へ足す」前提で書かれて
+   * いる（`engine/analog.ts`）。`power` の無い `analogOutputs` は出しようが
+   * 無く（参照ネットが取れない）、静かに無視されるだけの死んだ設定になる。
+   */
+  it("analogOutputs を持つなら power も持つ", () => {
+    for (const definition of componentDefinitions) {
+      const { electrical } = definition;
+      if (electrical.kind !== "relay") continue;
+      if (!electrical.relay.analogOutputs?.length) continue;
+      expect(electrical.relay.power, definition.id).toBeDefined();
+    }
+  });
+
+  /** `fromInputId` は同じ機器の `analogInputs` を指す。無ければ変換元が無い */
+  it("analogOutputs の fromInputId は analogInputs に実在する", () => {
+    for (const definition of componentDefinitions) {
+      const { electrical } = definition;
+      if (electrical.kind !== "relay") continue;
+      const inputIds = new Set(
+        (electrical.relay.analogInputs ?? []).map((input) => input.id),
+      );
+      for (const output of electrical.relay.analogOutputs ?? []) {
+        expect(inputIds.has(output.fromInputId), `${definition.id}:${output.id}`).toBe(
+          true,
+        );
       }
     }
   });
@@ -546,5 +590,25 @@ describe("汎用部品の追加（design.md §4.5）", () => {
     );
     expect(block.electrical.terminals).toEqual(["1", "2", "3", "4", "5", "6"]);
     expect(block.terminals.every((t) => t.number === undefined)).toBe(true);
+  });
+
+  it.each([
+    ["terminal-block-12p", 12],
+    ["terminal-block-20p", 20],
+  ])("極数違いの端子台（%s）も全端子を通し番号で列挙する", (id, poles) => {
+    const block = requireComponentDefinition(id);
+    if (block.electrical.kind !== "terminal") throw new Error("terminal ではない");
+    expect(block.electrical.terminals).toEqual(block.terminals.map((t) => t.id));
+    expect(block.electrical.terminals).toEqual(
+      Array.from({ length: poles }, (_, i) => String(i + 1)),
+    );
+    expect(block.terminals.every((t) => t.number === undefined)).toBe(true);
+    // 上段・下段で半分ずつ。3 台以上で使う片側だけの偏りが起きていないか
+    expect(block.terminals.filter((t) => t.side === "top")).toHaveLength(
+      poles / 2,
+    );
+    expect(block.terminals.filter((t) => t.side === "bottom")).toHaveLength(
+      poles / 2,
+    );
   });
 });

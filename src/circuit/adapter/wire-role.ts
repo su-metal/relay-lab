@@ -169,7 +169,7 @@ export const buildWireRoles = (
    * その接点は静止状態で開いている側が既定になる。
    */
   const analogNets = analogSignalNets(
-    resolveAnalog(document, definitions, rest.netOf),
+    resolveAnalog(document, definitions, rest.netOf, rest.netState),
   );
   // スイッチは入っているがリレーはまだ動いていない＝起動の瞬間
   const switched = netsWith(document, definitions, everything, nothing);

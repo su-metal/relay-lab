@@ -10,13 +10,7 @@
  * 定数から組み立てられていることを `__tests__/shortcuts.test.ts` が押さえる。
  */
 
-/**
- * 削除のキー（`ReactFlow.deleteKeyCode`）。Delete / Backspace に加えて **D 単独**。
- *
- * Delete キーはフルサイズキーボードでは右上の端にあり、配線しながら片手で押すには
- * 遠い。D は「配線ドラッグ → 掴み損ねた線を消す」の往復がホームポジションのまま済む。
- * 大文字を併記するのは CapsLock 対策（`event.key` が "D" になる）。
- */
+/** 削除のキー（`ReactFlow.deleteKeyCode`）。Delete / Backspace に加えて D 単独。 */
 export const DELETE_KEYS = ["Delete", "Backspace", "d", "D"];
 
 /** 部品の左右反転（`useFlipShortcut`）。F 単独 */
@@ -25,21 +19,21 @@ export const FLIP_KEYS = ["f", "F"];
 /** 配置の自動整理（`useArrangeShortcut`）。L 単独 */
 export const ARRANGE_KEYS = ["l", "L"];
 
-/**
- * シミュレーションの開始・停止（`useSimulationShortcut`）。S 単独（Start / Stop）。
- *
- * **Space は割り当てない。** スイッチの押しボタンが Space / Enter で押下・復帰を
- * 表現しており、シミュレーション中はそのボタンにフォーカスが残る。Space を
- * 停止に充てると「スイッチを押す」のか「停止する」のかが打鍵時のフォーカス位置で
- * 変わる（design.md §8.2）。
- */
+/** シミュレーションの開始・停止（`useSimulationShortcut`）。S 単独 */
 export const SIMULATION_KEYS = ["s", "S"];
+
+/** 左の部品パネルを開閉（`usePanelShortcuts`）。C = Components */
+export const COMPONENT_PANEL_KEYS = ["c", "C"];
+
+/** 右のプロパティパネルを開閉（`usePanelShortcuts`）。P = Properties */
+export const PROPERTIES_PANEL_KEYS = ["p", "P"];
+
+/** 左右パネルをまとめて開閉（`usePanelShortcuts`）。M = Main canvas */
+export const MAIN_VIEW_KEYS = ["m", "M"];
 
 /**
  * 画面移動の同時押しキー（`ReactFlow.panActivationKeyCode`）。
- *
- * 素の左ドラッグを範囲選択に取ったので、パンを Shift へ逃がしている
- * （design.md §8.6）。`selectionKeyCode` を `null` にすることとセット。
+ * 素の左ドラッグを範囲選択に取ったので、パンを Shift へ逃がしている。
  */
 export const PAN_ACTIVATION_KEY = "Shift";
 
@@ -49,19 +43,14 @@ export const PAN_BUTTONS = [1, 2];
 /** 複数選択の同時押しキー（`ReactFlow.multiSelectionKeyCode`） */
 export const MULTI_SELECT_KEYS = ["Control", "Meta"];
 
-/**
- * 表示用にキーを畳む。`["d", "D"]` は割り当てとしては 2 つでも、
- * ユーザーにとっては 1 つの「D」でしかない。
- */
+/** 表示用に大文字・小文字を 1 つへ畳む */
 export const displayKeys = (keys: readonly string[]): string[] => [
   ...new Set(keys.map((key) => (key.length === 1 ? key.toUpperCase() : key))),
 ];
 
 export type ShortcutRow = {
-  /** キーやマウス操作。複数あれば「/」で区切って並べる */
   keys: readonly string[];
   action: string;
-  /** 補足（なぜそのキーなのか・どこに効くのか） */
   note?: string;
 };
 
@@ -70,13 +59,6 @@ export type ShortcutGroup = {
   rows: readonly ShortcutRow[];
 };
 
-/**
- * ヘルプに出す操作一覧。
- *
- * キーボードだけでなくマウス操作も同じ表に載せる。**初見でいちばん困るのは
- * 「画面が動かせない」**（素の左ドラッグが範囲選択に取られている）であって、
- * それはキーボードショートカットの表には現れない。
- */
 export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
     title: "配置と編集",
@@ -96,11 +78,6 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
         action: "配置を整列",
         note: "選択中があればそれだけ、無ければ全体",
       },
-      /*
-       * 揃える（design.md §8.13）。**キーは割り当てていない。** 8 種類あり、
-       * 無修飾キーは D / F / L / S で埋まっている（Ctrl 併用はブラウザに
-       * 取られる・§8.9）。操作バーからしか辿り着けないので、ここに書く。
-       */
       {
         keys: ["操作バーの「揃える」"],
         action: "選択した部品を揃える・均等に並べる",
@@ -113,6 +90,21 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
     title: "画面と選択",
     rows: [
+      {
+        keys: displayKeys(COMPONENT_PANEL_KEYS),
+        action: "部品パネルを開閉",
+        note: "左側だけを開閉。閉じたぶんキャンバスが広がる",
+      },
+      {
+        keys: displayKeys(PROPERTIES_PANEL_KEYS),
+        action: "プロパティパネルを開閉",
+        note: "右側だけを開閉。閉じたぶんキャンバスが広がる",
+      },
+      {
+        keys: displayKeys(MAIN_VIEW_KEYS),
+        action: "左右パネルをまとめて開閉",
+        note: "閉じると上部操作バーを残してキャンバスだけを最大表示。もう一度押すと両方戻る",
+      },
       {
         keys: ["ドラッグ"],
         action: "範囲選択",
@@ -140,7 +132,6 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
         note: "操作バーの ▶ / ■ と同じ。停止すると押下状態と励磁状態は捨てられる",
       },
       {
-        // 無修飾キーは D / F / L / S で埋まっているので割り当てない
         keys: ["操作バーの「⚡ 経路確認」"],
         action: "動かさずに電位の届く範囲を見る",
         note: "電源から電位が届いている線を破線で塗り、止まっている接点を右の一覧に端子番号で出す。スイッチは倒せるが、リレーの接点は動かない —— 動作した先は ▶ で確認する",
@@ -162,14 +153,6 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       },
     ],
   },
-  /**
-   * タッチ操作（design.md §8.12）。
-   *
-   * **キーボードとマウスの表だけでは足りない。** 指の端末では割り当てが
-   * 変わる —— D&D が使えず（タップで置く）、素の 1 本指ドラッグは範囲選択
-   * ではなく画面移動になる。Delete キーが無いので、削除の唯一の経路が
-   * 操作バーのボタンになることも、ここに書かないと辿り着けない。
-   */
   {
     title: "タッチ操作（スマートフォン・タブレット）",
     rows: [

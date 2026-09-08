@@ -15,6 +15,7 @@ import {
 import { componentRegistry } from "@/circuit/definitions";
 import { simulate } from "@/circuit/engine";
 import type { CircuitConnection, CircuitDocument } from "@/circuit/types";
+import { operationKey } from "@/circuit/types";
 
 const wire = (
   id: string,
@@ -207,6 +208,63 @@ describe("buildSimulationView", () => {
       result.warnings.some((warning) => warning.code === "power-short-circuit"),
     ).toBe(true);
     expect(view.wireOf.get("w-short")).toBe("short");
+  });
+});
+
+describe("調光コントローラの channelVolts 表示（design.md §4.17・§5.17）", () => {
+  /**
+   * 操作卓のフェーダーを動かしても、コントローラ本体の電圧表示が
+   * 既定値（10V）のまま変わらなかった不具合の回帰テスト。
+   *
+   * `buildSimulationView()` の `channelVolts` は、電気的な結果
+   * （`result.analog.signalOf`）とは別の関数（インスタンスの手動設定値
+   * だけを読む `channelVoltsOf()`）で算出していたため、通信で受けた値が
+   * 表示に反映されていなかった。ダウンストリームの負荷（ランプ等）は
+   * 正しく動いていても、本体の数字だけが嘘をつく形になっていた。
+   */
+  const CONSOLE = "dimming-console";
+  const CONTROLLER = "dimming-controller-16ch";
+
+  const panel: CircuitDocument = {
+    version: 1,
+    components: [
+      { id: "cp", definitionId: CONSOLE, label: "操作卓", position: at(0, 0) },
+      { id: "c1", definitionId: CONTROLLER, label: "C1", position: at(400, 0) },
+    ],
+    connections: [
+      wire("w-comm-plus", ["cp", "7"], ["c1", "22"]),
+      wire("w-comm-minus", ["cp", "8"], ["c1", "23"]),
+      wire("w-comm-gnd", ["cp", "9"], ["c1", "21"]),
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+
+  const viewWithFader = (percent: number | undefined) => {
+    const deviceLevels =
+      percent === undefined
+        ? new Map<string, number>()
+        : new Map([[operationKey("cp", "fader1"), percent]]);
+    const result = simulate(panel, componentRegistry, {
+      pressedSwitches: new Set(),
+      deviceLevels,
+    });
+    return buildSimulationView(panel, componentRegistry, result, new Set());
+  };
+
+  const voltsOfChannel1 = (view: ReturnType<typeof viewWithFader>) =>
+    view.deviceOf
+      .get("c1")
+      ?.channelVolts?.find((channel) => channel.id === "1")?.volts;
+
+  it("フェーダーを動かすと本体表示の V も動く", () => {
+    // 逆特性：フェーダー 0% は消灯側（10V）、100% は全灯側（0V）
+    expect(voltsOfChannel1(viewWithFader(0))).toBe(10);
+    expect(voltsOfChannel1(viewWithFader(100))).toBe(0);
+    expect(voltsOfChannel1(viewWithFader(70))).toBeCloseTo(3, 5);
+  });
+
+  it("操作していないフェーダーは既定 0%（消灯側の 10V）のまま", () => {
+    expect(voltsOfChannel1(viewWithFader(undefined))).toBe(10);
   });
 });
 

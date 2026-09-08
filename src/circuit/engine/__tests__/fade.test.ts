@@ -440,6 +440,9 @@ describe("フェード中に接点が動く（カットリレー）", () => {
         [
           wire("DIMC:1", "LC:IN1"),
           wire("DIMC:21", "LC:ING"),
+          // ライトコントローラの内部回路自体は DC24V/GND で動く（design.md §5.17）
+          wire("PS2:plus", "LC:24V"),
+          wire("PS2:zero", "LC:GND"),
           wire("PS2:plus", "LC:CRG"),
           wire("LC:CR1", "L2:1"),
           wire("L2:2", "PS2:zero"),

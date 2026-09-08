@@ -489,6 +489,7 @@ export const simulate = (
       document,
       definitions,
       nets.netOf,
+      netState,
       effectiveVolts,
       communication.levels,
     );

@@ -75,7 +75,7 @@ export const inspectWiring = (
     ...detectAnalogReferenceMismatch(
       document,
       definitions,
-      resolveAnalog(document, definitions, lookup.netOf),
+      resolveAnalog(document, definitions, lookup.netOf, lookup.netState),
     ),
     /*
      * 通信線の配線（§5.19）。片側だけ・＋と − が逆・基準（GND）が共通でない。

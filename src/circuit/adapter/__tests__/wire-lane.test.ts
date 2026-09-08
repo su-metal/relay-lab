@@ -574,4 +574,48 @@ describe("buildWireLanes — 部品を避ける", () => {
     const shift = buildWireLanes(document, componentRegistry).get("w1") ?? 0;
     expect(Math.abs(shift)).toBeLessThanOrEqual(200);
   });
+
+  it("上下の端子どうしで、間の部品を跨いでいる幹線は高さがずれていても避ける", () => {
+    /*
+     * 端子台を縦に 3 台並べ、上端の端子台の下辺 → 下端の端子台の上辺を直結する。
+     * 途中の端子台がちょうど間に挟まる —— ここまでは「間に挟まった部品」の
+     * テストと同じだが、**下端の端子台だけ x を 5px ずらす。**
+     *
+     * 実際のドラッグ配置では x がぴったり揃うことはまず無い。ずれた瞬間に
+     * `getSmoothStepPath` は「端子ごとの高さのまま相手の真横まで伸びる、
+     * 端子の x に貼り付いた縦の助走」を使う経路になり、動かせる中点（横線）は
+     * 助走のあいだの短い区間でしかない。中点だけをずらす旧実装では、
+     * 助走そのものが間の端子台を突っ切ったまま残っていた。
+     */
+    const tb = componentRegistry.get("terminal-block-6p")!;
+    const width = tb.visual.width;
+    const height = tb.visual.height;
+    const gap = 300;
+
+    const document: CircuitDocument = {
+      version: 1,
+      components: [
+        { id: "top", definitionId: "terminal-block-6p", position: { x: 0, y: 0 } },
+        { id: "mid", definitionId: "terminal-block-6p", position: { x: 0, y: height + gap } },
+        {
+          id: "bot",
+          definitionId: "terminal-block-6p",
+          position: { x: 5, y: 2 * (height + gap) },
+        },
+      ],
+      // top の下辺の端子 4 → bot の上辺の端子 1。mid がちょうど間に挟まる
+      connections: [wire("w1", ["top", "4"], ["bot", "1"])],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+
+    const terminal4 = tb.terminals.find((t) => t.id === "4")!;
+    const naturalX = terminal4.position.x * width;
+    // そもそも間の端子台（mid, x: 0〜width）の本体を通る位置に立っていること
+    const insideMid = (x: number) => x > 0 && x < width;
+    expect(insideMid(naturalX)).toBe(true);
+
+    const shift = buildWireLanes(document, componentRegistry).get("w1") ?? 0;
+    expect(shift).not.toBe(0);
+    expect(insideMid(naturalX + shift)).toBe(false);
+  });
 });

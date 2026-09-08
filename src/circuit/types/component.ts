@@ -156,6 +156,37 @@ export type RelayDefinition = {
   operations?: readonly DeviceOperation[];
   /** 接点を動かすために受ける調光入力。`AnalogTrigger.inputId` から参照する */
   analogInputs?: readonly AnalogInputChannel[];
+  /**
+   * `analogInputs` を読む内部回路が要る外部電源。**省略可能。**
+   *
+   * カットリレーはコイルを持たないが、0–10V を読んでカットリレーを駆動する
+   * 内部回路自体は実機で DC 電源が要る。ここが `polarityAcross()` で
+   * 電位差なし（`"none"`）と判定される間、`analogInputs` は信号の有無に
+   * かかわらず未接続時のレベルとして扱われる（design.md §5.17）。
+   *
+   * **`coil` とは別物。** 極性の向きや逆接の可否までは判定しない —— 実機の
+   * 内部回路がどこまで保護されているかのデータが無いので、`polarity` は
+   * 持たせず「電位差があるか」だけを見る（CLAUDE.md 設計原則 6 と同じ、
+   * 無いものは検査しない考え方）。
+   */
+  power?: {
+    positiveTerminal: string;
+    negativeTerminal: string;
+  };
+  /**
+   * `analogInputs` を「PWM に変換して」出す調光出力。**省略可能。**
+   *
+   * ライトコントローラのように、受けた 0–10V をそのまま接点で終わらせず
+   * 別端子へ変換して出す実機がある。波形（PWM のデューティ比）そのものは
+   * 扱わない（CLAUDE.md「実装できない制約」）ので、電圧としては
+   * **入力側が読んだ最終的な明るさ（%）をそのまま表す**（design.md §5.17）。
+   *
+   * **`power` が必須。** ここは内部回路が変換して出す信号なので、`power`
+   * が届いていない間は 1 本も出さない —— 未給電の LC を挟んだ先の
+   * 調光ランプ・調光器は「LC が繋がっていない」のと同じ見え方になる。
+   * `power` を持たない `analogOutputs` は無視される（出しようがない）。
+   */
+  analogOutputs?: readonly RelayAnalogOutputChannel[];
   contacts: RelayContact[];
 };
 
@@ -394,6 +425,25 @@ export type AnalogInputChannel = {
   curve: AnalogCurve;
   /** 信号線が未接続のときに入力段が示すレベル（V） */
   unconnectedVolts: number;
+};
+
+/**
+ * `RelayDefinition.analogInputs` を変換して出す調光出力の 1 回路
+ * （design.md §5.17）。
+ *
+ * `AnalogOutputChannel`（`analog-source` が持つ、インスタンスの設定を
+ * そのまま出す出力）とは別物 —— こちらは値を持たず、`fromInputId` が指す
+ * `analogInputs` の**結果**をそのまま変換して出す。
+ */
+export type RelayAnalogOutputChannel = {
+  /** 定義内で一意な ID。原則として端子番号と同じ文字列 */
+  id: string;
+  /** どの `RelayDefinition.analogInputs` の結果を変換して出すか */
+  fromInputId: string;
+  /** 変換した電圧を出す端子 */
+  signalTerminal: string;
+  /** 系統の呼び名。表示だけに使い、エンジンは読まない */
+  label?: string;
 };
 
 export type DimmerSettings = {

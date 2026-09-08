@@ -114,7 +114,7 @@ export type OpenContacts = ReadonlyMap<string, ReadonlySet<string>>;
  * 書き直すと接点の開閉規則が 2 箇所に散る。判定はここ 1 箇所に閉じる。
  */
 /**
- * 列挙した端子を 1 本の鎖で繋ぐペア。端子台と、調光出力のコモン群で使う。
+ * 列挙した端子を 1 本の鎖で繋ぐペア。調光出力のコモン群で使う。
  *
  * 総当たり（n²）ではなく隣どうしだけを返す。Union-Find は推移的なので
  * 鎖で繋げば全体が 1 つのネットになり、端子が増えても線形で済む。
@@ -125,6 +125,20 @@ const chainPairs = (terminals: readonly string[]): TerminalPair[] => {
     pairs.push([terminals[i - 1], terminals[i]]);
   }
   return pairs;
+};
+
+/**
+ * 上段・下段の順に列挙された端子台を、同じ列どうしの独立した中継ペアにする。
+ * 20P なら 1–11、2–12、…、10–20。異なる列どうしは導通しない。
+ */
+export const terminalFeedThroughPairs = (
+  terminals: readonly string[],
+): TerminalPair[] => {
+  const half = Math.floor(terminals.length / 2);
+  if (half === 0 || terminals.length % 2 !== 0) return [];
+  return terminals
+    .slice(0, half)
+    .map((id, index) => [id, terminals[index + half]] as TerminalPair);
 };
 
 export const conductingPairs = (
@@ -151,10 +165,7 @@ export const conductingPairs = (
         operatedContacts?.get(componentId),
       );
     case "terminal":
-      // 端子台は全端子が常時導通する。先頭端子に順に繋げば連結成分は 1 つになる
-      return electrical.terminals
-        .slice(1)
-        .map((id) => [electrical.terminals[0], id] as TerminalPair);
+      return terminalFeedThroughPairs(electrical.terminals);
     case "power":
     case "ac-dc-power-supply":
     case "lamp":

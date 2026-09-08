@@ -6,7 +6,7 @@
  * 実行時状態が混入し、Undo 履歴も汚れる（design.md §7）。
  */
 
-import type { DimmerSettings } from "./component";
+import type { ComponentDefinition, DimmerSettings } from "./component";
 import type { CircuitConnection } from "./connection";
 
 /**
@@ -32,6 +32,9 @@ export const DEFAULT_LAMP_COLOR: LampColor = "yellow";
 export const isLampColor = (value: unknown): value is LampColor =>
   typeof value === "string" && (LAMP_COLORS as readonly string[]).includes(value);
 
+/** 部品 1 個の表示寸法。キャンバス座標系の px */
+export type ComponentSize = { width: number; height: number };
+
 export type CircuitComponentInstance = {
   /** インスタンス ID。回路内で一意 */
   id: string;
@@ -40,6 +43,14 @@ export type CircuitComponentInstance = {
   /** "RY1" "S1" などのユーザー付与名 */
   label?: string;
   position: { x: number; y: number };
+  /**
+   * ユーザーが変更した表示寸法。省略時は `definition.visual` の既定寸法。
+   *
+   * **見た目だけの属性で、電気的な意味は一切持たない。** 端子座標は定義側で
+   * 0〜1 の相対値として持つため、箱を広げても端子 ID や接続は変わらない。
+   * 定義の既定寸法を安全な最小値とし、それより小さい値は保存・表示しない。
+   */
+  size?: ComponentSize;
   /**
    * 左右反転して描くか（design.md §8.1）。省略は反転なし。
    *
@@ -122,6 +133,38 @@ export type CircuitComponentInstance = {
    * 実機の使い方が再現できない（`presetMs` と同じ考え方）。
    */
   triggerPercents?: Readonly<Record<string, number>>;
+};
+
+/**
+ * 保存値を定義の安全な最小寸法へ丸める。既定寸法そのものなら省略形へ戻す。
+ *
+ * 既定寸法を最小にするのは、各部品の端子ラベル・図記号・見出しがその寸法で
+ * 読めることを定義作成時に確認済みだから。汎用の固定 px を別に置くと、型番を
+ * 追加するたびに「定義では読めるのにリサイズでは潰れる」別基準が生まれる。
+ */
+export const normalizeComponentSize = (
+  definition: Pick<ComponentDefinition, "visual">,
+  size: ComponentSize,
+): ComponentSize | undefined => {
+  const width = Math.max(definition.visual.width, size.width);
+  const height = Math.max(definition.visual.height, size.height);
+  return width === definition.visual.width && height === definition.visual.height
+    ? undefined
+    : { width, height };
+};
+
+/** インスタンスに実際に使う寸法。壊れた旧データが来ても既定寸法より小さくしない */
+export const componentSizeOf = (
+  instance: Pick<CircuitComponentInstance, "size">,
+  definition: Pick<ComponentDefinition, "visual">,
+): ComponentSize => {
+  const normalized = instance.size
+    ? normalizeComponentSize(definition, instance.size)
+    : undefined;
+  return normalized ?? {
+    width: definition.visual.width,
+    height: definition.visual.height,
+  };
 };
 
 export type CircuitDocument = {

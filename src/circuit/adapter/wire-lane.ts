@@ -19,13 +19,21 @@
  * ここが返すのは「幹線をどれだけ動かすか」の px だけで、描画は
  * `components/edges/WireEdge.tsx` が `centerX` / `centerY` に足して行う。
  *
- * ## 真っ直ぐ向かい合う配線だけは例外（`straightRunPath`）
+ * ## 向かい合って進む配線は経路を自前で組む（`straightRunPath`）
  *
  * 両端の端子が同じ高さに並ぶと `getSmoothStepPath` は**直線**を返し、
  * `centerX` / `centerY` をいくら動かしても線は 1 px も動かない。電源の 0V
  * レールのように同じ高さの端子へ何本も渡す配線がまさにこれで、複数本が
  * ピクセル単位で完全に重なる。**重なった線は後に描かれた 1 本しか見えない**
  * ので、電流の向き（§5.10）も自己保持の破線（§5.9）も消える。
+ *
+ * **高さが揃っていなくても、向かい合ったまま進む配線は同じ扱いにする。**
+ * `getSmoothStepPath` はこの形を「端子から真っ直ぐ出て、端子ごとの高さのまま
+ * 相手の真横まで走り、そこで初めて中点の高さへ 1 回だけ曲がる」経路として組む
+ * —— 曲がる位置（`centerX` / `centerY`）は 2 本の助走のあいだに立つ**短い**
+ * 区間でしかなく、**助走そのもの（両端の間をほぼ埋める長さになりうる）は
+ * 動かせない。** 部品が助走の上に乗ると、中点をどれだけ避けても助走が
+ * 部品を突っ切ったまま残る（design.md §8.7 のバグ報告）。
  *
  * この形だけは経路を自前で組む —— 端子から真っ直ぐ出て、レーンぶん横へ逃げ、
  * 平行に走って、元の高さへ戻る。角の丸めは `getSmoothStepPath` と同じ規則で
@@ -40,6 +48,7 @@ import type {
   TerminalRef,
   TerminalSide,
 } from "@/circuit/types";
+import { componentSizeOf } from "@/circuit/types";
 
 import { layoutTerminals } from "./reactflow";
 import type { Point } from "./selection";
@@ -76,6 +85,9 @@ const CORNER_RADIUS = 5;
  *
  * 0 と比べないのは、レーンを決めるここ（部品の位置＋端子の相対座標）と
  * 描画側（React Flow が測った Handle の座標）で末尾の桁がずれうるため。
+ *
+ * **左右の端子どうしにだけ使う**（`trunkOf` を参照）。上下の端子どうしは
+ * 高さがずれていても常に走行として扱うので、この基準は要らない。
  */
 const SPAN_EPSILON = 0.5;
 
@@ -90,12 +102,11 @@ const SPAN_EPSILON = 0.5;
 export const STRAIGHT_LANE_STEP = 16;
 
 /**
- * 真っ直ぐな配線を逃がせる上限。
+ * 真っ直ぐな配線を重なり回避で逃がせる上限。
  *
- * 幹線をずらす場合と違って経路が破綻する限界は無いが、**離しすぎると
- * 線が部品の並びから浮いて、どの端子から出ているのか読めなくなる。**
- * ±2 レーン（±32px）まで＝ 5 本までは確実に離れる。
- * それ以上混んだ束では一部が同じ道に残る。
+ * これは「複数配線の見分け」のための上限で、**部品回避の上限ではない。**
+ * リサイズ後の部品は任意に大きくなり得るため、障害物を避ける処理では
+ * この値とは別に必要なだけ外へ逃がす。
  */
 const STRAIGHT_ROOM = STRAIGHT_LANE_STEP * 2;
 
@@ -111,13 +122,13 @@ const MIN_JOG_RUN = 24;
 const COMPONENT_CLEARANCE = 16;
 
 /**
- * 部品を避けるために動かせる上限（px）。
+ * 自前で組む迂回経路には幾何学的な上限が無い。
  *
- * いちばん大きい部品（MY4N は 260×240）を回り込めるだけの幅が要る。
- * これを超えるなら**避けずに諦める** —— それ以上引き回すと、線がどの端子から
- * 出ているのか追えなくなり、跨いでいるより読みにくい。
+ * 以前は最大 320px で諦めていたが、部品リサイズ導入後は 320px を超える箱も
+ * 正常な状態になった。そこで「大きいから突っ切る」という例外を作らず、
+ * `clearShift` が求めた最寄りの空き位置まで必ず逃がす。
  */
-const MAX_DETOUR = 320;
+const UNBOUNDED_DETOUR = Number.POSITIVE_INFINITY;
 
 /** 端子の辺 → 配線が出ていく向き（`getSmoothStepPath` の `handleDirections` と同じ） */
 const SIDE_DIRECTION: Record<TerminalSide, Point> = {
@@ -168,6 +179,7 @@ const anchorLookup = (
     if (!instance) return null;
     const definition = registry.get(instance.definitionId);
     if (!definition) return null;
+    const size = componentSizeOf(instance, definition);
     // 反転を必ず通す。座標だけでなく辺も鏡像になっており、
     // 辺を取り違えると幹線の向きの判定ごと裏返る（design.md §8.1）
     const terminals = layoutTerminals(definition, instance.flipped === true);
@@ -175,8 +187,8 @@ const anchorLookup = (
     if (!terminal) return null;
     return {
       point: {
-        x: instance.position.x + terminal.position.x * definition.visual.width,
-        y: instance.position.y + terminal.position.y * definition.visual.height,
+        x: instance.position.x + terminal.position.x * size.width,
+        y: instance.position.y + terminal.position.y * size.height,
       },
       side: terminal.side,
     };
@@ -190,8 +202,22 @@ const anchorLookup = (
  * （`getDirection` は `sourcePosition` しか見ない）。ここを「横に長ければ縦の幹線」
  * のような当て推量にすると、実際の描画と違う幹線をずらして重なりが解けない。
  *
- * 向かい合った端子どうしで、しかも相手へ**背を向けて**出る配線（回り込む形）だけは
+ * 向かい合った端子どうしで、しかも相手に**背を向けて**出る配線（回り込む形）だけは
  * 対象から外す。`getSmoothStepPath` が中点で動かせる形なので、従来の幹線として扱う。
+ *
+ * **上下の端子どうしで、相手のほうへ進む形だけは、高さが揃っていなくても
+ * 走行として扱う。** `getDirection`（React Flow 内部）は上下の端子では常に
+ * 「主方向は縦」と決め打つので、この形の経路は「端子ごとの高さのまま相手の
+ * 真横まで縦に伸びる 2 本の助走 → そのあいだを繋ぐ短い横線（中点の高さ）」
+ * になる。**動かせるのは短い横線の高さだけで、助走そのもの（端子の x に
+ * 貼り付いたまま、両端の間をほぼ埋める長さになりうる）は動かない。** 部品が
+ * 助走の上に乗ると、中点をどれだけ避けても助走のほうが部品を突っ切ったまま
+ * 残る（design.md §8.7 のバグ報告 —— 端子台の上下端子を突っ切る配線）。
+ *
+ * **左右の端子どうしはこの問題が起きない**（`getDirection` が「主方向は横」と
+ * 決め打つので、動かせる中点＝縦の助走のほうが長い区間になる）。高さが
+ * ぴったり揃った場合だけ、直線に潰れて動かせなくなるので `SPAN_EPSILON` で
+ * 従来どおり走行に回す。
  */
 const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   const fromDir = SIDE_DIRECTION[from.side];
@@ -219,18 +245,17 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
   const facing = fromDir[axis] * toDir[axis] === -1;
 
   /*
-   * **`centerX` / `centerY` では動かせない形**（design.md §8.7）。
+   * **`centerX` / `centerY` では動かせない、または動かしても部品を避けきれない形**
+   * （design.md §8.7、判定の理由は上のコメントを参照）。
    *
-   * - 向かい合っていて真っ直ぐ並ぶ ―― 幹線の長さが 0。直線が返るだけで
-   *   中点を動かしても線は 1 px も動かない
-   * - **向かい合っていない**（同じ辺どうし・辺が直交） ―― `getSmoothStepPath` は
-   *   そもそも中点を使わず、**決まった高さをまっすぐ走る。** 電源のレールから
-   *   複数の負荷へ渡す配線がこれで、走行が全部同じ高さに立って完全に重なる
-   *
-   * どちらも走行そのものを幹線とみなし、直交方向へ逃がす（`straightRunPath`）。
+   * - 向かい合っていない（同じ辺どうし・辺が直交） ―― 常に走行として扱う
+   * - 上下の端子どうしで、相手のほうへ進む形 ―― 高さのずれによらず常に走行
+   * - 左右の端子どうしで、相手のほうへ進む形 ―― 高さがぴったり揃ったときだけ走行
    */
   const straightRun =
-    !facing || (alongAxis && Math.abs(fromGap[cross] - toGap[cross]) <= SPAN_EPSILON);
+    !facing ||
+    (alongAxis &&
+      (!horizontalExit || Math.abs(fromGap[cross] - toGap[cross]) <= SPAN_EPSILON));
 
   if (straightRun) {
     /*
@@ -253,10 +278,15 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
       room: run >= MIN_JOG_RUN ? STRAIGHT_ROOM : 0,
       step: STRAIGHT_LANE_STEP,
       // 迂回の折れ 2 つが収まらない短い走行は、そもそも曲げられない
-      detour: run >= MIN_JOG_RUN ? MAX_DETOUR : 0,
+      detour: run >= MIN_JOG_RUN ? UNBOUNDED_DETOUR : 0,
     };
   }
 
+  /*
+   * ここに残るのは 2 つ。**向かい合っているのに相手に背を向けて出る形**（回り込み、
+   * 上下・左右どちらもありうる）と、**左右の端子どうしで相手のほうへ進み、
+   * 高さがわずかにずれている形**（`straightRun` の `SPAN_EPSILON` に収まらない）。
+   */
   const vertical = horizontalExit ? alongAxis : !alongAxis;
   const spanAxis = vertical ? "y" : "x";
   const coordAxis = vertical ? "x" : "y";
@@ -275,20 +305,22 @@ const trunkOf = (id: string, from: Anchor, to: Anchor): Trunk | null => {
     /*
      * 部品を避けるために動かせる幅。**回り込む形だけは広く取る。**
      *
-     * - **相手を向いて出る形**（`alongAxis`）—— 幹線は両端の間に立つので、
+     * - **相手を向いて出る形**（`alongAxis`。左右の端子どうしで高さがわずかに
+     *   ずれている場合だけ、ここに残る）—— 幹線は両端の間に立つので、
      *   そこから出すと経路が折り返す。`room` が限界
      * - **相手に背を向けて出る形**（回り込み）—— 幹線は両端の外を通る
      *   迂回線そのもので、どこへ置いても形が崩れない。**両端の座標が
      *   揃っていると `room` が 0 になる**（`|Δ|/2` が 0）が、これはむしろ
-     *   本体を真っ直ぐ突っ切る配置 —— 同じ部品の上辺と下辺を結ぶ線が
-     *   まさにこれで、動かす幅が無いのではなく**いちばん動かす必要がある**
+     *   本体を真っ直ぐ突っ切る配置 —— 同じ部品の上辺と下辺を結ぶ線（上下の
+     *   端子どうし）がまさにこれで、動かす幅が無いのではなく**いちばん
+     *   動かす必要がある**
      */
     detour: alongAxis
       ? Math.max(
           0,
           Math.abs(toGap[coordAxis] - fromGap[coordAxis]) / 2 - CORNER_SLACK,
         )
-      : MAX_DETOUR,
+      : UNBOUNDED_DETOUR,
   };
 };
 
@@ -343,7 +375,12 @@ export type StraightRunParams = {
  *
  * 対象は 2 つ（`trunkOf` の `straightRun` と同じ条件）。
  *
- * - **真っ直ぐ向かい合った 2 端子**（右 → 左で高さも同じ）。直線が描かれる
+ * - **向かい合って相手のほうへ進む 2 端子**（右 → 左で相手が右にいる）。
+ *   **上下の端子どうしは高さがずれていても常にこの形。** 左右の端子どうしは
+ *   高さがぴったり揃って直線に潰れたときだけ（`SPAN_EPSILON`）。走行は
+ *   端子ごとの高さのまま相手の真横まで伸び、相手の高さへ 1 回だけ寄る
+ *   （**その走行の位置は出口側** `runCoord = sourceGap[cross]` —— `alongAxis`
+ *   が真の場合はここで固定）
  * - **向かい合っていない 2 端子**（右 → 右、辺が直交）。`getSmoothStepPath` は
  *   中点を使わず、決まった高さをまっすぐ走る。**その高さは、出口が相手を
  *   向いていれば出口側・背を向けていれば相手側**（`runCoord`）。電源のレールへ
@@ -382,11 +419,15 @@ export const straightRunPath = ({
   const alongAxis = fromDir[axis] === dir;
   const facing = fromDir[axis] * toDir[axis] === -1;
 
-  // 向かい合っているのに高さがずれていれば、中点をずらす従来の経路で足りる
+  /*
+   * `trunkOf` の `straightRun` とまったく同じ条件（判定の理由はそちらのコメント）。
+   * 回り込み（`!alongAxis`）は従来の幹線で足りる。左右の端子どうしは、
+   * 高さがぴったり揃ったとき（`SPAN_EPSILON` 以内）だけこちらの走行が要る。
+   */
   if (
     facing &&
     (!alongAxis ||
-      Math.abs(sourceGap[cross] - targetGap[cross]) > SPAN_EPSILON)
+      (horizontal && Math.abs(sourceGap[cross] - targetGap[cross]) > SPAN_EPSILON))
   ) {
     return null;
   }
@@ -508,8 +549,9 @@ const assignLanes = (
 /**
  * 部品 1 個が図面で占める矩形。
  *
- * 端子の丸は縁の上に乗るので、矩形そのものは `visual` の寸法どおりでよい
- * （避ける余白は `COMPONENT_CLEARANCE` で別に取る）。
+ * 端子の丸は縁の上に乗るので、矩形そのものは実際の表示寸法どおりでよい
+ * （避ける余白は `COMPONENT_CLEARANCE` で別に取る）。リサイズ後は
+ * `definition.visual` ではなくインスタンスの `size` を含む実寸を使う。
  */
 type Rect = { left: number; right: number; top: number; bottom: number };
 
@@ -525,11 +567,12 @@ const componentRects = (
     const definition = registry.get(instance.definitionId);
     // 定義が引けない部品は描画もされない（`toDeviceNodes`）。避ける対象にもしない
     if (!definition) continue;
+    const size = componentSizeOf(instance, definition);
     rects.push({
       left: instance.position.x,
-      right: instance.position.x + definition.visual.width,
+      right: instance.position.x + size.width,
       top: instance.position.y,
-      bottom: instance.position.y + definition.visual.height,
+      bottom: instance.position.y + size.height,
     });
   }
   return rects;
@@ -619,8 +662,9 @@ const escapeTo = (
  * 逃がしたあとに**レーン番号ぶん外へ積む。** 同じ部品を避ける配線が複数あると
  * 全部が本体のすぐ外の同じ位置へ寄ってしまい、せっかく解いた重なりが戻る。
  *
- * `detour` を超えないと抜けられないなら **`base` のまま諦める。** 無理に
- * 引き回した線は、跨いでいる線より読みにくい（design.md §8.7）。
+ * `detour` を超えないと抜けられないなら **`base` のまま諦める。** ただし自前で
+ * 組む走行・回り込みは `UNBOUNDED_DETOUR` なので、リサイズした大きな部品を理由に
+ * 諦めることはない。幾何学的に中点を動かせない形だけ `room` が上限になる。
  */
 const clearShift = (
   trunk: Trunk,

@@ -41,6 +41,52 @@
   font-weight: 700;
 }
 
+/*
+ * 画像で保存（design.md §8.15）。見出しの右、閉じるボタンの手前に置く。
+ * 図そのものの操作なので、図の外（操作バー）へは出さない ——
+ * ラダー図を開いていないと「何を保存するのか」が決まらない。
+ */
+.actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.save {
+  padding: 0 8px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--panel);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.save:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.save:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 保存できなかったときの断り。押しても何も起きない状態を作らない */
+.saveError {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
 .close {
   width: 28px;
   height: 28px;

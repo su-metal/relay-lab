@@ -72,6 +72,7 @@ const conducts = (result: SimulationResult, a: string, b: string): boolean =>
 const AC = "power-ac100v";
 const DC = "power-dc24v";
 const LAMP = "lamp-dc24v";
+const DIM_LAMP = "lamp-dimmable-ac100v";
 const CONTROLLER = "dimming-controller-16ch";
 const LIGHT_CTRL = "light-controller-4ch";
 const CONSOLE = "dimming-console";
@@ -111,6 +112,9 @@ describe("US-AR カットリレーが明るさで動く", () => {
         wire("C1:3", "LC:IN3"),
         wire("C1:4", "LC:IN4"),
         wire("C1:21", "LC:ING"),
+        // ライトコントローラの内部回路自体は DC24V/GND で動く（design.md §5.17）
+        wire("PSD:plus", "LC:24V"),
+        wire("PSD:zero", "LC:GND"),
         wire("PSD:plus", "LC:CRG"),
         wire("LC:CR1", "L1:1"),
         wire("L1:2", "PSD:zero"),
@@ -163,6 +167,180 @@ describe("US-AR カットリレーが明るさで動く", () => {
   it("調光信号が未接続なら全灯扱いで動作しない", () => {
     const bare = circuit([["PSD", DC], ["LC", LIGHT_CTRL]], []);
     expect(conducts(step(bare), "LC:CRG", "LC:CR1")).toBe(false);
+  });
+
+  /**
+   * **DC24V/GND が来ていなければ、内部回路自体が死んでいる。** カットリレー
+   * にコイルは無いが、0–10V を読む回路は実機で電源が要る（design.md §5.17）。
+   * 動作点を割り込む電圧を送っていても、電源が繋がっていなければ未接続と
+   * 同じ扱いになり、接点は動作しない。
+   */
+  it("電源（24V/GND）が来ていなければ、明るさに関わらず接点は動作しない", () => {
+    const noPower = circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": 10 },
+        },
+        ["LC", LIGHT_CTRL],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:21", "LC:ING"),
+        wire("PSD:plus", "LC:CRG"),
+        // 24V/GND はあえて繋がない
+      ],
+    );
+    // 10V＝0% で、動作点（既定 25%）を大きく割り込んでいるが、電源が無い
+    expect(conducts(step(noPower), "LC:CRG", "LC:CR1")).toBe(false);
+  });
+
+  /** GND だけ繋いでも（一方だけでは）電源とみなさない */
+  it("電源が片側だけでは動作しない", () => {
+    const halfPower = circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": 10 },
+        },
+        ["LC", LIGHT_CTRL],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:21", "LC:ING"),
+        wire("PSD:plus", "LC:CRG"),
+        wire("PSD:zero", "LC:GND"),
+      ],
+    );
+    expect(conducts(step(halfPower), "LC:CRG", "LC:CR1")).toBe(false);
+  });
+});
+
+describe("ライトコントローラが調光信号を変換して出す（design.md §5.17）", () => {
+  /**
+   * 調光コントローラの回路 1 → ライトコントローラの入力 1 → 出力 1 →
+   * 下流の調光ランプ。GND は LC の電源と共通にする（`RelayDefinition.power`
+   * の `negativeTerminal` が出力側の基準になる）。
+   */
+  const outputPanel = (volts: number) =>
+    circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": volts },
+        },
+        ["LC", LIGHT_CTRL],
+        ["L1", DIM_LAMP],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:21", "LC:ING"),
+        wire("PSD:plus", "LC:24V"),
+        wire("PSD:zero", "LC:GND"),
+        wire("LC:OUT1", "L1:DIM+"),
+        wire("LC:GND", "L1:DIM-"),
+      ],
+    );
+
+  it("給電されていれば、出力 1 が入力 1 と同じ明るさを伝える", () => {
+    const result = step(outputPanel(2));
+    const level = result.analog.levelOf.get("L1");
+    expect(level?.floating).toBe(false);
+    expect(level?.volts).toBe(2);
+    expect(level?.percent).toBe(80);
+  });
+
+  it("回路ごとに独立した明るさを伝える", () => {
+    const document = circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": 2, "2": 8 },
+        },
+        ["LC", LIGHT_CTRL],
+        ["L1", DIM_LAMP],
+        ["L2", DIM_LAMP],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:2", "LC:IN2"),
+        wire("C1:21", "LC:ING"),
+        wire("PSD:plus", "LC:24V"),
+        wire("PSD:zero", "LC:GND"),
+        wire("LC:OUT1", "L1:DIM+"),
+        wire("LC:GND", "L1:DIM-"),
+        wire("LC:OUT2", "L2:DIM+"),
+        wire("LC:GND", "L2:DIM-"),
+      ],
+    );
+    const result = step(document);
+    expect(result.analog.levelOf.get("L1")?.percent).toBe(80);
+    expect(result.analog.levelOf.get("L2")?.percent).toBe(20);
+  });
+
+  /**
+   * **本題。** LC に 24V/GND が無ければ、出力 1–4 は 1 本も signals に載らない。
+   * 下流の調光ランプは「LC が繋がっていない」のと同じに見え、自分自身の
+   * 未接続時レベル（この盤では全灯）へ落ちる。
+   */
+  it("電源（24V/GND）が来ていなければ、出力は下流に伝わらない（未接続扱い）", () => {
+    const document = circuit(
+      [
+        ["PSD", DC],
+        {
+          id: "C1",
+          definitionId: CONTROLLER,
+          label: "C1",
+          position: { x: 0, y: 0 },
+          channelVolts: { "1": 2 },
+        },
+        ["LC", LIGHT_CTRL],
+        ["L1", DIM_LAMP],
+      ],
+      [
+        wire("C1:1", "LC:IN1"),
+        wire("C1:21", "LC:ING"),
+        wire("LC:OUT1", "L1:DIM+"),
+        wire("PSD:zero", "L1:DIM-"),
+        // LC:24V/GND はあえて繋がない
+      ],
+    );
+    const result = step(document);
+    const level = result.analog.levelOf.get("L1");
+    const definition = componentRegistry.get(DIM_LAMP);
+    if (definition?.electrical.kind !== "lamp" || !definition.electrical.dimming) {
+      throw new Error("調光ランプの定義が読めない");
+    }
+    expect(level?.floating).toBe(true);
+    expect(level?.volts).toBe(definition.electrical.dimming.unconnectedVolts);
+  });
+
+  /**
+   * カットリレー（動作点）と出力（変換後の明るさ）は独立に動く。実機資料に
+   * 連動の記載が無いため、この 2 つは別々の判定のまま重ねてある
+   * （`lighting-system.ts` の JSDoc 参照）。
+   */
+  it("動作点を割り込んでカットリレーが動作していても、出力はそのままの明るさを出す", () => {
+    // 8V＝20%。既定の動作点 25% を割り込むのでカットリレーは動作する
+    const result = step(outputPanel(8));
+    expect(result.operatedContacts.get("LC")?.has("c1")).toBe(true);
+    expect(result.analog.levelOf.get("L1")?.percent).toBe(20);
   });
 });
 

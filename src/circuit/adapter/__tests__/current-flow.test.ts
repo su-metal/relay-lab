@@ -195,12 +195,12 @@ describe("buildCurrentFlow", () => {
     expect(flow.directionOf.get("RY1:13-PS1:zero")).toBe("forward");
   });
 
-  it("枝分かれのある並列区間には向きを出さない", () => {
+  it("対向端子の中継を通る並列区間にも向きが付く", () => {
     /*
-     * +24V からコイル 14 へ、端子台を経由する道と直結する道の 2 通り。
-     * 端子台は 6 極すべてが短絡していて TB1:1 の次数が 6 になるため、
-     * 「入口から出口へ並んだ枝の束」とは見なせない。
-     * 一方、帰り道（13 → 0V）は 1 本しかないので向きが付く。
+     * +24V からコイル 14 へ、端子台の対向端子 1–4 を経由する道と
+     * 直結する道の 2 通り。端子台は全端子共通ではなく、1–4 だけが
+     * 1 組として導通するため、通常の並列枝として向きを決められる。
+     * 帰り道（13 → 0V）も 1 本なので向きが付く。
      */
     const parallel = circuit({ PS1: POWER, TB1: BLOCK, RY1: MY4N }, [
       wire("PS1:plus", "TB1:1"),
@@ -211,9 +211,9 @@ describe("buildCurrentFlow", () => {
     const { result, flow } = flowOf(parallel);
 
     expect([...result.energizedRelays]).toEqual(["RY1"]);
-    expect(flow.directionOf.has("PS1:plus-TB1:1")).toBe(false);
-    expect(flow.directionOf.has("TB1:4-RY1:14")).toBe(false);
-    expect(flow.directionOf.has("PS1:plus-RY1:14")).toBe(false);
+    expect(flow.directionOf.get("PS1:plus-TB1:1")).toBe("forward");
+    expect(flow.directionOf.get("TB1:4-RY1:14")).toBe("forward");
+    expect(flow.directionOf.get("PS1:plus-RY1:14")).toBe("forward");
     expect(flow.directionOf.get("RY1:13-PS1:zero")).toBe("forward");
   });
 

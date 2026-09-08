@@ -21,7 +21,7 @@ import type {
   TerminalDefinition,
   TerminalSide,
 } from "@/circuit/types";
-import { terminalRefKey } from "@/circuit/types";
+import { componentSizeOf, terminalRefKey } from "@/circuit/types";
 
 import {
   EMPTY_CURRENT_FLOW,
@@ -211,7 +211,8 @@ const connectionsForComponent = (
  * 端子の実測値（handleBounds）を捨て、ノードを `visibility: hidden` に戻す。
  * こうなると **配線が消え、以後つなげなくなる。**
  *
- * 幸い部品の寸法は `visual` で確定しているので、実測を待たずにそのまま渡せる。
+ * 既定寸法とユーザーが広げた寸法はどちらもドキュメントから確定できるので、
+ * ResizeObserver の実測を待たず `style` と `measured` の両方へ同じ値を渡す。
  */
 export const toDeviceNode = (
   instance: CircuitDocument["components"][number],
@@ -223,45 +224,46 @@ export const toDeviceNode = (
     readonly ConnectedTerminalInfo[]
   > = new Map(),
   preview?: PreviewDeviceState,
-): DeviceNode => ({
-  id: instance.id,
-  type: DEVICE_NODE_TYPE,
-  position: instance.position,
-  data: {
-    definition,
-    terminals: layoutTerminals(definition, instance.flipped === true),
-    flipped: instance.flipped === true,
-    label: instance.label,
-    presetMs: instance.presetMs,
-    lampColor: instance.lampColor,
-    channelVolts: instance.channelVolts,
-    simulation: view.deviceOf.get(instance.id),
-    terminalStates: terminalStatesOf(
-      view,
-      instance.id,
-      definition.terminals.map((terminal) => terminal.id),
-    ),
-    terminalVolts: terminalVoltsFor(
-      view,
-      instance.id,
-      definition.terminals.map((terminal) => terminal.id),
-    ),
-    preview,
-    terminalConnections: connectionsForComponent(
-      terminalConnections,
-      instance.id,
-      definition.terminals.map((terminal) => terminal.id),
-    ),
-  },
-  selected,
-  measured: {
-    width: definition.visual.width,
-    height: definition.visual.height,
-  },
-  // 部品本体ではなく端子だけを接続点にする（要件 US-B）。
-  // Handle を持たない本体は connectable でも接続先にならないが、明示しておく。
-  connectable: true,
-});
+): DeviceNode => {
+  const size = componentSizeOf(instance, definition);
+  return {
+    id: instance.id,
+    type: DEVICE_NODE_TYPE,
+    position: instance.position,
+    data: {
+      definition,
+      terminals: layoutTerminals(definition, instance.flipped === true),
+      flipped: instance.flipped === true,
+      label: instance.label,
+      presetMs: instance.presetMs,
+      lampColor: instance.lampColor,
+      channelVolts: instance.channelVolts,
+      simulation: view.deviceOf.get(instance.id),
+      terminalStates: terminalStatesOf(
+        view,
+        instance.id,
+        definition.terminals.map((terminal) => terminal.id),
+      ),
+      terminalVolts: terminalVoltsFor(
+        view,
+        instance.id,
+        definition.terminals.map((terminal) => terminal.id),
+      ),
+      preview,
+      terminalConnections: connectionsForComponent(
+        terminalConnections,
+        instance.id,
+        definition.terminals.map((terminal) => terminal.id),
+      ),
+    },
+    selected,
+    style: { width: size.width, height: size.height },
+    measured: size,
+    // 部品本体ではなく端子だけを接続点にする（要件 US-B）。
+    // Handle を持たない本体は connectable でも接続先にならないが、明示しておく。
+    connectable: true,
+  };
+};
 
 /**
  * ドキュメント全体をノード配列へ。
@@ -411,7 +413,7 @@ export const connectionFromReactFlow = (
 };
 
 const refKey = (componentId: string, terminalId: string) =>
-  `${componentId} ${terminalId}`;
+  `${componentId}\u0000${terminalId}`;
 
 /**
  * 2 つの接続が同じ端子ペアか。**配線に向きはない**ので順序を無視して比べる。

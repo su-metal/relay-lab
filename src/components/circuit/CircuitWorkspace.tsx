@@ -1,31 +1,20 @@
 "use client";
 
-/**
- * 3 カラムレイアウト（design.md §8）と、狭い画面のシート切り替え（§8.12）。
- *
- * `ReactFlowProvider` をここで張っているのは、Toolbar（`fitView`）と
- * CircuitCanvas（`screenToFlowPosition`）、保存の復元（`setViewport`）が
- * 同じ React Flow インスタンスを共有する必要があるため。
- *
- * **中身を `Workspace` に分けているのはそのため。** プロバイダーを張った
- * コンポーネント自身は `useReactFlow()` を呼べないので、フックを使う層を
- * 1 段内側へ落としている。
- */
-
 import { ReactFlowProvider, useReactFlow, useStoreApi } from "@xyflow/react";
-import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
 
 import { getComponentDefinition } from "@/circuit/definitions";
 import type { ComponentDefinition } from "@/circuit/types";
+import { componentSizeOf } from "@/circuit/types";
 import { useCircuitStore } from "@/store/circuitStore";
 import { useSimulationStore } from "@/store/simulationStore";
 
 import { CircuitCanvas } from "./CircuitCanvas";
 import { ComponentPalette } from "./ComponentPalette";
+import { DetailedPropertiesPanel } from "./DetailedPropertiesPanel";
 import { HelpDialog } from "./HelpDialog";
 import { LadderDialog } from "./LadderDialog";
-import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { PathPreviewList } from "./PathPreviewList";
 import { WarningList } from "./WarningList";
@@ -35,19 +24,13 @@ import { useArrangeShortcut } from "./useArrangeShortcut";
 import { useDocumentPersistence } from "./useDocumentPersistence";
 import { useFlipShortcut } from "./useFlipShortcut";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
+import { usePanelShortcuts } from "./usePanelShortcuts";
 import { useSimulationShortcut } from "./useSimulationShortcut";
 import { useSimulationSync } from "./useSimulationSync";
 import { useCoarsePointer, useCompactLayout } from "./useViewportMode";
 import { useWiringCheck } from "./useWiringCheck";
 import styles from "./CircuitWorkspace.module.css";
 
-/**
- * 狭い画面で下から出すパネル（design.md §8.12）。
- *
- * **並びは作業の順**（置く → 中身を見る → 指摘を読む）。左右のカラムを
- * そのまま横に並べ替えただけの順（部品・プロパティ・診断）と結果は同じだが、
- * 増やすときの基準はこちら。
- */
 const SHEETS = [
   { key: "palette", label: "部品", title: "部品パレット" },
   { key: "properties", label: "プロパティ", title: "プロパティ" },
@@ -55,6 +38,28 @@ const SHEETS = [
 ] as const;
 
 type SheetKey = (typeof SHEETS)[number]["key"];
+
+type TouchGestureMode = "idle" | "pane" | "element" | "viewport";
+
+/**
+ * 1 本指で直接操作したい対象。
+ *
+ * 部品・端子・配線はもちろん、React Flow 内のボタンや凡例を触ったときまで
+ * 「空きキャンバスのドラッグ」と誤認しないよう UI も含める。
+ */
+const TOUCH_ELEMENT_SELECTOR = [
+  ".react-flow__node",
+  ".react-flow__edge",
+  ".react-flow__handle",
+  ".react-flow__controls",
+  ".react-flow__panel",
+].join(",");
+
+const isCanvasTouch = (target: EventTarget | null): target is Element =>
+  target instanceof Element && target.closest(".react-flow") !== null;
+
+const isCanvasElementTouch = (target: EventTarget | null): boolean =>
+  isCanvasTouch(target) && target.closest(TOUCH_ELEMENT_SELECTOR) !== null;
 
 export function CircuitWorkspace() {
   return (
@@ -65,45 +70,114 @@ export function CircuitWorkspace() {
 }
 
 function Workspace() {
-  // シミュレーションの再計算はここ 1 箇所からだけ駆動する（design.md §8.2）
   useSimulationSync();
-  // 保存・復元も同じく 1 箇所（design.md §8.4）
   const persistence = useDocumentPersistence();
   useHistoryShortcuts();
   useFlipShortcut();
-  // L キーで配置を整理する（design.md §8.9）。リスナーは 1 本だけ張る —
-  // 操作バーのボタンは同じ `runAutoArrange` を直接呼ぶ
   useArrangeShortcut();
-  // S キーでシミュレーションを開始・停止する（design.md §8.2）
   useSimulationShortcut();
 
-  // 範囲選択の設定は画面の操作モードで、保存対象でも履歴の対象でもない。
-  // circuitStore に混ぜず、操作バーとキャンバスがここで共有する（design.md §8.6）
   const [rangeSelectionTarget, setRangeSelectionTarget] =
     useState<RangeSelectionTarget>("both");
-
-  // ヘルプの開閉も画面の状態。保存対象でも履歴の対象でもない（design.md §8.10）
   const [helpOpen, setHelpOpen] = useState(false);
-
-  /*
-   * ラダー図の開閉（design.md §8.15）。ヘルプと同じく画面の状態で、
-   * **図そのものは保存しない** —— 配線から毎回組み直せる派生物なので、
-   * 持つと配線と食い違ったまま残る
-   */
   const [ladderOpen, setLadderOpen] = useState(false);
 
-  /**
-   * 画面モード（design.md §8.12）。**幅と入力は別々に見る。**
-   * 狭さはレイアウトを、指かどうかは置き方（D&D かタップか）を決める。
-   */
   const compact = useCompactLayout();
   const coarse = useCoarsePointer();
 
-  /** 狭い画面で開いているパネル。閉じているときは `null`（キャンバス全面） */
-  const [openSheet, setOpenSheet] = useState<SheetKey | null>(null);
+  /**
+   * タッチ操作の役割分担。
+   *
+   * React Flow / d3-zoom は `panOnDrag` が有効だと 1 本指でも Pane をパンする。
+   * ただし 2 本指のピンチ／パンも同じ touch gesture を使うため、単純に
+   * `panOnDrag={false}` にすると 2 本指まで殺してしまう。
+   *
+   * そこで touchstart は React Flow に通して gesture を登録させたまま、
+   * **空きキャンバスから始まった 1 本指の touchmove だけ** capture で止める。
+   * 2 本目が加わったら move を通すので、2 本指の中点移動＝画面パンと
+   * ピンチ＝拡大縮小はそのまま動く。部品・端子・配線から始まった 1 本指は
+   * `element` として一切止めず、ドラッグ／配線操作を優先する。
+   */
+  const touchGestureMode = useRef<TouchGestureMode>("idle");
 
-  // 窓を広げて 3 カラムへ戻ったらシートは畳む。開いたままにすると、
-  // 次に狭くしたときに前回のパネルが勝手に開いて出てくる
+  const onTouchStartCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (!isCanvasTouch(event.target)) return;
+
+      if (event.touches.length === 1) {
+        touchGestureMode.current = isCanvasElementTouch(event.target)
+          ? "element"
+          : "pane";
+        return;
+      }
+
+      if (
+        event.touches.length >= 2 &&
+        (touchGestureMode.current === "pane" ||
+          touchGestureMode.current === "viewport")
+      ) {
+        touchGestureMode.current = "viewport";
+      }
+    },
+    [],
+  );
+
+  const onTouchMoveCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (!isCanvasTouch(event.target)) return;
+
+      const mode = touchGestureMode.current;
+      const blockSingleFingerPane = mode === "pane" && event.touches.length === 1;
+      const blockSingleFingerAfterViewport =
+        mode === "viewport" && event.touches.length < 2;
+
+      if (blockSingleFingerPane || blockSingleFingerAfterViewport) {
+        // React Flow の Pane へ届かせない。touchstart / touchend は通すことで
+        // d3-zoom 側の gesture の開始・終了状態は壊さない。
+        event.stopPropagation();
+      }
+    },
+    [],
+  );
+
+  const onTouchEndCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      // 2 本指から 1 本だけ離した直後も viewport のまま保持する。
+      // 残った 1 本の move は上で止め、最後の 1 本が離れたら完全にリセットする。
+      if (event.touches.length === 0) touchGestureMode.current = "idle";
+    },
+    [],
+  );
+
+  const onTouchCancelCapture = useCallback(() => {
+    touchGestureMode.current = "idle";
+  }, []);
+
+  const [openSheet, setOpenSheet] = useState<SheetKey | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+
+  const toggleComponentPanel = useCallback(() => {
+    setPaletteOpen((current) => !current);
+  }, []);
+
+  const togglePropertiesPanel = useCallback(() => {
+    setInspectorOpen((current) => !current);
+  }, []);
+
+  const toggleAllPanels = useCallback(() => {
+    const open = !paletteOpen && !inspectorOpen;
+    setPaletteOpen(open);
+    setInspectorOpen(open);
+  }, [inspectorOpen, paletteOpen]);
+
+  usePanelShortcuts({
+    compact,
+    onToggleComponentPanel: toggleComponentPanel,
+    onTogglePropertiesPanel: togglePropertiesPanel,
+    onToggleAllPanels: toggleAllPanels,
+  });
+
   useEffect(() => {
     if (!compact) setOpenSheet(null);
   }, [compact]);
@@ -115,45 +189,30 @@ function Workspace() {
     (state) => state.selectOnlyComponent,
   );
 
-  /**
-   * パレットのタップで部品を置く（design.md §8.12）。
-   *
-   * 指の端末には HTML5 の D&D が無いので、**タップだけで置ける経路**が要る。
-   * 置き場所は「いま見えている範囲の真ん中」。座標の計算そのものは
-   * `placeAtViewportCenter()`（純粋関数）が持つ。
-   *
-   * 置いたら選択してシートを閉じる。閉じないと、置いた部品がシートの裏に
-   * 隠れて「タップしても何も起きない」ように見える。
-   */
   const placeFromPalette = useCallback(
     (definition: ComponentDefinition) => {
       const { transform, width, height } = flowStore.getState();
       const [x, y, zoom] = transform;
       const { components } = useCircuitStore.getState().document;
 
+      const occupied = components.map((component) => {
+        const componentDefinition = getComponentDefinition(component.definitionId);
+        const size = componentDefinition
+          ? componentSizeOf(component, componentDefinition)
+          : { width: 0, height: 0 };
+        return { ...component.position, ...size };
+      });
+
       const position = placeAtViewportCenter(
         { x, y, zoom },
         { width, height },
         definition.visual,
-        // 重なりは矩形で見る（左上だけ比べるとリレーの上に電源が乗る）
-        components.map((component) => ({
-          ...component.position,
-          ...(getComponentDefinition(component.definitionId)?.visual ?? {
-            width: 0,
-            height: 0,
-          }),
-        })),
+        occupied,
       );
 
       selectOnlyComponent(addComponent(definition, position));
       setOpenSheet(null);
 
-      /*
-       * 重なりを避けて右下へ流した部品は、携帯の幅ではすぐ画面の外に出る。
-       * はみ出したぶんだけ画面を寄せる（倍率は変えない）。収まっていれば
-       * `panToInclude` は同じ変換を返すので、そのときは動かさない ——
-       * 置くたびに図面がわずかに揺れると、どこを見ていたのか見失う
-       */
       const panned = panToInclude({ x, y, zoom }, { width, height }, {
         ...position,
         ...definition.visual,
@@ -167,28 +226,49 @@ function Workspace() {
 
   const inspector = (
     <>
-      <PropertiesPanel />
-      {/*
-        経路確認の一覧はモードに入っている間だけ現れる（design.md §8.14）。
-        モード外では `null` を返すので、ここに条件を書き写さない
-      */}
+      <DetailedPropertiesPanel />
       <PathPreviewList />
       <WarningList />
     </>
   );
 
+  const sidePanelsHidden = !paletteOpen && !inspectorOpen;
+
   return (
     <div className={styles.workspace} data-compact={compact || undefined}>
-      <Toolbar
-        compact={compact}
-        saveStatus={persistence.status}
-        rangeSelectionTarget={rangeSelectionTarget}
-        onRangeSelectionTargetChange={setRangeSelectionTarget}
-        onExportFile={persistence.exportToFile}
-        onImportFile={persistence.importFromFile}
-        onOpenHelp={() => setHelpOpen(true)}
-        onOpenLadder={() => setLadderOpen(true)}
-      />
+      <div className={styles.toolbarHost} data-compact={compact || undefined}>
+        {!compact && (
+          <button
+            type="button"
+            className={styles.allPanelsToggle}
+            data-active={sidePanelsHidden ? true : undefined}
+            onClick={toggleAllPanels}
+            aria-pressed={sidePanelsHidden}
+            aria-label={
+              sidePanelsHidden
+                ? "部品パネルとプロパティパネルを開く"
+                : "部品パネルとプロパティパネルを閉じる"
+            }
+            title={
+              sidePanelsHidden
+                ? "左右のパネルを開く（M）"
+                : "左右のパネルを閉じてメインだけ表示（M）"
+            }
+          >
+            ▣
+          </button>
+        )}
+        <Toolbar
+          compact={compact}
+          saveStatus={persistence.status}
+          rangeSelectionTarget={rangeSelectionTarget}
+          onRangeSelectionTargetChange={setRangeSelectionTarget}
+          onExportFile={persistence.exportToFile}
+          onImportFile={persistence.importFromFile}
+          onOpenHelp={() => setHelpOpen(true)}
+          onOpenLadder={() => setLadderOpen(true)}
+        />
+      </div>
 
       {persistence.notices.length > 0 && (
         <LoadNotices
@@ -197,32 +277,83 @@ function Workspace() {
         />
       )}
 
-      <div className={styles.columns}>
-        {/*
-          狭い画面ではキャンバスだけを残し、両脇のカラムはシートへ畳む
-          （design.md §8.12）。**畳んだパネルは描かない** —— 表示だけ消して
-          残すと、プロパティと診断がキャンバスの裏で解き続ける
-        */}
-        {!compact && (
-          <ComponentPalette
-            onPick={coarse ? placeFromPalette : undefined}
-          />
+      <div
+        className={styles.columns}
+        data-palette-collapsed={!compact && !paletteOpen ? true : undefined}
+        data-inspector-collapsed={!compact && !inspectorOpen ? true : undefined}
+        onTouchStartCapture={onTouchStartCapture}
+        onTouchMoveCapture={onTouchMoveCapture}
+        onTouchEndCapture={onTouchEndCapture}
+        onTouchCancelCapture={onTouchCancelCapture}
+      >
+        {!compact && paletteOpen && (
+          <div className={styles.paletteRegion}>
+            <button
+              type="button"
+              className={styles.paletteToggle}
+              onClick={toggleComponentPanel}
+              aria-label="部品パネルを閉じる"
+              title="部品パネルを閉じる（C）"
+            >
+              ‹
+            </button>
+            <ComponentPalette onPick={coarse ? placeFromPalette : undefined} />
+          </div>
+        )}
+
+        {!compact && !paletteOpen && inspectorOpen && (
+          <aside className={styles.paletteRail} aria-label="部品パネル">
+            <button
+              type="button"
+              className={styles.paletteToggle}
+              onClick={toggleComponentPanel}
+              aria-label="部品パネルを開く"
+              title="部品パネルを開く（C）"
+            >
+              ›
+            </button>
+          </aside>
         )}
 
         <CircuitCanvas rangeSelectionTarget={rangeSelectionTarget} />
 
-        {!compact && <div className={styles.inspector}>{inspector}</div>}
+        {!compact && inspectorOpen && (
+          <div className={styles.inspector}>
+            <button
+              type="button"
+              className={styles.inspectorToggle}
+              onClick={togglePropertiesPanel}
+              aria-label="プロパティパネルを閉じる"
+              title="プロパティパネルを閉じる（P）"
+            >
+              ›
+            </button>
+            {inspector}
+          </div>
+        )}
+
+        {!compact && !inspectorOpen && paletteOpen && (
+          <aside className={styles.inspectorRail} aria-label="プロパティパネル">
+            <button
+              type="button"
+              className={styles.inspectorToggle}
+              onClick={togglePropertiesPanel}
+              aria-label="プロパティパネルを開く"
+              title="プロパティパネルを開く（P）"
+            >
+              ‹
+            </button>
+          </aside>
+        )}
 
         {compact && openSheet && (
           <Sheet sheet={openSheet} onClose={() => setOpenSheet(null)}>
             {openSheet === "palette" && (
               <ComponentPalette onPick={placeFromPalette} />
             )}
-            {openSheet === "properties" && <PropertiesPanel />}
+            {openSheet === "properties" && <DetailedPropertiesPanel />}
             {openSheet === "diagnostics" && (
               <>
-                {/* 狭い画面では診断と同じシートに入れる。どちらも
-                    「回路を読む」ための一覧で、タブを増やすほどの別物ではない */}
                 <PathPreviewList />
                 <WarningList />
               </>
@@ -241,19 +372,11 @@ function Workspace() {
       )}
 
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
-
       <LadderDialog open={ladderOpen} onClose={() => setLadderOpen(false)} />
     </div>
   );
 }
 
-/**
- * 下から出すパネル（design.md §8.12）。
- *
- * 中身（パレット / プロパティ / 診断）は 3 カラムのときと同じものをそのまま
- * 入れる。**モバイル用に別のパネルを作らない** —— 2 つに分けると、片方だけ
- * 直す事故が起きる。見出しも中身が持っているので、ここでは付けない。
- */
 function Sheet({
   sheet,
   onClose,
@@ -267,12 +390,6 @@ function Sheet({
 
   return (
     <section className={styles.sheet} aria-label={meta?.title}>
-      {/*
-        閉じるボタンは**見出しの帯を作らずに右上へ重ねる**（design.md §8.12）。
-        横向きの携帯ではシートに使える高さが 200px を切り、帯 1 本（28px）が
-        部品 1 件ぶんに相当する。中身のパネルは自分の見出しを持っているので、
-        シート側で見出しを繰り返す理由も無い
-      */}
       <button
         type="button"
         className={styles.sheetClose}
@@ -286,17 +403,6 @@ function Sheet({
   );
 }
 
-/**
- * 画面下のタブ（design.md §8.12）。
- *
- * **畳んだパネルの中身を数で見せる。** 3 カラムなら常に目に入っている
- * 「選択中の部品」と「指摘の件数」が、シートを閉じている間はまったく
- * 見えなくなる。短絡を出したまま気付かずに配線を続ける状態を作らない。
- *
- * 診断の件数を取るためにここでも `useWiringCheck()` を呼ぶ（`WarningList` と
- * 二重に解く）。**狭い画面でシートを開けている間だけ**の重複で、`inspectWiring`
- * は端子数に線形なので許容する。
- */
 function SheetTabs({
   open,
   onToggle,
@@ -346,12 +452,6 @@ function SheetTabs({
   );
 }
 
-/**
- * 読み込み時に捨てた要素の通知。
- *
- * **黙って捨てない。** 未知の型番の部品を落とせば回路は静かに欠けるので、
- * 何が読めなかったのかを一度だけ知らせる（要件 US-E）。
- */
 function LoadNotices({
   notices,
   onDismiss,
