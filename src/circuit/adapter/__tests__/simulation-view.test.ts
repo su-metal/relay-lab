@@ -268,6 +268,51 @@ describe("調光コントローラの channelVolts 表示（design.md §4.17・�
   });
 });
 
+describe("AC-DC 電源の powered 表示（design.md §5.20・§4.19）", () => {
+  /**
+   * プロジェクター（`ac-dc-power-supply`）は投影の ON/OFF を電気的に
+   * 持たないので、電源ランプに相当する `powered` は「一次側の AC100V が
+   * 来ていて二次側の USB 出力が実際に成立しているか」だけを見る。
+   */
+  const acPanel = (connectAc: boolean): CircuitDocument => ({
+    version: 1,
+    components: [
+      { id: "ps", definitionId: "power-ac100v", label: "PS1", position: at(0, 0) },
+      {
+        id: "pj",
+        definitionId: "projector-panasonic-pt-vx430j",
+        label: "PJ1",
+        position: at(300, 0),
+      },
+    ],
+    connections: connectAc
+      ? [wire("w-l", ["ps", "L"], ["pj", "L"]), wire("w-n", ["ps", "N"], ["pj", "N"])]
+      : [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+
+  const poweredOf = (document: CircuitDocument) => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+    });
+    const view = buildSimulationView(document, componentRegistry, result, new Set());
+    return view.deviceOf.get("pj")?.powered;
+  };
+
+  it("AC100V を L/N に繋ぐと電源ランプが点く", () => {
+    expect(poweredOf(acPanel(true))).toBe(true);
+  });
+
+  it("AC100V を繋いでいなければ電源ランプは消えたまま", () => {
+    expect(poweredOf(acPanel(false))).toBe(false);
+  });
+
+  it("kind: ac-dc-power-supply 以外は powered を持たない", () => {
+    const { view } = viewFor(["s1"]);
+    expect(view.deviceOf.get("ry1")?.powered).toBeUndefined();
+  });
+});
+
 describe("terminalStatesOf", () => {
   it("部品 1 個ぶんの端子状態を端子 ID で引ける形に切り出す", () => {
     const { view } = viewFor(["s1"]);
