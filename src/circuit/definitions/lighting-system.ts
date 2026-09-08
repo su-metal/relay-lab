@@ -151,9 +151,11 @@ const controllerTerminals = (): TerminalDefinition[] => {
 /**
  * 調光コントローラ（0–10V 16 回路）。
  *
- * **ON/OFF 出力（24–39）は端子として出すが、まだ接点としては働かない。**
- * オープンコレクタは「動作したら GND へ落とす」接点で、アナログ量から
- * 接点を動かす仕組みが要る。次スコープで繋ぐ（requirements.md 含まないもの）。
+ * **ON/OFF 出力（24–39）は、通信で受けて動く 4 回路（33〜36・VP と
+ * スクリーン上昇/停止/下降）だけ接点として働く**（design.md §5.22）。
+ * オープンコレクタは「動作したら GND へ落とす」接点で、通信で受けた
+ * % がそのまま二値の駆動源になる（`electrical.digitalOutputs` 参照）。
+ * 残り（32・37・38・39）は対応する送信元がまだ無いため端子のまま。
  *
  * **通信線（22・23）も端子だけ。** 「電位がどこまで届くか」で判定する
  * このエンジンでは、通信の中身に意味が出ない（design.md §6）。
@@ -174,6 +176,22 @@ export const dimmingController16ch: ComponentDefinition = {
       };
     }),
     commonTerminals: [...CONTROLLER_GND],
+    /**
+     * オープンコレクタ出力（24–39）のうち、通信で受けて動く 4 回路
+     * （design.md §5.22）。**VP・スクリーン上昇/停止/下降だけ。**
+     * 端子 32（電源 ON/OFF）・37（AUX2）・38/39（電源制御 NO/NC）は
+     * 対応する操作卓側の送信元がまだ無く、今回もまだ割り当てない
+     * （下の `communication.receives` の doc comment 参照）。
+     *
+     * `channelId` は端子番号と同じ文字列にしてあり、`channels`（1–16）の
+     * チャンネル ID と重ならない。
+     */
+    digitalOutputs: [
+      { id: "33", channelId: "33", signalTerminal: "33", commonTerminal: "21", label: "補助ランプ（VP）ON/OFF出力" },
+      { id: "34", channelId: "34", signalTerminal: "34", commonTerminal: "21", label: "昇降 上昇 出力" },
+      { id: "35", channelId: "35", signalTerminal: "35", commonTerminal: "21", label: "昇降 停止 出力" },
+      { id: "36", channelId: "36", signalTerminal: "36", commonTerminal: "21", label: "昇降 下降 出力" },
+    ],
     /**
      * 通信で受けた % を V へ直す規則（design.md §4.17）。
      *
@@ -211,8 +229,13 @@ export const dimmingController16ch: ComponentDefinition = {
    * 対応表をそのまま写している。名前（`fader1`・`light1`）は送り手の
    * 操作子 ID と一致していればよく、エンジンはどちらの機器かを見ない。
    *
-   * **ON/OFF 出力（24–39）はまだ割り当てない。** あちらは接点で、
-   * `analog-source` の機器に接点を持たせる構造判断が要る（次スコープ）。
+   * **VP・スクリーン上昇/停止/下降は端子 33・34・35・36 のオープンコレクタ
+   * 出力へ**（design.md §5.22）。`channelId` は上の `digitalOutputs` と
+   * 同じ文字列（端子番号）で対応させてある。
+   *
+   * **端子 32・37・38・39 はまだ割り当てない。** 操作卓（`dimming-console`）
+   * 側に対応する送信元（電源全体の ON/OFF・AUX2・電源制御）がまだ無い
+   * ため、次スコープに残す（requirements.md 含まないもの）。
    */
   communication: {
     port: {
@@ -229,6 +252,10 @@ export const dimmingController16ch: ComponentDefinition = {
         signalId: `light${i + 1}`,
         channelId: String(i + 9),
       })),
+      { signalId: "vpPower", channelId: "33" },
+      { signalId: "screenUp", channelId: "34" },
+      { signalId: "screenStop", channelId: "35" },
+      { signalId: "screenDown", channelId: "36" },
     ],
   },
   // 上辺 16・下辺 16 の端子番号が重ならない幅。実機どおり横長

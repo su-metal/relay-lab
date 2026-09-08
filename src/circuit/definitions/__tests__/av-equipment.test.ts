@@ -18,7 +18,9 @@ import { describe, expect, it } from "vitest";
 import {
   componentRegistry,
   dimmingConsole,
+  dimmingController16ch,
   monitorGeneric,
+  omronMy2nDc24,
   projectorPtVx430j,
   screenElectric,
   vpController,
@@ -264,6 +266,155 @@ describe("モニター（汎用）", () => {
     const result = simulate(document, componentRegistry, {
       pressedSwitches: new Set(),
     });
+    expect(result.litLamps.has("MON")).toBe(true);
+  });
+});
+
+describe("調光操作卓 → コントローラ → VP・スクリーンが実際に動く（design.md §5.22）", () => {
+  /**
+   * 添付回路（プロジェクター・VP コントローラー・電動スクリーン）と同じ形。
+   * 操作卓の VP電源／スクリーン上昇/停止/下降ボタンが、通信でコントローラの
+   * オープンコレクタ出力（端子 33〜36）を閉じ、その先の実機を実際に動かす
+   * ところまでを一気通貫で確かめる。
+   */
+  const document = circuit(
+    [
+      ["CONSOLE", dimmingConsole.id],
+      ["CTRL", dimmingController16ch.id],
+      ["PS", "power-ac100v"],
+      ["PJ", projectorPtVx430j.id],
+      ["VP", vpController.id],
+      ["DC", DC],
+      ["SC", screenElectric.id],
+    ],
+    [
+      // 操作卓 ↔ コントローラの通信線
+      wire("CONSOLE:7", "CTRL:22"),
+      wire("CONSOLE:8", "CTRL:23"),
+      wire("CONSOLE:9", "CTRL:21"),
+      // プロジェクターの AC100V 電源
+      wire("PS:L", "PJ:L"),
+      wire("PS:N", "PJ:N"),
+      // VP コントローラーはプロジェクターの USB 給電で動作し、
+      // 制御入力（CTRL）をコントローラの端子 33 へ
+      wire("PJ:VBUS", "VP:VBUS"),
+      wire("PJ:GND", "VP:GND"),
+      wire("VP:CTRL", "CTRL:33"),
+      // オープンコレクタの基準（GND）を VP コントローラー側の 0V と共有する
+      wire("CTRL:21", "VP:GND"),
+      // 電動スクリーンは DC24V を外部電源とし、上昇/停止/下降をコントローラの
+      // 端子 34/35/36 へ
+      wire("DC:plus", "SC:COM"),
+      wire("DC:zero", "CTRL:21"),
+      wire("CTRL:34", "SC:UP"),
+      wire("CTRL:35", "SC:STOP"),
+      wire("CTRL:36", "SC:DOWN"),
+    ],
+  );
+
+  const auxOf = (result: ReturnType<typeof simulate>) =>
+    [...(result.auxCoilsEnergized.get("SC") ?? [])].sort();
+
+  it("何も操作していなければ VP もスクリーンも動かない", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+    });
+    expect(result.energizedRelays.has("VP")).toBe(false);
+    expect(auxOf(result)).toEqual([]);
+  });
+
+  it("VP電源ボタンを倒すと VP コントローラーのコイルが励磁する", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "vpPower")]),
+    });
+    expect(result.energizedRelays.has("VP")).toBe(true);
+    // スクリーンは操作していないので動かない
+    expect(auxOf(result)).toEqual([]);
+  });
+
+  it("スクリーン上昇ボタンを倒すと上昇だけが励磁する", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "screenUp")]),
+    });
+    expect(auxOf(result)).toEqual(["up"]);
+    expect(result.energizedRelays.has("VP")).toBe(false);
+  });
+
+  it("スクリーン停止ボタンを倒すと停止だけが励磁する", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "screenStop")]),
+    });
+    expect(auxOf(result)).toEqual(["stop"]);
+  });
+
+  it("スクリーン下降ボタンを倒すと下降だけが励磁する", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "screenDown")]),
+    });
+    expect(auxOf(result)).toEqual(["down"]);
+  });
+
+  it("VP電源とスクリーン上昇を同時に倒しても互いに干渉しない", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([
+        operationKey("CONSOLE", "vpPower"),
+        operationKey("CONSOLE", "screenUp"),
+      ]),
+    });
+    expect(result.energizedRelays.has("VP")).toBe(true);
+    expect(auxOf(result)).toEqual(["up"]);
+  });
+});
+
+describe("調光操作卓の電源ボタンでモニターを連動させる", () => {
+  /**
+   * モニターは制御端子を持たない負荷なので（本ファイル冒頭の doc comment）、
+   * 外部のリレーで AC100V ラインを断続する。**ここは端子 33〜39 を使わない**
+   * —— 操作卓自身の電源接点（端子 2＝AUX1 オープンコレクタ出力、電源 NO）が
+   * 実機どおりコンソールパネルに既にあり、社内仕様書（ver.1.1）にモニター専用
+   * ボタンの記載は無いため、新しい操作子を作らずこの実在の接点を使う
+   * （ユーザー判断）。
+   */
+  const document = circuit(
+    [
+      ["CONSOLE", dimmingConsole.id],
+      ["DC", DC],
+      ["RY", omronMy2nDc24.id],
+      ["PS", "power-ac100v"],
+      ["MON", monitorGeneric.id],
+    ],
+    [
+      // リレーのコイルは DC24V から、操作卓の電源 NO 接点（端子 2）を経由
+      wire("DC:plus", "RY:14"),
+      wire("RY:13", "CONSOLE:2"),
+      wire("CONSOLE:9", "DC:zero"),
+      // リレーの接点でモニターの AC100V ラインを断続する
+      wire("PS:L", "RY:9"),
+      wire("RY:5", "MON:L"),
+      wire("PS:N", "MON:N"),
+    ],
+  );
+
+  it("操作卓の電源ボタンが OFF ならモニターは点かない", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set(),
+    });
+    expect(result.energizedRelays.has("RY")).toBe(false);
+    expect(result.litLamps.has("MON")).toBe(false);
+  });
+
+  it("操作卓の電源ボタンを倒すとリレーが動き、モニターが点く", () => {
+    const result = simulate(document, componentRegistry, {
+      pressedSwitches: new Set(),
+      operatedDevices: new Set([operationKey("CONSOLE", "power")]),
+    });
+    expect(result.energizedRelays.has("RY")).toBe(true);
     expect(result.litLamps.has("MON")).toBe(true);
   });
 });

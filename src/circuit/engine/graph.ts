@@ -8,6 +8,7 @@
 import type {
   CircuitDocument,
   ComponentDefinitionRegistry,
+  DigitalOutput,
   ElectricalDefinition,
   NetState,
   SimulationInput,
@@ -20,6 +21,7 @@ import {
   spreadThroughDiodes,
   type MutableNetState,
 } from "./diode";
+import type { CommunicatedLevels } from "./communication";
 import {
   closedContactPairs,
   openContactPairs,
@@ -128,6 +130,28 @@ const chainPairs = (terminals: readonly string[]): TerminalPair[] => {
 };
 
 /**
+ * `analog-source` のオープンコレクタ出力（design.md §5.22）のうち、
+ * **今動作しているもの**を導通ペアにする。
+ *
+ * 「動作している」は通信で受けた % が 0 より大きいかどうかだけで決める ——
+ * 電圧の話ではなく二値の接点なので、`analog.ts` の V 変換は経由しない。
+ * `normallyClosed` は判定を反転させるだけで、NO・NC で別の関数を持たない。
+ */
+const digitalOutputPairs = (
+  digitalOutputs: readonly DigitalOutput[] | undefined,
+  levelsForDevice: ReadonlyMap<string, number> | undefined,
+): TerminalPair[] => {
+  if (!digitalOutputs || digitalOutputs.length === 0) return [];
+  const pairs: TerminalPair[] = [];
+  for (const output of digitalOutputs) {
+    const percent = levelsForDevice?.get(output.channelId) ?? 0;
+    const active = output.normallyClosed ? percent <= 0 : percent > 0;
+    if (active) pairs.push([output.signalTerminal, output.commonTerminal]);
+  }
+  return pairs;
+};
+
+/**
  * 上段・下段の順に列挙された端子台を、同じ列どうしの独立した中継ペアにする。
  * 20P なら 1–11、2–12、…、10–20。異なる列どうしは導通しない。
  */
@@ -148,6 +172,7 @@ export const conductingPairs = (
   energizedRelays: ReadonlySet<string>,
   openContacts?: OpenContacts,
   operatedContacts?: OperatedContacts,
+  communicatedLevels?: CommunicatedLevels,
 ): TerminalPair[] => {
   switch (electrical.kind) {
     case "switch": {
@@ -183,7 +208,17 @@ export const conductingPairs = (
       // GND を 4 本（21・44・45・46）出しており、機器の中で繋がっている。
       // ここを繋がないと、GND 21 に繋いだ機器と GND 45 に繋いだ機器が
       // 「基準が共通でない」と出て、正しい配線が成立しなくなる（§4.15）
-      return chainPairs(electrical.commonTerminals);
+      //
+      // **オープンコレクタ出力（§5.22）は別枠。** 0–10V の信号端子とは
+      // 電気的な種類が違い、動作中は実際に基準へ落ちる接点そのものなので、
+      // 動作している回路だけ導通ペアに加える（design.md §5.22）
+      return [
+        ...chainPairs(electrical.commonTerminals),
+        ...digitalOutputPairs(
+          electrical.digitalOutputs,
+          communicatedLevels?.get(componentId),
+        ),
+      ];
     case "dimmer":
       // **AC は通すが union はしない。** 入力と出力を同じネットにすると、
       // 同じ電源から取った 2 台の調光器の出力回路まで 1 つに融合し、
@@ -211,6 +246,7 @@ export const buildNets = (
   energizedRelays: ReadonlySet<string>,
   openContacts?: OpenContacts,
   operatedContacts?: OperatedContacts,
+  communicatedLevels?: CommunicatedLevels,
 ): NetAssignment => {
   const dsu = new UnionFind();
   const orderedKeys: string[] = [];
@@ -253,6 +289,7 @@ export const buildNets = (
       energizedRelays,
       openContacts,
       operatedContacts,
+      communicatedLevels,
     )) {
       dsu.union(
         register(terminalKey(instance.id, a)),

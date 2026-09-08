@@ -20,6 +20,7 @@ export type {
   CommunicationDefinition,
   CommunicationPort,
   DeviceOperation,
+  DigitalOutput,
   DimmerSettings,
   DimmingInput,
   ElectricalDefinition,

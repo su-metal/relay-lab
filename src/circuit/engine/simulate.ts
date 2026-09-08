@@ -431,6 +431,12 @@ export const simulate = (
    * **既知の割り切り**：通信線をリレー接点で切り替える配線は、その接点が
    * 収束の途中で動いても通信に反映されない。実機の通信線は常時接続で、
    * 接点で切る配線を見たことが無いため、この単純化を採る（§6）。
+   *
+   * **`communication.levels` はループの中の `buildNets()` へも渡す**
+   * （design.md §5.22）。オープンコレクタ出力（`analog-source.digitalOutputs`）
+   * は通信で受けた % で実際に閉じる接点なので、`operatedContacts` と同じ
+   * 位置で導通判定に加わる。値そのものはこの 1 回で確定済み（上の割り切り
+   * どおり）なので、反復のたびに解き直す必要はない。
    */
   const entryNets = buildNets(document, definitions, input, energized);
   const communication = resolveCommunication(
@@ -462,6 +468,7 @@ export const simulate = (
       energized,
       undefined,
       operatedContacts,
+      communication.levels,
     );
     const netState = computeNetStates(document, definitions, nets);
     const lookup: NetLookup = { netOf: nets.netOf, netState };

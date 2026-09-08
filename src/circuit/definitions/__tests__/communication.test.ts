@@ -180,10 +180,12 @@ describe("US-AW 通信線の配線ミスが分かる", () => {
 
 describe("VP電源・スクリーン上昇/停止/下降のボタンが通信で送られる", () => {
   /**
-   * 実機のコントローラは端子 33〜36 でこれを受けるが、`analog-source` に
-   * 接点を持たせる構造判断がまだ無く（design.md §6・次スコープ）、今回は
-   * 「コンソールのボタンが `communication.transmits` に正しく載っている
-   * こと」を、`analog-source` の受け口だけ持つ最小の合成受信機で確かめる。
+   * 実機のコントローラは端子 33〜36 の**オープンコレクタ出力**でこれを
+   * 受ける（`dimmingController16ch.electrical.digitalOutputs`・design.md
+   * §5.22）。この describe は「コンソールのボタンが `communication.transmits`
+   * に正しく載っていること」を、`analog-source` の電圧出力（`channels`）
+   * だけを持つ最小の合成受信機で確かめる —— 実際に接点として閉じるかどうか
+   * は下の「実機のコントローラで VP・スクリーンの出力が実際に閉じる」で見る。
    */
   const receiver: ComponentDefinition = {
     id: "test-vp-screen-receiver",
@@ -337,6 +339,55 @@ describe("VP電源・スクリーン上昇/停止/下降のボタンが通信で
     expect(dimmingConsole.communication?.transmits).toEqual(
       expect.arrayContaining(["vpPower", "screenUp", "screenStop", "screenDown"]),
     );
+  });
+});
+
+describe("実機のコントローラで VP・スクリーンの出力が実際に閉じる（design.md §5.22）", () => {
+  const document = panel(CORRECT);
+
+  /** 端子 n が GND（21）と同じネットにいる＝オープンコレクタが閉じている */
+  const closedToGnd = (result: SimulationResult, terminal: string): boolean =>
+    result.netOf.get(`C1:${terminal}`) === result.netOf.get("C1:21");
+
+  it("何も操作していなければ 33〜36 はどれも GND から浮いている", () => {
+    const result = step(document);
+    for (const terminal of ["33", "34", "35", "36"]) {
+      expect(closedToGnd(result, terminal)).toBe(false);
+    }
+  });
+
+  it("VP電源を倒すと端子 33 だけ GND へ落ちる", () => {
+    const result = step(document, {}, [operationKey("CP", "vpPower")]);
+    expect(closedToGnd(result, "33")).toBe(true);
+    expect(closedToGnd(result, "34")).toBe(false);
+    expect(closedToGnd(result, "35")).toBe(false);
+    expect(closedToGnd(result, "36")).toBe(false);
+  });
+
+  it("スクリーン上昇を倒すと端子 34 だけ GND へ落ちる", () => {
+    const result = step(document, {}, [operationKey("CP", "screenUp")]);
+    expect(closedToGnd(result, "34")).toBe(true);
+    expect(closedToGnd(result, "33")).toBe(false);
+  });
+
+  it("スクリーン停止を倒すと端子 35 だけ GND へ落ちる", () => {
+    const result = step(document, {}, [operationKey("CP", "screenStop")]);
+    expect(closedToGnd(result, "35")).toBe(true);
+  });
+
+  it("スクリーン下降を倒すと端子 36 だけ GND へ落ちる", () => {
+    const result = step(document, {}, [operationKey("CP", "screenDown")]);
+    expect(closedToGnd(result, "36")).toBe(true);
+  });
+
+  it("同時に倒せば複数の出力が同時に閉じる", () => {
+    const result = step(document, {}, [
+      operationKey("CP", "vpPower"),
+      operationKey("CP", "screenUp"),
+    ]);
+    expect(closedToGnd(result, "33")).toBe(true);
+    expect(closedToGnd(result, "34")).toBe(true);
+    expect(closedToGnd(result, "35")).toBe(false);
   });
 });
 
