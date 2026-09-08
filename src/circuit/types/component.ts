@@ -272,6 +272,40 @@ export type AnalogOutputChannel = {
 };
 
 /**
+ * オープンコレクタ出力の 1 回路（design.md §3.1・§4.15・§5.22）。
+ *
+ * **`AnalogOutputChannel`（0–10V の電圧を出す）とは電気的な種類が違う。**
+ * こちらは「動作したら基準（GND）へ落とす」ただの接点で、電圧の値を
+ * 持たない ―― 通信で受けた % が 0 より大きいかどうかだけを見る二値の
+ * 出力（design.md §5.19 の通信解決と同じ % を再利用する）。
+ *
+ * **接点なので union する。** `channels`（信号端子とコモンを union しない
+ * 原則・CLAUDE.md 設計原則 3）とは逆に、動作中は `signalTerminal` と
+ * `commonTerminal` が実際に短絡する ―― 実機のトランジスタが GND へ
+ * 落とすのと同じ振る舞いを、接点と同じ Union-Find の枠組みで表す。
+ */
+export type DigitalOutput = {
+  /** 定義内で一意な ID。原則として端子番号と同じ文字列 */
+  id: string;
+  /** 通信で受け取るチャンネル ID（`CommunicationBinding.channelId` と合わせる） */
+  channelId: string;
+  /** 出力端子（オープンコレクタ） */
+  signalTerminal: string;
+  /** 基準端子（動作すると落ちる先。GND 側） */
+  commonTerminal: string;
+  /**
+   * ノーマルクローズ（b 接点相当）。
+   *
+   * 実機の「電源制御 ノーマルオープン／ノーマルクローズ」のように、
+   * 同じ 1 つの状態から NO・NC の対を出す機器がある。`true` なら
+   * 「通信の値が 0 のときに閉じ、値が入ると開く」に反転する。
+   */
+  normallyClosed?: boolean;
+  /** 系統の呼び名（"VP電源"）。表示だけに使い、エンジンは読まない */
+  label?: string;
+};
+
+/**
  * フェード（時間をかけた明るさの変化）の設定範囲（design.md §5.18）。
  *
  * **`analog-source` に省略可能で足す。** タイマーを `kind: "timer"` にせず
@@ -597,6 +631,14 @@ export type ElectricalDefinition =
        * 保ったまま、実機どおり GND 間を導通させる（design.md §5.1）。
        */
       commonTerminals: readonly string[];
+      /**
+       * オープンコレクタ出力（design.md §5.22）。**電圧を出す `channels`
+       * とは別の面。** 実機の調光コントローラは 0–10V の信号出力とは別に
+       * 「動作したら GND へ落とす」オープンコレクタ出力（端子 24〜39）を
+       * 持ち、どちらも同じ機器の別の端子群として共存する。持たない機器は
+       * 省略する。
+       */
+      digitalOutputs?: readonly DigitalOutput[];
       /** 出力できる下限・上限（実機のつまみの目盛りに相当） */
       minVolts: number;
       maxVolts: number;
