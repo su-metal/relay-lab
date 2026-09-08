@@ -1093,13 +1093,16 @@ function ElectricalSection({
       );
 
     case "relay": {
-      const { coil } = electrical.relay;
+      const { coil, auxCoils } = electrical.relay;
       /*
        * **コイルの無い機器では「コイル」の節ごと出さない**（design.md §4.16）。
        * カットリレーや操作卓のボタンに定格も極性も無いのに枠だけ出すと、
        * 実機に無いものがあるように読める。接点の節（下）は変わらず出る。
+       *
+       * **補助コイル（design.md §5.21）だけの機器は出す。** 昇降スクリーンの
+       * ように主コイルを持たず補助コイルだけの機器もあるため。
        */
-      if (!coil) return null;
+      if (!coil && (!auxCoils || auxCoils.length === 0)) return null;
       /**
        * コイル端子に +/− の印字があるか。
        *
@@ -1115,34 +1118,58 @@ function ElectricalSection({
         <section className={styles.section}>
           <h3 className={styles.heading}>コイル</h3>
           <dl className={styles.rows}>
-            <Row name="定格">
-              {coil.currentType}
-              {coil.voltage}V
-            </Row>
-            <Row name="端子">
-              {/*
-                極性の無いコイル（G7L・design.md §4.8）に "+ 0 / − 1" と出すと、
-                すぐ下の「極性なし」と矛盾するうえ、実機に無い印字を教えてしまう
-              */}
-              {coilTerminalsAreLabeled
-                ? `+ ${coil.positiveTerminal} / − ${coil.negativeTerminal}`
-                : `${coil.positiveTerminal} / ${coil.negativeTerminal}`}
-            </Row>
-            <Row name="極性">{COIL_POLARITY_LABELS[coil.polarity]}</Row>
-            <Row name="状態">
-              {/*
-                自分の接点で保持している間はそう名乗らせる（design.md §5.9）。
-                「励磁中」のままだと、ボタンが保持しているのか接点が保持して
-                いるのかがパネルからは読めない
-              */}
-              <StateBadge
-                on={device?.energized}
-                onLabel={device?.selfHeld ? "自己保持中" : "励磁中"}
-                offLabel="非励磁"
-              />
-            </Row>
+            {coil && (
+              <>
+                <Row name="定格">
+                  {coil.currentType}
+                  {coil.voltage}V
+                </Row>
+                <Row name="端子">
+                  {/*
+                    極性の無いコイル（G7L・design.md §4.8）に "+ 0 / − 1" と
+                    出すと、すぐ下の「極性なし」と矛盾するうえ、実機に無い
+                    印字を教えてしまう
+                  */}
+                  {coilTerminalsAreLabeled
+                    ? `+ ${coil.positiveTerminal} / − ${coil.negativeTerminal}`
+                    : `${coil.positiveTerminal} / ${coil.negativeTerminal}`}
+                </Row>
+                <Row name="極性">{COIL_POLARITY_LABELS[coil.polarity]}</Row>
+                <Row name="状態">
+                  {/*
+                    自分の接点で保持している間はそう名乗らせる（design.md
+                    §5.9）。「励磁中」のままだと、ボタンが保持しているのか
+                    接点が保持しているのかがパネルからは読めない
+                  */}
+                  <StateBadge
+                    on={device?.energized}
+                    onLabel={device?.selfHeld ? "自己保持中" : "励磁中"}
+                    offLabel="非励磁"
+                  />
+                </Row>
+              </>
+            )}
+            {/*
+              補助コイル（design.md §5.21）。昇降スクリーンの上昇・停止・
+              下降のように、1 台が持つ複数の独立した入力それぞれの通電を
+              並べる。接点は動かさないので開閉の表示は無い —— 見せたいのは
+              「この入力が今通電しているか」そのもの。
+            */}
+            {auxCoils?.map((aux) => (
+              <Row key={aux.id} name={aux.label ?? aux.id}>
+                {aux.currentType}
+                {aux.voltage}V（{aux.positiveTerminal} / {aux.negativeTerminal}）
+                <StateBadge
+                  on={device?.auxCoilsEnergized?.has(aux.id)}
+                  onLabel="励磁中"
+                  offLabel="非励磁"
+                />
+              </Row>
+            ))}
           </dl>
-          <p className={styles.hint}>{COIL_POLARITY_NOTES[coil.polarity]}</p>
+          {coil && (
+            <p className={styles.hint}>{COIL_POLARITY_NOTES[coil.polarity]}</p>
+          )}
         </section>
       );
     }

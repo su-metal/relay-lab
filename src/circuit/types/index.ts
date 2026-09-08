@@ -11,6 +11,7 @@ export type {
   AnalogInputChannel,
   AnalogTrigger,
   AnalogOutputChannel,
+  AuxCoil,
   CoilPolarity,
   ComponentCategory,
   ComponentDefinition,

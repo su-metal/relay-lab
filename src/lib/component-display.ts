@@ -21,6 +21,7 @@ export const CATEGORY_LABELS: Record<ComponentCategory, string> = {
   terminal: "端子台",
   timer: "タイマー",
   dimmer: "調光",
+  av: "AV機器",
 };
 
 /** パレットに並べる順序。`componentDefinitions` の並びより優先する */
@@ -32,6 +33,9 @@ export const CATEGORY_ORDER: readonly ComponentCategory[] = [
   "timer",
   // 調光出力はランプの直前。0–10V の行き先はランプなので隣に並べる
   "dimmer",
+  // AV機器は調光の次。プロジェクター/モニターの電源制御はコントローラ出力の
+  // 先にある負荷という位置づけで、調光機器と隣り合わせておく
+  "av",
   "lamp",
   "diode",
   "terminal",

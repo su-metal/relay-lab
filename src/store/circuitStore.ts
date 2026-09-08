@@ -74,6 +74,8 @@ const LABEL_PREFIX: Record<ComponentCategory, string> = {
   terminal: "TB",
   timer: "T",
   dimmer: "DIM",
+  // AV機器。L（ランプ）や DIM（調光）と読み違えない綴りにする
+  av: "AV",
 };
 
 /** 同じ接頭辞の最大番号 + 1 を返す（RY1 が居れば RY2） */

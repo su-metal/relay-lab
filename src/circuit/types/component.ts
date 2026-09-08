@@ -30,7 +30,15 @@ export type ComponentCategory =
    * 表せない —— 電位を配るのでも負荷になるのでもなく、**基準に対する
    * 電圧値を出す**という別の振る舞いだから。
    */
-  | "dimmer";
+  | "dimmer"
+  /**
+   * AV 機器（プロジェクター・スクリーン・モニター等・design.md §4.19）。
+   *
+   * 電気的には `kind: "lamp"`（単純な AC 負荷）や `kind: "relay"`
+   * （制御リレー・昇降モーターの入力）で表され、専用の `ElectricalDefinition`
+   * は持たない。パレットの見出しを分けるための表示都合だけ（design.md §3.1）。
+   */
+  | "av";
 
 /**
  * コイルの極性の扱い（design.md §5.3）。
@@ -96,6 +104,31 @@ export type RelayContact = {
   type: "SPDT" | "SPST-NO" | "SPST-NC";
 };
 
+/**
+ * 主コイルとは独立に励磁する補助コイル（design.md §4.19・§5.21）。
+ *
+ * **昇降モーターのように「複数の入力がそれぞれ独立に効く」機器のための形。**
+ * 昇降スクリーンの上昇・停止・下降は 3 本の無電圧接点入力で、どれか 1 本が
+ * 通電したかを個別に読みたい —— 単一の `coil` では 1 台につき 1 つの
+ * 励磁状態しか持てず、3 系統を表せない。
+ *
+ * `RelayDefinition.contacts` からは参照しない。接点を動かす駆動源としてではなく、
+ * **その入力が今通電しているかを見るためだけ**の宣言（design.md §5.21）。
+ * 実機に無い出力接点を作って「動作が分かるようにする」ことはしない
+ * （CLAUDE.md 設計原則 6）——見たいのは接点の開閉ではなく、入力の通電そのもの。
+ */
+export type AuxCoil = {
+  /** 定義内で一意なコイル ID */
+  id: string;
+  /** 画面に出す名前（"上昇"）。表示だけに使い、エンジンは読まない */
+  label?: string;
+  voltage: number;
+  currentType: "DC" | "AC";
+  positiveTerminal: string;
+  negativeTerminal: string;
+  polarity: CoilPolarity;
+};
+
 export type RelayDefinition = {
   /**
    * コイル。**省略可能。**
@@ -114,6 +147,11 @@ export type RelayDefinition = {
     negativeTerminal: string;
     polarity: CoilPolarity;
   };
+  /**
+   * 補助コイル（design.md §5.21）。省略可能で、`coil` の有無とは独立。
+   * 昇降スクリーンのように主コイルを持たず補助コイルだけの機器もある。
+   */
+  auxCoils?: readonly AuxCoil[];
   /** 人が操作できる状態。`RelayContact.operationId` から参照する */
   operations?: readonly DeviceOperation[];
   /** 接点を動かすために受ける調光入力。`AnalogTrigger.inputId` から参照する */

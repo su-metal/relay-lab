@@ -16,7 +16,7 @@ import {
  * 表を書き換えたのに定義を直し忘れる（またはその逆）と、ここが落ちる。
  */
 describe("部品定義レジストリ", () => {
-  it("28 定義が登録されている", () => {
+  it("32 定義が登録されている", () => {
     expect(componentDefinitions.map((d) => d.id)).toEqual([
       "power-dc24v",
       "power-ac100v",
@@ -42,12 +42,16 @@ describe("部品定義レジストリ", () => {
       "dimmer-phase-control-ac100v",
       "light-controller-4ch",
       "dimming-console",
+      "projector-panasonic-pt-vx430j",
+      "av-controller-vp",
+      "monitor-generic-ac100v",
+      "screen-electric-generic",
       "diode-generic",
       "terminal-block-6p",
       "terminal-block-12p",
       "terminal-block-20p",
     ]);
-    expect(componentRegistry.size).toBe(28);
+    expect(componentRegistry.size).toBe(32);
   });
 
   it("型番から定義を取得できる", () => {
@@ -110,7 +114,18 @@ describe("部品定義レジストリ", () => {
       "light-controller-4ch",
       "dimming-console",
     ]);
-    expect(listComponentDefinitions()).toHaveLength(28);
+    /*
+     * AV 機器（design.md §4.19）。電気的には `lamp`（プロジェクター・
+     * モニター）や `relay`（VP コントローラー・スクリーン）だが、
+     * パレットの見出しは分けて探しやすくしている（design.md §3.1）。
+     */
+    expect(listComponentDefinitions("av").map((d) => d.id)).toEqual([
+      "projector-panasonic-pt-vx430j",
+      "av-controller-vp",
+      "monitor-generic-ac100v",
+      "screen-electric-generic",
+    ]);
+    expect(listComponentDefinitions()).toHaveLength(32);
   });
 
   it("全定義が端子データの出典を持つ", () => {
@@ -192,6 +207,12 @@ describe("部品定義レジストリ", () => {
                               electrical.relay.coil.negativeTerminal,
                             ]
                           : []),
+                        // 補助コイル（design.md §5.21）。昇降スクリーンのように
+                        // 主コイルを持たず補助コイルだけの機器もある
+                        ...(electrical.relay.auxCoils ?? []).flatMap((aux) => [
+                          aux.positiveTerminal,
+                          aux.negativeTerminal,
+                        ]),
                         // 調光入力を持つ機器はその端子も参照する
                         ...(electrical.relay.analogInputs ?? []).flatMap(
                           (input) => [input.signalTerminal, input.commonTerminal],
