@@ -106,6 +106,7 @@ src/
         PowerSupplyBody.tsx
         LampBody.tsx
         DimmerBody.tsx           # 調光出力・位相制御調光器・調光操作卓／ライトコントローラ（`kind: "relay"`）
+        AvBody.tsx               # AV機器。モニター（`kind: "lamp"`）・電動スクリーン（`auxCoils`）だけ専用の絵（§4.19）
         GenericBody.tsx          # 専用ボディが無いカテゴリのフォールバック
         DiodeBody.tsx
         TerminalBlockBody.tsx

@@ -468,3 +468,102 @@
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
+
+/*
+ * モニター（design.md §4.19）。実際の映像は持たないので、
+ * 「表示中かどうか」だけを画面の塗りと絵の有無で示す。
+ */
+.monitorScreen {
+  fill: var(--panel);
+  stroke: var(--border);
+  transition: fill 0.12s ease-out, stroke 0.12s ease-out;
+}
+
+.monitorScreen[data-lit="true"] {
+  fill: var(--device-body-bg, #0f172a);
+  stroke: var(--wire-energized);
+}
+
+/* 表示中だけ出す映像のプレースホルダー（山と太陽） */
+.monitorPicture {
+  fill: var(--wire-energized-text);
+  stroke: none;
+}
+
+.monitorStand {
+  fill: var(--text-muted);
+  stroke: none;
+}
+
+.monitorCaption {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.monitorCaption[data-lit="true"] {
+  color: var(--wire-energized-text);
+  font-weight: 700;
+}
+
+/*
+ * 電動スクリーン（design.md §4.19・§5.21）。
+ *
+ * **生地の高さ（位置）は持たない。** タイマーの限時と調光のフェード以外の
+ * 時間は扱わない方針（design.md §6）なので、上昇・下降は縞模様が流れる
+ * アニメーションで「動いている」ことだけを示す。止まれば縞も止まる。
+ */
+.screenCase {
+  width: 100px;
+  height: 8px;
+  border-radius: 2px 2px 0 0;
+  background: var(--text-muted);
+}
+
+.screenFabric {
+  width: 100px;
+  height: 52px;
+  border: 1px solid var(--border);
+  border-top: none;
+  background-color: var(--panel);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--border) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 17px 17px;
+  transition: background-color 0.15s ease-out;
+}
+
+.screenFabric[data-moving="down"] {
+  background-color: var(--accent-tint);
+  animation: av-screen-stripes 0.6s linear infinite;
+}
+
+.screenFabric[data-moving="up"] {
+  background-color: var(--accent-tint);
+  animation: av-screen-stripes 0.6s linear infinite reverse;
+}
+
+@keyframes av-screen-stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 17px;
+  }
+}
+
+.screenIndicators {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.screenIndicator[data-active="true"] {
+  color: var(--wire-energized-text);
+  font-weight: 700;
+}
